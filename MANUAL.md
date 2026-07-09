@@ -1,9 +1,9 @@
 # Channel Video Factory 使い方説明書
 
-このシステムは2階層でできています。
+ディレクトリ構造は2階層です。
 
-- **channel-builder**(全チャンネル共通のスキル、`~/.claude/skills/channel-builder/`): 空のフォルダを、特定チャンネル専用の動画工場(Factory)に変換する
-- **Factory**(チャンネルごとに1フォルダ=1リポジトリ): `/video-create` で動画を量産し、`/channel-refine`(このチャンネルの教義)と `/system-refine`(全チャンネル共通の工場OS)で改善を蓄積する
+- **ファクトリールート**(複数チャンネルをまとめる親フォルダ。例: `~/youtube/`。`.factory.json` を持つ): それ自体はgitリポジトリとしてチャンネルフォルダを追跡しない(`.gitignore`で除外)。ここで `channel-builder`(全チャンネル共通のスキル、`~/.claude/skills/channel-builder/`)を実行すると、直下に新しいチャンネルフォルダ(Factory)が構築される
+- **チャンネルフォルダ**(=Factory。チャンネルごとに1フォルダ=1リポジトリ): `/video-create` で動画を量産し、`/channel-refine`(このチャンネルの教義)と `/system-refine`(全チャンネル共通の工場OS)で改善を蓄積する
 
 あなたの役割は「作ること」ではなく「**判定すること**」です。台本・映像・素材・審査はすべてエージェントが行い、要所であなたの承認を求めてきます。メインセッションのモデルはFableである必要はありません(制作技能はエージェント定義に外部化済み)。
 
@@ -22,9 +22,12 @@
 ## 1. 新しいチャンネルを作る(/channel-builder)
 
 ```
-mkdir my-new-channel && cd my-new-channel && claude
+cd <ファクトリールート>   # 複数チャンネルをまとめる親フォルダ(例: ~/youtube/)
+claude
 > /channel-builder
 ```
+
+`.channel-system.json` のないディレクトリ(=ファクトリールート)で起動すると、ヒアリング後に直下へ新しいチャンネルフォルダ(Factory)が作られる。**カレントディレクトリ自体は変換しない。**
 
 | # | 工程 | **あなたがやること** |
 |---|---|---|
@@ -148,7 +151,7 @@ fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(
 ## 8. コマンド早見表
 
 ```
-/channel-builder                 # 新チャンネル構築(空フォルダで)
+/channel-builder                 # 新チャンネル構築(ファクトリールートで実行、直下に新フォルダを作成)
 /video-create 織田信長           # 動画制作
 /render-queue                    # 溜まったレンダリングを夜間にまとめて消化(寝る前に)
 /channel-refine <フィードバック>  # このチャンネルの恒久改善
