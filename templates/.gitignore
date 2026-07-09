@@ -1,0 +1,23 @@
+# secrets
+.env
+
+# deps / build
+node_modules/
+dist/
+.remotion/
+
+# generated media (regenerable; curated assets in assets/ ARE tracked)
+outputs/
+episodes/*/out/
+episodes/*/narration/
+*.mp4
+
+# render queue (job JSONs / log / pid — runtime state; root only, not .claude/skills/render-queue/)
+/render-queue/
+
+# os
+.DS_Store
+voice-samples/
+assets/characters/*/candidates/
+assets/characters/*/raw/
+.channel-refine-approved

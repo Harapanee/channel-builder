@@ -1,0 +1,258 @@
+import React from "react";
+import {
+  AbsoluteFill,
+  interpolate,
+  useCurrentFrame,
+  useVideoConfig,
+} from "remotion";
+import { seedFrom, seededRange } from "../../motion";
+import { roughLinePath } from "../doodle-svg";
+import { PALETTE } from "../style";
+import { DOODLE_FONT_STACK, useDoodleFont } from "../use-doodle-font";
+import { useOptionalAsset } from "../asset-context";
+
+/**
+ * §7.6 ComparisonSplit — 二分割比較(兵力差 / before-after)。
+ * mode: bars(手描きの太い棒) / count(数字カウントアップ) / size(大小の比較)。
+ * 数字・ラベルは Yusei Magic。左=藍・右=赤で対比を示す。
+ */
+export type ComparisonSide = {
+  label: string;
+  value: number;
+  assetId?: string;
+};
+export type ComparisonSplitProps = {
+  left: ComparisonSide;
+  right: ComparisonSide;
+  mode: "bars" | "count" | "size";
+  countUpDurationFrames?: number;
+};
+
+/** シード付きの歪んだ矩形パス(手描きの棒)。 */
+function roughRectPath(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  seed: number,
+  j = 6
+): string {
+  const p = (i: number) => seededRange(seed, i, -j, j);
+  const x0 = x + p(1);
+  const y0 = y + p(2);
+  const x1 = x + w + p(3);
+  const y1 = y + p(4);
+  const x2 = x + w + p(5);
+  const y2 = y + h + p(6);
+  const x3 = x + p(7);
+  const y3 = y + h + p(8);
+  return `M ${x0} ${y0} L ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3} Z`;
+}
+
+function formatNum(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
+}
+
+const EMPTY_SIDE: ComparisonSide = { label: "", value: 0 };
+
+export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
+  left,
+  right,
+  mode = "bars",
+  countUpDurationFrames = 30,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  const fontFamily = useDoodleFont();
+  const l = left ?? EMPTY_SIDE;
+  const r = right ?? EMPTY_SIDE;
+  const leftUrl = useOptionalAsset(l.assetId);
+  const rightUrl = useOptionalAsset(r.assetId);
+
+  const progress = interpolate(frame, [0, countUpDurationFrames], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const maxValue = Math.max(l.value, r.value, 1);
+
+  const dividerSeed = seedFrom("cmp-div", l.label, r.label);
+  const dividerPath = roughLinePath(
+    width / 2,
+    height * 0.14,
+    width / 2,
+    height * 0.86,
+    dividerSeed,
+    8,
+    10
+  );
+
+  const font = `${fontFamily}, ${DOODLE_FONT_STACK}`;
+
+  const renderSide = (
+    side: ComparisonSide,
+    url: string | undefined,
+    accent: string,
+    isLeft: boolean
+  ) => {
+    const shownValue = side.value * progress;
+    const centerX = isLeft ? width * 0.25 : width * 0.75;
+    const seed = seedFrom("cmp", side.label, isLeft);
+
+    // 数字とラベルは共通
+    const numberEl = (
+      <div
+        style={{
+          fontFamily: font,
+          fontSize: height * 0.13,
+          color: accent,
+          lineHeight: 1,
+          textShadow: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {formatNum(shownValue)}
+      </div>
+    );
+    const labelEl = (
+      <div
+        style={{
+          fontFamily: font,
+          fontSize: height * 0.055,
+          color: PALETTE.ink,
+          marginTop: height * 0.02,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {side.label}
+      </div>
+    );
+
+    if (mode === "count") {
+      return (
+        <div
+          style={{
+            position: "absolute",
+            left: centerX,
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          {numberEl}
+          {labelEl}
+        </div>
+      );
+    }
+
+    if (mode === "size") {
+      const frac = side.value / maxValue;
+      const maxSize = height * 0.62;
+      const sizePx = maxSize * (0.28 + 0.72 * frac) * (0.3 + 0.7 * progress);
+      return (
+        <div
+          style={{
+            position: "absolute",
+            left: centerX,
+            top: 0,
+            width: 0,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              height: sizePx,
+              width: sizePx,
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+            }}
+          >
+            {url ? (
+              <img
+                src={url}
+                alt=""
+                style={{ height: "100%", width: "100%", objectFit: "contain" }}
+              />
+            ) : (
+              <svg width={sizePx} height={sizePx} viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  fill={accent}
+                  stroke={PALETTE.ink}
+                  strokeWidth={4}
+                />
+              </svg>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: height * 0.015 }}>
+            {numberEl}
+            {labelEl}
+          </div>
+        </div>
+      );
+    }
+
+    // mode === "bars"
+    const maxBarH = height * 0.5;
+    const barW = width * 0.16;
+    const barH = maxBarH * (side.value / maxValue) * progress;
+    const baseY = height * 0.8;
+    const barX = centerX - barW / 2;
+    const barTopY = baseY - barH;
+    return (
+      <div style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%" }}>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ position: "absolute", inset: 0 }}>
+          {barH > 2 ? (
+            <path
+              d={roughRectPath(barX, barTopY, barW, barH, seed, 6)}
+              fill={accent}
+              stroke={PALETTE.ink}
+              strokeWidth={7}
+              strokeLinejoin="round"
+            />
+          ) : null}
+        </svg>
+        <div
+          style={{
+            position: "absolute",
+            left: centerX,
+            top: barTopY - height * 0.02,
+            transform: "translate(-50%, -100%)",
+            textAlign: "center",
+          }}
+        >
+          {numberEl}
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: centerX,
+            top: baseY + height * 0.02,
+            transform: "translateX(-50%)",
+            textAlign: "center",
+          }}
+        >
+          {labelEl}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: PALETTE.paper }}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ position: "absolute", inset: 0 }}>
+        <path d={dividerPath} fill="none" stroke={PALETTE.ink} strokeWidth={5} strokeLinecap="round" opacity={0.75} />
+      </svg>
+      {renderSide(l, leftUrl, PALETTE.indigo, true)}
+      {renderSide(r, rightUrl, PALETTE.red, false)}
+    </AbsoluteFill>
+  );
+};

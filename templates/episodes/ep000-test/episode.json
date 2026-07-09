@@ -1,0 +1,6 @@
+{
+  "episodeId": "ep000-test",
+  "subject": "スキャフォールド検証用テスト",
+  "targetDurationSec": 10,
+  "status": "implemented"
+}

@@ -1,0 +1,58 @@
+{
+  "episodeId": "ep000-test",
+  "fps": 30,
+  "resolution": { "w": 1920, "h": 1080 },
+  "narration": { "file": "narration/narration.wav", "durationSec": 10.0 },
+  "shots": [
+    {
+      "shotId": "s01",
+      "lineIds": ["L01"],
+      "startSec": 0.0,
+      "endSec": 3.4,
+      "role": "hook",
+      "scene": { "component": "DoodleCharacter", "props": {} },
+      "assets": [],
+      "sfx": [{ "cue": "pop.wav", "atSec": 0.2 }],
+      "intent": "視聴者の注意を引く"
+    },
+    {
+      "shotId": "s02",
+      "lineIds": ["L02"],
+      "startSec": 3.4,
+      "endSec": 6.0,
+      "role": "explain",
+      "scene": { "component": "DoodleMap", "props": {} },
+      "assets": [],
+      "intent": "設定を説明する"
+    },
+    {
+      "shotId": "s03",
+      "lineIds": ["L03"],
+      "startSec": 6.0,
+      "endSec": 8.0,
+      "role": "gag",
+      "scene": { "component": "SpeechBubble", "props": {} },
+      "assets": [],
+      "sfx": [{ "cue": "pop.wav", "atSec": 6.5, "gainDb": -3 }],
+      "intent": "軽いギャグを入れる"
+    },
+    {
+      "shotId": "s04",
+      "lineIds": [],
+      "startSec": 8.0,
+      "endSec": 10.0,
+      "role": "payoff",
+      "scene": {
+        "component": "TitleCard",
+        "props": {
+          "title": "テスト完了",
+          "variant": "ending",
+          "creditNotice": "スキャフォールド検証用フィクスチャ"
+        }
+      },
+      "assets": [],
+      "sfx": [{ "cue": "pop.wav", "atSec": 9.0 }],
+      "intent": "締めのタイトルを見せる"
+    }
+  ]
+}

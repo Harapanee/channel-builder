@@ -1,0 +1,32 @@
+{
+  "name": "channel-video-factory",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Channel Video Factory scaffold (Stage 1) — Remotion + TypeScript video production pipeline.",
+  "scripts": {
+    "studio": "remotion studio src/remotion/Root.tsx",
+    "render:test": "remotion render src/remotion/Root.tsx Episode episodes/ep000-test/out/preview.mp4",
+    "validate": "tsx src/pipeline/validate-shots.ts",
+    "parse-script": "tsx src/pipeline/parse-script.ts",
+    "tts": "tsx src/pipeline/tts.ts",
+    "typecheck": "tsc --noEmit",
+    "qa": "tsx src/pipeline/qa.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.485",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.485",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2"
+  }
+}

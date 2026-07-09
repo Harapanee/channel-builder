@@ -1,0 +1,42 @@
+{
+  "episodeId": "ep000-test",
+  "_note": "テンプレ標準ライブラリにはキャラPNGが無いため、この見本は文字+矢印のみ(§13の固定構造の骨組み)。本番では各 variant に中央配置の character を追加し、矢印の toXPct/toYPct を主人公の体の縁へ合わせる。契約は .claude/agents/publisher.md。",
+  "variants": [
+    {
+      "id": "1",
+      "strategy": "situation",
+      "background": "paper",
+      "_character": "本番: 中央の主人公をここに入れる → { assetId: char_..., xPct: 50, yPct: 56, heightPct: 90, flip: false }",
+      "lines": [
+        { "text": "全員敵", "sizePct": 19, "color": "red", "xPct": 21, "yPct": 26, "rotateDeg": -5 }
+      ],
+      "accents": [
+        { "type": "arrow", "fromXPct": 25, "fromYPct": 36, "toXPct": 46, "toYPct": 60, "color": "red" }
+      ]
+    },
+    {
+      "id": "2",
+      "strategy": "number",
+      "background": "paper",
+      "_character": "本番: 中央の主人公をここに入れる(表情バリアント違い) → { assetId: char_..., xPct: 50, yPct: 56, heightPct: 90 }",
+      "lines": [
+        { "text": "10倍差", "sizePct": 18, "color": "red", "xPct": 22, "yPct": 27, "rotateDeg": -4 }
+      ],
+      "accents": [
+        { "type": "arrow", "fromXPct": 26, "fromYPct": 37, "toXPct": 46, "toYPct": 60, "color": "red" }
+      ]
+    },
+    {
+      "id": "3",
+      "strategy": "irony",
+      "background": "paper",
+      "_character": "本番: 中央の主人公をここに入れる(皮肉が映る表情) → { assetId: char_..., xPct: 50, yPct: 56, heightPct: 90 }",
+      "lines": [
+        { "text": "実は詰み", "sizePct": 17, "color": "red", "xPct": 22, "yPct": 26, "rotateDeg": -4 }
+      ],
+      "accents": [
+        { "type": "arrow", "fromXPct": 26, "fromYPct": 37, "toXPct": 45, "toYPct": 60, "color": "red" }
+      ]
+    }
+  ]
+}

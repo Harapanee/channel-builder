@@ -1,0 +1,12 @@
+{
+  "_comment": "声の選定(SKILL.md ステップ3 / voice-and-assets-guide.md)で確定した値で埋め、channel/voice.json として保存する。承認後の変更はチャンネルの同一性を壊すため原則禁止。speedScale はユーザーが試聴したサンプルと同じ値に固定すること。",
+  "provider": "voicevox",
+  "speakerId": null,
+  "speakerName": "確定した話者名(例: 話者名(ノーマル))",
+  "speedScale": null,
+  "pitchScale": null,
+  "intonationScale": null,
+  "defaultPauseAfterLineSec": null,
+  "_pauseLengthScale_comment": "省略可。句読点ポーズ長の倍率(省略時はtts.tsのデフォルト0.5)。長めの間が欲しいチャンネルのみ明示する",
+  "creditNotice": "音声プロバイダの利用規約で要求されるクレジット文言(例: VOICEVOX:<話者名>)。エンディングに必ず表示する"
+}

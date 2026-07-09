@@ -1,0 +1,314 @@
+{
+  "assets": [
+    {
+      "assetId": "se_zukkoke",
+      "kind": "se",
+      "subject": "pratfall",
+      "variant": "1",
+      "file": "audio/se/zukkoke.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_gaan_1",
+      "kind": "se",
+      "subject": "impact",
+      "variant": "gaan-1",
+      "file": "audio/se/gaan-1.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_gaan_2",
+      "kind": "se",
+      "subject": "impact",
+      "variant": "gaan-2",
+      "file": "audio/se/gaan-2.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_don",
+      "kind": "se",
+      "subject": "impact",
+      "variant": "don",
+      "file": "audio/se/don.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_jaan",
+      "kind": "se",
+      "subject": "reveal",
+      "variant": "jaan",
+      "file": "audio/se/jaan.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_jajaan",
+      "kind": "se",
+      "subject": "reveal",
+      "variant": "jajaan",
+      "file": "audio/se/jajaan.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_hyu_fall",
+      "kind": "se",
+      "subject": "fall",
+      "variant": "hyu",
+      "file": "audio/se/hyu-fall.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_pop_1",
+      "kind": "se",
+      "subject": "pop",
+      "variant": "1",
+      "file": "audio/se/pop-1.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_pop_2",
+      "kind": "se",
+      "subject": "pop",
+      "variant": "2",
+      "file": "audio/se/pop-2.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_pop_3_nyu",
+      "kind": "se",
+      "subject": "pop",
+      "variant": "3-character-appear",
+      "file": "audio/se/pop-3-nyu.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_chin",
+      "kind": "se",
+      "subject": "death-end",
+      "variant": "chin",
+      "file": "audio/se/chin.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_dodo_tension",
+      "kind": "se",
+      "subject": "crowd-tension",
+      "variant": "dodo",
+      "file": "audio/se/dodo-tension.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_pikeen",
+      "kind": "se",
+      "subject": "inspiration",
+      "variant": "pikeen",
+      "file": "audio/se/pikeen.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_taiko_don",
+      "kind": "se",
+      "subject": "japanese-oneshot",
+      "variant": "taiko-don",
+      "file": "audio/se/taiko-don.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_taiko_dodon",
+      "kind": "se",
+      "subject": "japanese-oneshot",
+      "variant": "taiko-dodon",
+      "file": "audio/se/taiko-dodon.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_shakuhachi",
+      "kind": "se",
+      "subject": "japanese-oneshot",
+      "variant": "shakuhachi",
+      "file": "audio/se/shakuhachi.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_koto",
+      "kind": "se",
+      "subject": "japanese-oneshot",
+      "variant": "koto",
+      "file": "audio/se/koto.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_hyoushigi",
+      "kind": "se",
+      "subject": "japanese-oneshot",
+      "variant": "hyoushigi",
+      "file": "audio/se/hyoushigi.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_whoosh_1",
+      "kind": "se",
+      "subject": "transition",
+      "variant": "whoosh-1",
+      "file": "audio/se/whoosh-1.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_whoosh_2",
+      "kind": "se",
+      "subject": "transition",
+      "variant": "whoosh-2",
+      "file": "audio/se/whoosh-2.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_whoosh_3",
+      "kind": "se",
+      "subject": "transition",
+      "variant": "whoosh-3-dash",
+      "file": "audio/se/whoosh-3.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_silence_break_bell",
+      "kind": "se",
+      "subject": "silence-break",
+      "variant": "bell",
+      "file": "audio/se/silence-break-bell.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_tsukkomi",
+      "kind": "se",
+      "subject": "comedy-reaction",
+      "variant": "tsukkomi",
+      "file": "audio/se/tsukkomi.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "se_manuke",
+      "kind": "se",
+      "subject": "comedy-reaction",
+      "variant": "manuke",
+      "file": "audio/se/manuke.mp3",
+      "source": "licensed",
+      "license": "soundeffect-lab",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "bgm_wafu_comical",
+      "kind": "bgm",
+      "subject": "wafu-comical",
+      "variant": "loop",
+      "file": "audio/bgm/bgm-wafu-comical.mp3",
+      "source": "licensed",
+      "license": "dova-syndrome",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "bgm_tense_serious",
+      "kind": "bgm",
+      "subject": "tense-serious",
+      "variant": "loop",
+      "file": "audio/bgm/bgm-tense-serious.mp3",
+      "source": "licensed",
+      "license": "dova-syndrome",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "japan-doodle",
+      "kind": "map",
+      "subject": "japan",
+      "variant": "base",
+      "file": "maps/japan-doodle.svg",
+      "source": "code_generated",
+      "license": "original",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "char_you_modern_neutral",
+      "kind": "character",
+      "subject": "you-modern",
+      "variant": "neutral",
+      "file": "characters/you-modern/neutral.png",
+      "source": "ai_image",
+      "license": "generated",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "char_you_modern_walking_on_phone",
+      "kind": "character",
+      "subject": "you-modern",
+      "variant": "walking-on-phone",
+      "file": "characters/you-modern/walking-on-phone.png",
+      "source": "ai_image",
+      "license": "generated",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "char_you_modern_hit_launched",
+      "kind": "character",
+      "subject": "you-modern",
+      "variant": "hit-launched",
+      "file": "characters/you-modern/hit-launched.png",
+      "source": "ai_image",
+      "license": "generated",
+      "approvedBy": "human"
+    },
+    {
+      "assetId": "char_you_modern_soul",
+      "kind": "character",
+      "subject": "you-modern",
+      "variant": "soul",
+      "file": "characters/you-modern/soul.png",
+      "source": "ai_image",
+      "license": "generated",
+      "approvedBy": "human"
+    }
+  ]
+}

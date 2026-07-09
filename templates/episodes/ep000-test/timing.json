@@ -1,0 +1,36 @@
+{
+  "episodeId": "ep000-test",
+  "totalDurationSec": 10.0,
+  "lines": [
+    {
+      "lineId": "L01",
+      "text": "おはようございます、これはテストナレーションです。",
+      "startSec": 0.0,
+      "endSec": 3.4,
+      "phrases": [
+        { "text": "おはようございます", "startSec": 0.0, "endSec": 1.6 },
+        { "text": "これはテストナレーションです", "startSec": 1.8, "endSec": 3.4 }
+      ]
+    },
+    {
+      "lineId": "L02",
+      "text": "台本パーサとショット検証のためのフィクスチャです。",
+      "startSec": 3.4,
+      "endSec": 6.0,
+      "phrases": [
+        { "text": "台本パーサとショット検証のための", "startSec": 3.4, "endSec": 5.0 },
+        { "text": "フィクスチャです", "startSec": 5.1, "endSec": 6.0 }
+      ]
+    },
+    {
+      "lineId": "L03",
+      "text": "最後に少しだけ余白を残して終わります。",
+      "startSec": 6.0,
+      "endSec": 8.0,
+      "phrases": [
+        { "text": "最後に少しだけ余白を残して", "startSec": 6.0, "endSec": 7.2 },
+        { "text": "終わります", "startSec": 7.3, "endSec": 8.0 }
+      ]
+    }
+  ]
+}

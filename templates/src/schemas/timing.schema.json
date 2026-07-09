@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://channel-video-factory.local/schemas/timing.schema.json",
+  "title": "TimingFile",
+  "description": "仕様書 §5.5。TTS実行(tts.ts)の出力。行・フレーズ単位のタイムスタンプ。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "episodeId",
+    "totalDurationSec",
+    "lines"
+  ],
+  "properties": {
+    "episodeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "totalDurationSec": {
+      "type": "number",
+      "minimum": 0
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lineTiming"
+      }
+    }
+  },
+  "$defs": {
+    "lineTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lineId",
+        "text",
+        "startSec",
+        "endSec",
+        "phrases"
+      ],
+      "properties": {
+        "lineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "startSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "phrases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/phraseTiming"
+          }
+        },
+        "displayText": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "phraseTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "startSec",
+        "endSec"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "startSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "displayText": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

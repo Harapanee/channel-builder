@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://channel-video-factory.local/schemas/library.schema.json",
+  "title": "LibraryFile",
+  "description": "仕様書 §5.7。assets/library.json(素材台帳)。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assets"],
+  "properties": {
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/asset" }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "kind",
+        "subject",
+        "variant",
+        "file",
+        "source",
+        "license",
+        "approvedBy"
+      ],
+      "properties": {
+        "assetId": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["character", "prop", "place", "map", "background", "se", "bgm"]
+        },
+        "subject": { "type": "string" },
+        "variant": { "type": "string" },
+        "file": { "type": "string", "minLength": 1 },
+        "source": {
+          "enum": [
+            "ai_image",
+            "code_generated",
+            "public_domain",
+            "licensed",
+            "user_provided"
+          ]
+        },
+        "license": { "type": "string" },
+        "approvedBy": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

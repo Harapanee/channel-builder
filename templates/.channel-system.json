@@ -1,0 +1,11 @@
+{
+  "projectType": "channel-video-factory",
+  "schemaVersion": "1.1",
+  "channelId": "{{CHANNEL_ID}}",
+  "channelName": "{{CHANNEL_NAME}}",
+  "stage": 1,
+  "status": "building",
+  "systemVersion": "0.1.0",
+  "approvedEpisodes": [],
+  "metrics": []
+}

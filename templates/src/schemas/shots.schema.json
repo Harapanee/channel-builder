@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://channel-video-factory.local/schemas/shots.schema.json",
+  "title": "ShotsFile",
+  "description": "仕様書 §5.6。Remotionコンポジションはこのファイルだけを読んで映像を構築する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["episodeId", "fps", "resolution", "narration", "shots"],
+  "properties": {
+    "episodeId": { "type": "string", "minLength": 1 },
+    "fps": { "const": 30 },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w", "h"],
+      "properties": {
+        "w": { "const": 1920 },
+        "h": { "const": 1080 }
+      }
+    },
+    "narration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "durationSec"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "durationSec": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "bgm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "gainDb"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "gainDb": { "type": "number" }
+      }
+    },
+    "bgmTracks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "startSec", "endSec", "gainDb"],
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "startSec": { "type": "number", "minimum": 0 },
+          "endSec": { "type": "number", "exclusiveMinimum": 0 },
+          "gainDb": { "type": "number" }
+        }
+      }
+    },
+    "shots": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shot" }
+    }
+  },
+  "$defs": {
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shotId", "lineIds", "startSec", "endSec", "role", "scene", "assets"],
+      "properties": {
+        "shotId": { "type": "string", "minLength": 1 },
+        "lineIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "startSec": { "type": "number", "minimum": 0 },
+        "endSec": { "type": "number", "minimum": 0 },
+        "role": {
+          "enum": [
+            "hook",
+            "show",
+            "explain",
+            "contrast",
+            "foreshadow",
+            "withhold",
+            "reveal",
+            "payoff",
+            "gag",
+            "reframe"
+          ]
+        },
+        "scene": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["component", "props"],
+          "properties": {
+            "component": { "type": "string", "minLength": 1 },
+            "props": {
+              "type": "object",
+              "description": "Record<string, unknown> 契約のため中身は意図的に検証しない"
+            }
+          }
+        },
+        "assets": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sfx": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cue", "atSec"],
+            "properties": {
+              "cue": { "type": "string", "minLength": 1 },
+              "atSec": { "type": "number", "minimum": 0 },
+              "gainDb": { "type": "number" }
+            }
+          }
+        },
+        "intent": { "type": "string" }
+      }
+    }
+  }
+}
