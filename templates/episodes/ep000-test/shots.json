@@ -31,7 +31,7 @@
       "startSec": 6.0,
       "endSec": 8.0,
       "role": "gag",
-      "scene": { "component": "SpeechBubble", "props": {} },
+      "scene": { "component": "SpeechBubble", "props": { "text": "テストです" } },
       "assets": [],
       "sfx": [{ "cue": "pop.wav", "atSec": 6.5, "gainDb": -3 }],
       "intent": "軽いギャグを入れる"

@@ -1,11 +1,11 @@
 ---
 name: channel-builder
-description: 現在のディレクトリを、特定YouTubeチャンネル専用の動画制作システム(Channel Video Factory)へ変換する。新しいチャンネルを立ち上げるとき、または既存のFactoryディレクトリの状態確認・改修時に使う。「/channel-builder」で起動。
+description: ファクトリールート(現在のディレクトリ)の直下に、特定YouTubeチャンネル専用の動画制作システム(Channel Video Factory)のチャンネルフォルダを新規構築する。1つのファクトリーに複数チャンネルを並べられる。新チャンネルの立ち上げ、既存チャンネルの状態確認・改修時に使う。「/channel-builder」で起動。
 ---
 
 # /channel-builder — Channel Video Factory 構築スキル
 
-このスキルは動画を直接作らない。**ヒアリングを通じてチャンネル専用の制作システム(教義・契約・パイプライン・エージェント)を現在のディレクトリへ構築する**。構築後の動画制作は、生成されたプロジェクト内の `/video-create` が担う。
+このスキルは動画を直接作らない。**ヒアリングを通じてチャンネル専用の制作システム(教義・契約・パイプライン・エージェント)のチャンネルフォルダをファクトリールート直下に構築する**。構築後の動画制作は、生成されたプロジェクト内の `/video-create` が担う。
 
 ## 大原則
 
@@ -16,20 +16,22 @@ description: 現在のディレクトリを、特定YouTubeチャンネル専用
 
 ## 起動時: モード判定
 
-ルートの `.channel-system.json` を読む。
+カレントディレクトリの `.channel-system.json` を読む。
 
-| 状態 | モード | 動作 |
+| カレントの状態 | モード | 動作 |
 |---|---|---|
-| ファイルなし | **Build** | 下記のBuildプロセス |
-| status: building / pilot_iterating | **Refine** | 未完了ステップの特定と再開(episode.json / .channel-system.json の状態から) |
-| status: approved | **Operate** | 状態を要約表示し、`/video-create` / `/channel-refine` へ案内 |
+| `.channel-system.json` あり(=チャンネルフォルダ内) | status: building / pilot_iterating → **Refine**、status: approved → **Operate** | 従来どおり |
+| なし(=ファクトリールート) | **Factory** | 直下の `*/.channel-system.json` をスキャンしチャンネル一覧(channelName / status / systemVersion)を提示。ユーザーの意図に応じて: 新規構築→Build / 既存の確認・改修→該当フォルダで再起動するよう案内 |
+
+Buildは**カレントを変換しない**。直下に新しいチャンネルフォルダを作り、その中へ構築する。
 
 ## ディレクトリ保護(Buildの前に必ず)
 
-- Gitリポジトリか確認(なければ `git init` を提案)。未コミット変更・既存の package.json / CLAUDE.md / .claude/ / src/ を検査
-- **既存ファイルを上書きしない**。衝突がある場合は差分を提示してユーザーに確認、または新しいサブディレクトリへの構築を提案
-- `.channel-system.json` が既にあるディレクトリを再初期化しない
-- `.env` には触れない(APIキーの新規作成が必要な場合はユーザーに依頼する)
+- インタビューでchannelId確定後、フォルダ名(既定: channelId)をユーザーに確認する
+- 新フォルダは「存在しない」か「空」であること。既存の非空フォルダへの構築は拒否する
+- scaffold・git init・npm install はすべて新フォルダ内で行う(チャンネルごとに独立リポジトリ)
+- scaffold完了時にファクトリールートを整備する: `.factory.json` がなければ `{"projectType":"channel-video-factory-root","schemaVersion":"1.0","name":"<ルートのフォルダ名>"}` で作成し、ルートが gitリポジトリなら `.gitignore` に新チャンネルフォルダ名の行を追記する
+- ルートおよび他チャンネルの `.env` には触れない(APIキーの新規作成が必要な場合はユーザーに依頼する)
 
 ## Build プロセス
 
