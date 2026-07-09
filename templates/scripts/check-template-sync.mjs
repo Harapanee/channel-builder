@@ -18,6 +18,7 @@ const TPL = path.join(
   process.env.HOME,
   ".claude/skills/channel-builder/templates"
 );
+const BUILDER_REPO = path.join(process.env.HOME, ".claude/skills/channel-builder");
 
 // 完全一致必須(SRCが正)
 const IDENTICAL = [
@@ -159,6 +160,32 @@ const walk = (dir) => {
   }
 };
 walk(TPL);
+
+// channel-builderのgit push状態を検証(system-refineでの同期漏れ防止)
+function checkBuilderRepoPushed() {
+  const opts = { cwd: BUILDER_REPO, stdio: ["ignore", "pipe", "pipe"] };
+  try {
+    execSync("git rev-parse --is-inside-work-tree", opts);
+  } catch {
+    fail(`channel-builderがgitリポジトリではない: ${BUILDER_REPO}`);
+    return;
+  }
+  const status = execSync("git status --porcelain", opts).toString();
+  if (status.trim() !== "") {
+    fail("channel-builderに未コミットの変更が残っている(git add -A && git commit が必要)");
+  }
+  try {
+    execSync("git fetch origin", opts);
+  } catch (e) {
+    fail(`channel-builderのgit fetchに失敗(リモート未設定/認証切れ?): ${e.message}`);
+    return;
+  }
+  const ahead = execSync("git rev-list --count @{u}..HEAD", opts).toString().trim();
+  if (ahead !== "0") {
+    fail(`channel-builderにpush漏れのコミットが${ahead}件ある(git push が必要)`);
+  }
+}
+checkBuilderRepoPushed();
 
 if (failures === 0) {
   console.log(

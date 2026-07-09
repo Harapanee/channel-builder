@@ -77,7 +77,6 @@ export type WorldPlace = { x: number; y: number; label: string };
 export const GAZETTEER: Record<string, WorldPlace> = {
   "rome": { x: 534.7, y: 143.3, label: "ローマ" },
   "genoa": { x: 524.7, y: 133.4, label: "ジェノヴァ" },
-  "venice": { x: 534.3, y: 129.3, label: "ヴェネツィア" },
   "athens": { x: 565.8, y: 158.8, label: "アテネ" },
   "constantinople": { x: 580.6, y: 146.9, label: "コンスタンティノープル" },
   "alexandria": { x: 583.1, y: 185.8, label: "アレクサンドリア" },
@@ -103,8 +102,6 @@ export const GAZETTEER: Record<string, WorldPlace> = {
   "caribbean": { x: 291.7, y: 248.2, label: "カリブ海" },
   "cuba": { x: 285.3, y: 224.3, label: "キューバ" },
   "hispaniola": { x: 302.8, y: 234.3, label: "イスパニョーラ島" },
-  "jamaica": { x: 286.1, y: 237.8, label: "ジャマイカ" },
-  "san_salvador": { x: 293.1, y: 214.4, label: "サンサルバドル" },
   "mexico": { x: 224.7, y: 232.7, label: "メキシコ" },
   "peru": { x: 300.0, y: 363.3, label: "ペルー(クスコ)" },
   "brazil": { x: 369.4, y: 349.4, label: "ブラジル" },

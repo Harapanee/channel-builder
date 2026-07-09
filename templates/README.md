@@ -107,7 +107,7 @@ mkdir my-new-channel && cd my-new-channel && claude
 | 各動画の進捗 | `episodes/<ep>/episode.json`(researched→scripted→voiced→storyboarded→implemented→qa_passed→reviewed→final) |
 | 恒久ルールの変更履歴 | `CHANGELOG.md` |
 | 機械検査・AIレビュー | `episodes/<ep>/review/` |
-| **テンプレート同期の健全性** | `node scripts/check-template-sync.mjs`(全緑=次のチャンネルに最新が入る) |
+| **テンプレート同期の健全性** | `node scripts/check-template-sync.mjs`(全緑=次のチャンネルに最新が入る。channel-builderのcommit/push漏れも検出) |
 
 ---
 
@@ -140,7 +140,7 @@ fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(
 | 素材の背景が消えない | 自動判別(緑=クロマキー/白=flood-fill)。旧素材はしきい値190 |
 | サムネ生成が「composition not found」 | `render-thumbs.ts` を使う(CLI直叩き禁止 — メモリ逼迫時に不安定) |
 | 大レンダリングが遅い/不安定 | 他プロジェクトのRemotionと同時実行を避ける(メモリ競合) |
-| テンプレが古い気がする | `node scripts/check-template-sync.mjs` → NGが出たら /system-refine の手順3-4 |
+| テンプレが古い気がする | `node scripts/check-template-sync.mjs` → NGが出たら /system-refine の手順5-7(テンプレ同期→channel-builderへcommit/push→チェッカー再実行) |
 
 ---
 
