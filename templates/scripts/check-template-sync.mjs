@@ -180,7 +180,13 @@ function checkBuilderRepoPushed() {
     fail(`channel-builderのgit fetchに失敗(リモート未設定/認証切れ?): ${e.message}`);
     return;
   }
-  const ahead = execSync("git rev-list --count @{u}..HEAD", opts).toString().trim();
+  let ahead;
+  try {
+    ahead = execSync("git rev-list --count @{u}..HEAD", opts).toString().trim();
+  } catch {
+    fail("channel-builderに上流追跡ブランチが無い(git push -u origin main が必要?)");
+    return;
+  }
   if (ahead !== "0") {
     fail(`channel-builderにpush漏れのコミットが${ahead}件ある(git push が必要)`);
   }
