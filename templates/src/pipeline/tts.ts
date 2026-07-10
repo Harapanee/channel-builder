@@ -113,6 +113,68 @@ function scalePauseMoras(aq: AudioQuery, scale: number): void {
   }
 }
 
+/**
+ * ショート(shorts/配下)のときだけ、フォーマット契約の speech セクションで
+ * voice.json 由来の speedScale / pauseLengthScale を上書きする。
+ * 経路: <dir>/short.json の formatId → channel/short-formats/<formatId>.json の
+ * speech.{speedScale,pauseLengthScale}。エピソード経路(episodes/配下)では
+ * 一切読まない。short.json / フォーマットファイルの欠損・speech無しは黙って素通し。
+ * voice.json は変更禁止のため、ここでメモリ上の voice を上書きする。
+ */
+function applyShortFormatSpeechOverride(
+  voice: VoiceConfig,
+  episodeAbsDir: string,
+  projectRoot: string
+): void {
+  const rel = path.relative(projectRoot, episodeAbsDir);
+  const isShort = rel === "shorts" || rel.startsWith(`shorts${path.sep}`);
+  if (!isShort) return;
+
+  const shortJsonPath = path.join(episodeAbsDir, "short.json");
+  if (!existsSync(shortJsonPath)) return;
+  let formatId: string | undefined;
+  try {
+    const short = JSON.parse(readFileSync(shortJsonPath, "utf-8")) as {
+      formatId?: string;
+    };
+    formatId = short.formatId;
+  } catch {
+    return;
+  }
+  if (!formatId) return;
+
+  const formatPath = path.join(
+    projectRoot,
+    "channel",
+    "short-formats",
+    `${formatId}.json`
+  );
+  if (!existsSync(formatPath)) return;
+  let speech: { speedScale?: number; pauseLengthScale?: number } | undefined;
+  try {
+    const fmt = JSON.parse(readFileSync(formatPath, "utf-8")) as {
+      speech?: { speedScale?: number; pauseLengthScale?: number };
+    };
+    speech = fmt.speech;
+  } catch {
+    return;
+  }
+  if (!speech) return;
+
+  const parts: string[] = [];
+  if (typeof speech.speedScale === "number") {
+    voice.speedScale = speech.speedScale;
+    parts.push(`speedScale=${speech.speedScale}`);
+  }
+  if (typeof speech.pauseLengthScale === "number") {
+    voice.pauseLengthScale = speech.pauseLengthScale;
+    parts.push(`pauseLengthScale=${speech.pauseLengthScale}`);
+  }
+  if (parts.length > 0) {
+    console.log(`speech override: ${parts.join(" ")} (${formatId})`);
+  }
+}
+
 // ---- VOICEVOX HTTP クライアント -----------------------------------------
 
 async function fetchAudioQuery(
@@ -489,6 +551,7 @@ export async function runTts(
   const narrationDir = path.join(episodeAbsDir, "narration");
 
   const voice = JSON.parse(readFileSync(voicePath, "utf-8")) as VoiceConfig;
+  applyShortFormatSpeechOverride(voice, episodeAbsDir, projectRoot);
   const parsed = parseScriptFile(scriptPath);
   if (parsed.lines.length === 0) {
     throw new TtsError(`${scriptPath} に行(## [Lxx])がありません`);
@@ -722,10 +785,13 @@ export async function runTts(
       startSec: startSec + p.startSec,
       endSec: startSec + p.endSec,
     }));
+    // 字幕非表示(- subtitle: off)。画面内テキストと重複する行の字幕を描画から外す。
+    const noSubtitle = r.line.hints?.subtitle === "off";
     return {
       lineId: r.line.lineId,
       text: r.line.text,
       ...(displayRaw ? { displayText: displayRaw } : {}),
+      ...(noSubtitle ? { noSubtitle: true } : {}),
       startSec,
       endSec,
       phrases,
@@ -777,6 +843,7 @@ export async function runReadingsOnly(
   const narrationDir = path.join(episodeAbsDir, "narration");
 
   const voice = JSON.parse(readFileSync(voicePath, "utf-8")) as VoiceConfig;
+  applyShortFormatSpeechOverride(voice, episodeAbsDir, projectRoot);
   const parsed = parseScriptFile(scriptPath);
   if (parsed.lines.length === 0) {
     throw new TtsError(`${scriptPath} に行(## [Lxx])がありません`);

@@ -60,6 +60,11 @@
 
 fact-checker / script-director / **script-reviewer(台本合否)** / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット)
 
+# ショート動画の運用注記
+
+- 台本行に `- subtitle: off` を付けると、画面文字と重複するその行の字幕を非表示にできる(縦型の字幕は自動で大きく中央やや下に表示される)
+- `channel/short-formats/<formatId>.json` にトップレベル `speech: { speedScale, pauseLengthScale }` を追加すると、そのフォーマットのショートだけ本編と異なる話速・句読点ポーズにできる(未指定時は `channel/voice.json` 準拠)
+
 # チャンネル署名(全動画共通)
 
 - 冒頭はトラック転生オープニング(you-modern+TruckIsekai、bible §4)

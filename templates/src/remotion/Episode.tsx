@@ -141,15 +141,20 @@ const ShotRenderer: React.FC<{ shot: Shot; debug?: boolean }> = ({
 
 const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
   const fontFamily = useDoodleFont();
   const tSec = frame / fps;
+  // 縦型ショート(height > width)だけ字幕を大きく・中央少し下へ寄せる。
+  // 横型(本編1920×1080)は従来スタイルを一切変えない。
+  const isVertical = height > width;
 
   // 字幕の表示窓: 発話時間ちょうどで消すと短い句が読み切れない。
   // 次のフレーズ開始まで余韻として残し(上限LINGER)、短い句には最低表示時間を保証する。
   const LINGER_SEC = 1.2;
   const MIN_READ_SEC = 1.6;
   const allPhrases = timing.lines
+    // `- subtitle: off` の行(画面内テキストと重複)は字幕対象から除外する
+    .filter((line) => !line.noSubtitle)
     .flatMap((line) => line.phrases)
     .sort((a, b) => a.startSec - b.startSec)
     .map((phrase, i, arr) => {
@@ -167,6 +172,33 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
 
   if (!active) {
     return null;
+  }
+
+  if (isVertical) {
+    // 縦型ショート専用: 垂直中央より少し下(中心が高さの約60%)・幅基準の大きめ文字。
+    return (
+      <AbsoluteFill>
+        <div
+          style={{
+            position: "absolute",
+            top: "60%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "rgba(27, 26, 23, 0.82)",
+            color: PALETTE.paper,
+            fontSize: Math.round(width * 0.058),
+            padding: "12px 30px",
+            borderRadius: 14,
+            fontFamily: `${fontFamily}, ${DOODLE_FONT_STACK}`,
+            maxWidth: "88%",
+            textAlign: "center",
+            letterSpacing: "0.03em",
+          }}
+        >
+          {active.displayText ?? active.text}
+        </div>
+      </AbsoluteFill>
+    );
   }
 
   return (

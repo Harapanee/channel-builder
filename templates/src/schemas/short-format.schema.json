@@ -10,6 +10,14 @@
     "formatId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
     "name": { "type": "string", "minLength": 1 },
     "targetDurationSec": { "type": "number", "exclusiveMinimum": 0, "maximum": 180 },
+    "speech": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "speedScale": { "type": "number", "minimum": 0.5, "maximum": 2 },
+        "pauseLengthScale": { "type": "number", "minimum": 0.1, "maximum": 2 }
+      }
+    },
     "segments": {
       "type": "array",
       "minItems": 2,

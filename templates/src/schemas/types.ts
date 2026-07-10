@@ -65,6 +65,8 @@ export type LineTiming = {
   text: string;
   /** 字幕表示用テキスト(- display: 注釈由来、行全体) */
   displayText?: string;
+  /** 字幕非表示。`- subtitle: off` 注釈由来。画面内テキストと重複する行に使う */
+  noSubtitle?: boolean;
   startSec: number;
   endSec: number;
   phrases: PhraseTiming[];

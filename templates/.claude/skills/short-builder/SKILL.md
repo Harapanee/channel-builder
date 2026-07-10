@@ -25,7 +25,7 @@ description: このチャンネルのショート動画フォーマット(構造
 
 ## 生成
 
-- **契約**: `channel/short-formats/<formatId>.json`(short-format.schema.json 準拠。formatId は英小文字ケバブケースでファイル名と一致させる)
+- **契約**: `channel/short-formats/<formatId>.json`(short-format.schema.json 準拠。formatId は英小文字ケバブケースでファイル名と一致させる)。必要ならトップレベルに `"speech": { "speedScale": 1.15, "pauseLengthScale": 0.33 }` を追加して、本編と別の話速・句読点ポーズを指定できる(未指定は channel/voice.json 準拠)
 - **教義**: `channel/short-formats/<formatId>.md`。章立て:
   1. 概要(型のコンセプト)
   2. 各セグメントの意図(segments の id ごとに)

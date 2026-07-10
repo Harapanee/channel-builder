@@ -62,6 +62,9 @@
         "displayText": {
           "type": "string",
           "minLength": 1
+        },
+        "noSubtitle": {
+          "type": "boolean"
         }
       }
     },

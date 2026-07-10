@@ -19,9 +19,11 @@ model: opus
 
 ## 手順
 1. **セグメント割当**: 契約の segments 各段に、教義のネタ選定基準に従って research.md / 本編 script.md からネタを割り当てる。climax(第1位相当)には最も強いネタを置く
-2. **時間予算**: speedScale=1.05 なら約6.3文字/秒。各セグメント targetSec × 6.3 × 0.9 を上限文字数として**先に計算してから**書く(句読点込み)
+2. **時間予算**: 実効speedScale(フォーマット契約の speech.speedScale があればそれ、なければ voice.json)から文字/秒を計算する(speedScale 1.05 ≒ 6.3文字/秒に比例換算)。各セグメント targetSec × 文字/秒 × 0.9 を上限文字数として**先に計算してから**書く(句読点込み)
 3. **執筆**: 仕様書§5.4形式(`## [Lxx] beat` + 引用ブロック + delivery / pause_after_sec 注釈)。beat名にセグメントidを使い、どの段の行かを明示する(例 `## [L03] rank2`)
 4. **縦型で成立する語り**: 画面を前提にした語り(「この地図を見ると」等)を避け、聞くだけで分かる文にする。冒頭1文で「何のランキング/お題か」を宣言する
+5. **語彙は中学生レベル**: 漢語の難語を使わない(教義の禁止例参照)。「中学生が聞いて一発で分かるか」で全行を検査する
+6. **画面文字と字幕の住み分け**: 冒頭タイトル行・順位発表行には `- subtitle: off` 注釈を付ける(画面に同じ文言が大きく出るため)。RankCardの見出し文言は「第N位。<見出し>。」の形で必ずナレーションでそのまま読み上げる(読まれない画面文字を作らない)
 
 ## セルフチェック(結果を報告する)
 - [ ] 総文字数からの尺概算が targetDurationSec の ±10% 以内
@@ -40,6 +42,7 @@ model: opus
 1. **セグメント→ショット割付**: 各セグメント1〜3ショット。各順位の頭には必ず RankCard を置く
 2. **コンポーネント**: コア6種(DoodleCharacter / DoodleMap / SpeechBubble / DangerCircle / ComparisonSplit / TitleCard)+ショート用(RankCard / ShortTitleCard)。一回限りの表現は `src/scenes/shorts/<shortId>/<Name>.tsx` に実装し、`src/scenes/registry.ts` の customRegistry へ登録して `"custom:<Name>"` で参照する
 3. **縦型の作法**: resolution は 1080×1920 / fps 30。横並び前提の構図は縦積みに再設計する。文字サイズは幅基準で決める。**上下各12%はYouTube UIと重なるため重要情報を置かない**
+3.5 **動きと情報量**: 全ショットにモーションを入れる(入退場・変化・寄り引き)。静止キャラ+スタンプのみのショットを2連続させない。絵は音声の繰り返しではなく追加情報(数・規模・関係・変化)を与える。冒頭hookはお題文言をタイトルとして大きく字面表示する
 4. **素材**: `assets/library.json` の approvedBy: "human" のみを assetId で参照する。不足があれば「不足素材リスト」を報告して**停止**する(ショート工程内でAI画像を生成しない)
 5. **締め**: 最終ショットは ShortTitleCard variant: "ending" とし、`channel/voice.json` の creditNotice を必ず含める
 6. interpolate/spring系に **Infinity を渡さない**(実行時クラッシュ。レンダー前ゲートが遮断する)
