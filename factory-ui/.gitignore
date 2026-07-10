@@ -1,0 +1,4 @@
+node_modules/
+web/dist/
+jobs/
+server.log
