@@ -7,11 +7,13 @@
   "scripts": {
     "studio": "remotion studio src/remotion/Root.tsx",
     "render:test": "remotion render src/remotion/Root.tsx Episode episodes/ep000-test/out/preview.mp4",
+    "render:test:short": "remotion render src/remotion/Root.tsx Short shorts/sh000-test/out/preview.mp4",
     "validate": "tsx src/pipeline/validate-shots.ts",
     "parse-script": "tsx src/pipeline/parse-script.ts",
     "tts": "tsx src/pipeline/tts.ts",
     "typecheck": "tsc --noEmit",
-    "qa": "tsx src/pipeline/qa.ts"
+    "qa": "tsx src/pipeline/qa.ts",
+    "validate:short-format": "tsx src/pipeline/validate-short-format.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

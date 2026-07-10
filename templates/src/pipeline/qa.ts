@@ -17,7 +17,7 @@ import type { ShotsFile } from "../schemas/types";
  *  2. silence         ffmpeg silencedetect で2.0秒超の無音区間を検出。0件でpass
  *  3. duration_match  動画実長とnarration.durationSecの差が0.5秒以内
  *  4. loudness        ffmpeg loudnorm(計測モード)の統合ラウドネスが-14 LUFS ±1
- *  5. resolution_fps  ffprobeで1920x1080 / 30fps
+ *  5. resolution_fps  ffprobeで shots.json の resolution / 30fps
  *  6. assets_resolved validate-shots.ts の検証(スキーマ+ビジネスルール全項目)を
  *                     再実行し、レンダリング前検査が今も通ることを再確認する
  *  7. frozen_video    ffmpeg freezedetect で3.0秒超の完全静止区間を検出。0件でpass
@@ -63,8 +63,6 @@ const FROZEN_MIN_DURATION_SEC = 3.0;
 const LOUDNESS_TARGET_LUFS = -14;
 const LOUDNESS_TOLERANCE_LUFS = 1;
 const DURATION_TOLERANCE_SEC = 0.5;
-const EXPECTED_WIDTH = 1920;
-const EXPECTED_HEIGHT = 1080;
 const EXPECTED_FPS = 30;
 const FPS_TOLERANCE = 0.05;
 
@@ -366,7 +364,10 @@ type FfprobeStreamJson = {
   streams: { width?: number; height?: number; r_frame_rate?: string }[];
 };
 
-async function checkResolutionFps(videoPath: string): Promise<QaCheckResult> {
+async function checkResolutionFps(
+  videoPath: string,
+  shots: ShotsFile
+): Promise<QaCheckResult> {
   const data = await runFfprobeJson<FfprobeStreamJson>(
     [
       "-select_streams",
@@ -392,9 +393,9 @@ async function checkResolutionFps(videoPath: string): Promise<QaCheckResult> {
     fps = den ? num / den : num;
   }
   const problems: string[] = [];
-  if (width !== EXPECTED_WIDTH || height !== EXPECTED_HEIGHT) {
+  if (width !== shots.resolution.w || height !== shots.resolution.h) {
     problems.push(
-      `解像度 ${width}x${height}(期待値 ${EXPECTED_WIDTH}x${EXPECTED_HEIGHT})`
+      `解像度 ${width}x${height}(期待値 ${shots.resolution.w}x${shots.resolution.h})`
     );
   }
   if (Number.isNaN(fps) || Math.abs(fps - EXPECTED_FPS) > FPS_TOLERANCE) {
@@ -502,7 +503,7 @@ export async function runQa(
     checkSilence(videoPath),
     checkDurationMatch(videoPath, shots),
     checkLoudness(videoPath),
-    checkResolutionFps(videoPath),
+    checkResolutionFps(videoPath, shots),
     checkAssetsResolved(episodeRelDir, projectRoot),
     checkFrozenVideo(videoPath),
   ]);

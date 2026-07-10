@@ -5,11 +5,14 @@ import { SpeechBubble } from "./core/SpeechBubble";
 import { DangerCircle } from "./core/DangerCircle";
 import { ComparisonSplit } from "./core/ComparisonSplit";
 import { TitleCard } from "./core/TitleCard";
+import { RankCard } from "./shorts/core/RankCard";
+import { ShortTitleCard } from "./shorts/core/ShortTitleCard";
 
 /**
  * コンポーネント名 → React コンポーネント のマップ(契約、§7.6)。
  * shots.json の `scene.component` はこのレジストリのキーで解決される。
  * MVPのコアコンポーネントは6個に固定し、事前実装をこれ以上増やさない。
+ * ショート用の共有コンポーネント(RankCard / ShortTitleCard)は shorts/core/ に置き、ここへ登録する。
  *
  * ---- "custom:<Name>" 解決規約(§7.6) ----------------------------------
  * 一回限りの特殊シーン(フック、クライマックスの重要変換、コアの合成)は、
@@ -28,6 +31,9 @@ export const sceneRegistry: Record<string, ComponentType<any>> = {
   DangerCircle,
   ComparisonSplit,
   TitleCard,
+  // ショート用共有コンポーネント(縦型。src/scenes/shorts/core/)
+  RankCard,
+  ShortTitleCard,
 };
 
 export const CUSTOM_COMPONENT_PREFIX = "custom:";

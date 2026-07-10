@@ -17,6 +17,9 @@ import { Thumbnail, calculateThumbnailMetadata } from "./Thumbnail";
  * 書き出し例:
  *   npx remotion still src/remotion/Root.tsx Thumbnail out.png \
  *     --props='{"episodeDir":"episodes/epXXX","variant":1}'
+ *
+ * Composition "Short"。縦型ショート(1080x1920/30fps)。コンポーネントはEpisodeを
+ * そのまま流用し(shots.json駆動でdir汎用)、episodeDir に shorts/<shortId> を渡す。
  */
 export const RemotionRoot: React.FC = () => {
   return (
@@ -29,6 +32,16 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{ episodeDir: "episodes/ep000-test" }}
+        calculateMetadata={calculateEpisodeMetadata}
+      />
+      <Composition
+        id="Short"
+        component={Episode}
+        durationInFrames={300}
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{ episodeDir: "shorts/sh000-test" }}
         calculateMetadata={calculateEpisodeMetadata}
       />
       <Composition

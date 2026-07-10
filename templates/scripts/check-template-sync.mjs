@@ -70,6 +70,16 @@ const IDENTICAL = [
   "scripts/wait-render.sh",
   "scripts/promote-preview.sh",
   "scripts/render-queue.sh",
+  "src/schemas/short.schema.json",
+  "src/schemas/short-format.schema.json",
+  "src/pipeline/validate-short-format.ts",
+  "src/scenes/shorts/core/RankCard.tsx",
+  "src/scenes/shorts/core/ShortTitleCard.tsx",
+  ".claude/skills/short-builder/SKILL.md",
+  ".claude/skills/short-create/SKILL.md",
+  "shorts/sh000-test/short.json",
+  "shorts/sh000-test/shots.json",
+  "shorts/sh000-test/timing.json",
 ];
 
 // 意図的な汎用化版(存在+禁止語なしのみ検査)
@@ -88,6 +98,7 @@ const VARIANT = [
   ".claude/agents/fact-checker.md",
   ".claude/agents/compliance-reviewer.md",
   ".claude/agents/audience-sim.md",
+  ".claude/agents/short-director.md",
   "src/scenes/registry.ts",
   "src/scenes/style.ts",
   // 固定アウトロ(既定のチャンネル名・クレジット文字列のみ汎用化した変種)

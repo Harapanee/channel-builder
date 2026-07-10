@@ -7,14 +7,18 @@
 # - Infinity事前ゲート: interpolate系にInfinityが混入した状態でのレンダー突入を阻止
 # - 完了ステータスマーカー(out/.render-status-<out>.json): nohup運用時に監視側(wait-render.sh)が
 #   完了を検知できるよう、全ての終了経路でJSONを書く
-# 使い方: scripts/render-episode.sh <episodeDir> [out名(既定preview)]
+# 使い方: scripts/render-episode.sh <episodeDir|shortDir> [out名(既定preview)]
 set -u
 EP="${1:?usage: render-episode.sh <episodeDir> [outName]}"
 OUT="${2:-preview}"
 cd "$(dirname "$0")/.."
 
 epId=$(basename "$EP")
-SCENES="src/scenes/episodes/$epId"
+# shorts/ 配下は縦型コンポジション(Short)+ショート用シーン捜索先に切替える
+case "$EP" in
+  shorts/*) COMPOSITION="Short"   ; SCENES="src/scenes/shorts/$epId" ;;
+  *)        COMPOSITION="Episode" ; SCENES="src/scenes/episodes/$epId" ;;
+esac
 STATUS="$EP/out/.render-status-$OUT.json"
 
 mkdir -p "$EP/out"
@@ -60,7 +64,7 @@ echo "=== render: $EP -> out/$OUT.mp4 (expect ${EXPECT}s, concurrency $CONC, ava
 
 for attempt in 1 2 3 4; do
   echo "=== attempt $attempt: $(date '+%H:%M:%S') ==="
-  caffeinate -ims npx remotion render src/remotion/Root.tsx Episode "$EP/out/$OUT.mp4" \
+  caffeinate -ims npx remotion render src/remotion/Root.tsx "$COMPOSITION" "$EP/out/$OUT.mp4" \
     --props="{\"episodeDir\":\"$EP\"}" --concurrency="$CONC" 2>&1 | grep -vE "^Rendering|^Encoded"
   code=$?
   if [ -f "$EP/out/$OUT.mp4" ]; then

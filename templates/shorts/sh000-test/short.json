@@ -1,0 +1,7 @@
+{
+  "shortId": "sh000-test",
+  "formatId": "test-format",
+  "sourceEpisodeId": "ep000-test",
+  "title": "ショート検証用テスト",
+  "status": "implemented"
+}

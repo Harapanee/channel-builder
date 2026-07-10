@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://channel-video-factory.local/schemas/short.schema.json",
+  "title": "ShortFile",
+  "description": "shorts/<shortId>/short.json(ショート状態)。設計書 docs/superpowers/specs/2026-07-10-shorts-generation-design.md §4.2。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["shortId", "formatId", "sourceEpisodeId", "title", "status"],
+  "properties": {
+    "shortId": { "type": "string", "pattern": "^sh[0-9]{3}-[a-z0-9-]+$" },
+    "formatId": { "type": "string", "minLength": 1 },
+    "sourceEpisodeId": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": [
+        "scripted",
+        "script_approved",
+        "voiced",
+        "implemented",
+        "studio_checked",
+        "queued",
+        "rendered"
+      ]
+    }
+  }
+}

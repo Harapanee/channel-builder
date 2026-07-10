@@ -128,7 +128,7 @@ mv "$PROJ/channel/voice-template.json" "$PROJ/channel/voice.json"
 # 3) public/ に episodes/・assets/ のシンボリックリンクを張る
 #    (remotion が staticFile() で参照する。publicDir をルートにしてはいけない)
 mkdir -p "$PROJ/public"
-cd "$PROJ/public" && ln -s ../episodes episodes && ln -s ../assets assets && cd "$PROJ"
+cd "$PROJ/public" && ln -s ../episodes episodes && ln -s ../assets assets && ln -s ../shorts shorts && cd "$PROJ"
 
 # 4) プレースホルダ充填(§2)/ bible・voice を人間承認まで埋める
 

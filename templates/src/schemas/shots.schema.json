@@ -14,9 +14,13 @@
       "additionalProperties": false,
       "required": ["w", "h"],
       "properties": {
-        "w": { "const": 1920 },
-        "h": { "const": 1080 }
-      }
+        "w": { "enum": [1920, 1080] },
+        "h": { "enum": [1080, 1920] }
+      },
+      "oneOf": [
+        { "properties": { "w": { "const": 1920 }, "h": { "const": 1080 } } },
+        { "properties": { "w": { "const": 1080 }, "h": { "const": 1920 } } }
+      ]
     },
     "narration": {
       "type": "object",

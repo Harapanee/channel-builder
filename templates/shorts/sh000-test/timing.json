@@ -1,0 +1,34 @@
+{
+  "episodeId": "sh000-test",
+  "totalDurationSec": 8.0,
+  "lines": [
+    {
+      "lineId": "L01",
+      "text": "第三位、テスト用のお題。",
+      "startSec": 0.0,
+      "endSec": 3.0,
+      "phrases": [
+        { "text": "第三位", "startSec": 0.0, "endSec": 1.2 },
+        { "text": "テスト用のお題", "startSec": 1.4, "endSec": 3.0 }
+      ]
+    },
+    {
+      "lineId": "L02",
+      "text": "縦型レイアウトの検証です。",
+      "startSec": 3.0,
+      "endSec": 5.5,
+      "phrases": [
+        { "text": "縦型レイアウトの検証です", "startSec": 3.0, "endSec": 5.5 }
+      ]
+    },
+    {
+      "lineId": "L03",
+      "text": "以上でテストを終わります。",
+      "startSec": 5.5,
+      "endSec": 8.0,
+      "phrases": [
+        { "text": "以上でテストを終わります", "startSec": 5.5, "endSec": 8.0 }
+      ]
+    }
+  ]
+}

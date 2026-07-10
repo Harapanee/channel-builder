@@ -10,6 +10,8 @@ dist/
 outputs/
 episodes/*/out/
 episodes/*/narration/
+shorts/*/out/
+shorts/*/narration/
 *.mp4
 
 # render queue (job JSONs / log / pid — runtime state; root only, not .claude/skills/render-queue/)

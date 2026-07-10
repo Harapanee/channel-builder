@@ -25,7 +25,7 @@ if (!filePath) process.exit(0);
 const rel = path.relative(projectDir, path.resolve(filePath));
 
 // 1) shots.json / timing.json → 契約検証(shots.jsonがまだ無い工程はスキップ)
-const m = rel.match(/^(episodes\/[^/]+)\/(shots|timing)\.json$/);
+const m = rel.match(/^((?:episodes|shorts)\/[^/]+)\/(shots|timing)\.json$/);
 if (m) {
   const epDir = m[1];
   if (!fs.existsSync(path.join(projectDir, epDir, "shots.json"))) process.exit(0);
@@ -43,11 +43,28 @@ if (m) {
   process.exit(0);
 }
 
+// 1.5) ショートフォーマット契約 → スキーマ+整合検証
+if (/^channel\/short-formats\/[^/]+\.json$/.test(rel)) {
+  const r = spawnSync(
+    "npx",
+    ["tsx", "src/pipeline/validate-short-format.ts", rel],
+    { cwd: projectDir, encoding: "utf8", timeout: 60_000 }
+  );
+  if (r.status !== 0) {
+    console.error(
+      `ショートフォーマット検証に失敗(${rel}):\n${(r.stdout ?? "") + (r.stderr ?? "")}`
+    );
+    process.exit(2);
+  }
+  process.exit(0);
+}
+
 // 2) その他の契約JSON → 構文検査のみ(高速)
 if (
   rel === "assets/library.json" ||
   rel === ".channel-system.json" ||
-  /^episodes\/[^/]+\/episode\.json$/.test(rel)
+  /^episodes\/[^/]+\/episode\.json$/.test(rel) ||
+  /^shorts\/[^/]+\/short\.json$/.test(rel)
 ) {
   try {
     JSON.parse(fs.readFileSync(path.resolve(filePath), "utf8"));

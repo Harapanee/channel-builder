@@ -42,7 +42,7 @@ export type Shot = {
 export type ShotsFile = {
   episodeId: string;
   fps: 30;
-  resolution: { w: 1920; h: 1080 };
+  resolution: { w: 1920; h: 1080 } | { w: 1080; h: 1920 };
   narration: { file: string; durationSec: number };
   bgm?: { file: string; gainDb: number };
   /** 章別BGM。指定時は bgm より優先。file は assets/ 相対。区間はループ再生 */

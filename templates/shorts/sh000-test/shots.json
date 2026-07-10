@@ -1,0 +1,51 @@
+{
+  "episodeId": "sh000-test",
+  "fps": 30,
+  "resolution": { "w": 1080, "h": 1920 },
+  "narration": { "file": "narration/narration.wav", "durationSec": 8.0 },
+  "shots": [
+    {
+      "shotId": "s01",
+      "lineIds": ["L01"],
+      "startSec": 0.0,
+      "endSec": 3.0,
+      "role": "hook",
+      "scene": {
+        "component": "RankCard",
+        "props": { "rank": 3, "title": "テスト用のお題" }
+      },
+      "assets": [],
+      "intent": "ランキング見出し(RankCard)の縦型表示検証"
+    },
+    {
+      "shotId": "s02",
+      "lineIds": ["L02"],
+      "startSec": 3.0,
+      "endSec": 5.5,
+      "role": "gag",
+      "scene": {
+        "component": "SpeechBubble",
+        "props": { "text": "縦型テストです" }
+      },
+      "assets": [],
+      "intent": "既存コアコンポーネントの縦型流用検証"
+    },
+    {
+      "shotId": "s03",
+      "lineIds": ["L03"],
+      "startSec": 5.5,
+      "endSec": 8.0,
+      "role": "payoff",
+      "scene": {
+        "component": "ShortTitleCard",
+        "props": {
+          "title": "テスト完了",
+          "variant": "ending",
+          "creditNotice": "スキャフォールド検証用フィクスチャ"
+        }
+      },
+      "assets": [],
+      "intent": "締めカードとクレジット表記の表示検証"
+    }
+  ]
+}

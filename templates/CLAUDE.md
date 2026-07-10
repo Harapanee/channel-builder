@@ -35,6 +35,11 @@
 - `npx tsx src/pipeline/retime-shots.ts episodes/<epId>` — 台本改訂後のショット追従
 - `npx tsx src/pipeline/render-thumbs.ts episodes/<epId>` — サムネ3枚(CLIのremotion still直叩き禁止)
 - `scripts/render-episode.sh episodes/<epId> [out名]` — レンダリング(Infinityゲート・QA・状態書き出し内蔵。remotion render直叩きより優先)
+- `npm run tts shorts/<shortId>` — ショート台本→音声+timing.json(本編と同じTTSパイプライン)
+- `npm run validate shorts/<shortId>` — ショートshots.json契約検証
+- `npm run validate:short-format channel/short-formats/<formatId>.json` — ショートフォーマット契約検証
+- `npm run render:test:short` — 縦型スモークレンダー(shorts/sh000-test)
+- `scripts/render-episode.sh shorts/<shortId> [out名]` — ショートレンダー(shorts/はShortコンポジション自動選択)
 - `scripts/wait-render.sh episodes/<epId> [out名]` — レンダー完了待ち(nohup本体+これをバックグラウンドBashで=完了即時通知)
 - `scripts/promote-preview.sh episodes/<epId>` — 委任モードでpreview→final昇格(入力の更新なしを機械検査)
 - `scripts/render-queue.sh add <episodeDir> [out]` / `run` / `list` / `clear` — 夜間レンダーキュー(runはnohupランナー切り離しで順次消化。消化開始は `/render-queue` から)
@@ -48,10 +53,12 @@
 - `/render-queue` — 溜まったレンダリングジョブを夜間にまとめて消化(寝る前に起動。`/render-queue add <episodeDir>` で積むだけも可)
 - `/channel-refine <フィードバック>` — このチャンネルの教義への還元(人間承認+マーカー手順)
 - `/system-refine` — 全チャンネル共通の工場OS(スキル・エージェント・ツール・契約)の変更+テンプレート同期
+- `/short-builder` — ショートフォーマット(構造の型)の登録・改修
+- `/short-create <epId> [formatId]` — 完成エピソードからショート動画を生成(台本承認→TTS→実装→Studio確認→夜間キュー)
 
 # Agents(制作の実働。メインセッションは監査・ゲート管理のみ)
 
-fact-checker / script-director / **script-reviewer(台本合否)** / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher
+fact-checker / script-director / **script-reviewer(台本合否)** / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット)
 
 # チャンネル署名(全動画共通)
 
