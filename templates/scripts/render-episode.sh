@@ -43,7 +43,8 @@ console.log(JSON.stringify(obj));
 # 過去エピソードでNumber.POSITIVE_INFINITYをinterpolateに渡し、tscでは検出できないまま
 # レンダー実行時クラッシュを4回連続で起こした実測があるための機械ゲート。
 if [ -d "$SCENES" ] && [ "${SKIP_INFINITY_CHECK:-0}" != "1" ]; then
-  HITS=$(grep -rnw 'Infinity' "$SCENES" || true)
+  # コメント行(// や * / /* で始まる行)は誤検知になるため除外する(コード上の使用のみ検出)
+  HITS=$(grep -rnw 'Infinity' "$SCENES" | grep -vE '^[^:]*:[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
   if [ -n "$HITS" ]; then
     echo "=== INFINITY GATE: interpolate系へのInfinity混入を検出 ==="
     echo "$HITS"
