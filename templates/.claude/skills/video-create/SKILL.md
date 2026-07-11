@@ -123,7 +123,7 @@ npx remotion studio src/remotion/Root.tsx --props='{"episodeDir":"episodes/<epId
 
 ## 11. 公開パッケージ(タイトル・サムネ・概要欄 — finalレンダー前に作る)
 
-**publisherエージェントへ委譲**: `publish/PUBLISH.md`(タイトル3案・概要欄)+ `publish/thumbnails.json`(サムネ3案スペック、bible §13)。
+**publisherエージェントへ委譲**: `publish/PUBLISH.md`(タイトル・概要欄)+ `publish/thumbnails.json`(サムネ3案スペック、bible §13)+ `publish/metadata.json`(factory-uiのYouTubeアップロードが読む機械可読契約。`npm run validate:metadata episodes/<epId>` で検証)。
 サムネイル3枚をレンダリング(静止画で軽負荷。軽量バンドル+再試行内蔵。CLIのremotion stillを直接使わない — メモリ逼迫時に不安定):
 
 ```

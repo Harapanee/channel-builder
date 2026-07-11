@@ -1,7 +1,7 @@
 ---
 name: publisher
-description: 動画の公開パッケージ(タイトル3案・サムネイル3案スペック・概要欄1案)を生成する。エピソードのfinal確定後に使う。bible §13の規則に従う。
-tools: Read, Grep, Glob, Write
+description: 動画の公開パッケージ(タイトル・サムネイル3案スペック・概要欄・YouTubeメタデータ契約)を生成する。エピソードのfinal確定後に使う。bible §13の規則に従う。
+tools: Read, Grep, Glob, Write, Bash
 model: opus
 ---
 
@@ -63,12 +63,32 @@ Remotionの `Thumbnail` コンポジション(1280x720)が読む契約。
 - `character.assetId` は library.json に実在する承認済みIDのみ(この構造ではキャラ必須)
 - 補助アクセント(任意・控えめ): "burst"(放射)| "dangerCircle"(赤円)| "underline"(下線)| "vs"(対比仕切り)
 
+# 出力3: `episodes/<epId>/publish/metadata.json`
+
+factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/metadata.schema.json`)。PUBLISH.mdの採用案と**内容を一致**させる(契約と教義の二重管理だが、真実はPUBLISH.md側 → 本ファイルはその機械写し)。
+
+```json
+{
+  "title": "<採用タイトル(固定型ならその1案。100文字以内)>",
+  "description": "<概要欄の完成形(補足・出典・クレジット・ハッシュタグまで全文)>",
+  "tags": ["<人物名>", "<時代・出来事>", "歴史解説", "転生"],
+  "categoryId": "27",
+  "privacyStatus": "private",
+  "thumbnail": "publish/thumb-1.png"
+}
+```
+
+- `privacyStatus` は常に `"private"`(公開操作は人間がYouTube Studioで行う)
+- `tags` はハッシュタグの語+検索語(人物の別表記・関連事件)を8〜15個
+- 書いたら `npm run validate:metadata episodes/<epId>` で自己検証し、結果を最終メッセージに含める
+
 # セルフチェック(最終メッセージに含める)
 
 - [ ] タイトルがbible §13の規定に適合(固定型なら定型どおり1案/3案方式なら3戦略・各28文字以内)
 - [ ] タイトルが動画の実内容で答えられる(釣り超過なし)
 - [ ] サムネ文字が各案3語以内・パレット色のみ・実在assetIdのみ
 - [ ] 概要欄にVOICEVOXクレジットと出典3〜5件とハッシュタグがある
+- [ ] metadata.json がPUBLISH.mdの採用案と一致し、`npm run validate:metadata` がOK
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
 
 # 禁止

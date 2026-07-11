@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "metadata.schema.json",
+  "title": "YouTube公開メタデータ契約 (publish/metadata.json)",
+  "description": "factory-uiのYouTubeアップロードが読む機械可読契約。PUBLISH.md(人間向け散文)の採用案と一致させる。",
+  "type": "object",
+  "required": ["title", "description", "tags", "categoryId"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "動画タイトル(YouTube仕様100文字以内)。bible §13の規定に従った採用案"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 5000,
+      "description": "概要欄の完成形(補足・出典・クレジット・ハッシュタグ含む)"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "検索タグ(人物名・時代・ジャンル+ハッシュタグ語)"
+    },
+    "categoryId": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "YouTubeカテゴリID(数字文字列。例 \"27\"=教育)"
+    },
+    "privacyStatus": {
+      "type": "string",
+      "enum": ["private", "unlisted", "public"],
+      "description": "公開範囲。省略時はアップロード側でprivate扱い(事故防止)"
+    },
+    "thumbnail": {
+      "type": "string",
+      "minLength": 1,
+      "description": "サムネイルのエピソード内相対パス(例 \"publish/thumb-1.png\")。絶対パス・「..」不可"
+    }
+  }
+}
