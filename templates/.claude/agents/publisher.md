@@ -107,6 +107,8 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 }
 ```
 
+書いたら `npm run validate:ledger` で自己検証し、結果を最終メッセージに含める。
+
 # セルフチェック(最終メッセージに含める)
 
 - [ ] タイトルがbible §13の規定に適合(固定型なら定型どおり1案/3案方式なら3戦略・各28文字以内)
@@ -116,7 +118,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] metadata.json がPUBLISH.mdの採用案と一致し、`npm run validate:metadata` がOK
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
 - [ ] metadata.json に aiDisclosure: true と productionNotes(定型逐語)があり、description にも同文が含まれる
-- [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)
+- [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)。`npm run validate:ledger` がOK
 
 # 禁止
 

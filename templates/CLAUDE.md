@@ -40,6 +40,7 @@
 - `npm run validate shorts/<shortId>` — ショートshots.json契約検証
 - `npm run validate:short-format channel/short-formats/<formatId>.json` — ショートフォーマット契約検証
 - `npm run validate:metadata episodes/<epId>` — publish/metadata.json(YouTube公開メタデータ契約)検証(YPP対策のAI開示・制作工程明記・公開予約を含む)。factory-uiのアップロードが読む
+- `npm run validate:ledger` — 全話台帳(channel/episode-ledger.json)の契約検証
 - `npm run render:test:short` — 縦型スモークレンダー(shorts/sh000-test)
 - `scripts/render-episode.sh shorts/<shortId> [out名]` — ショートレンダー(shorts/はShortコンポジション自動選択)
 - `scripts/wait-render.sh episodes/<epId> [out名]` — レンダー完了待ち(nohup本体+これをバックグラウンドBashで=完了即時通知)

@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "qa": "tsx src/pipeline/qa.ts",
     "validate:short-format": "tsx src/pipeline/validate-short-format.ts",
-    "validate:metadata": "tsx src/pipeline/validate-metadata.ts"
+    "validate:metadata": "tsx src/pipeline/validate-metadata.ts",
+    "validate:ledger": "tsx src/pipeline/validate-ledger.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

@@ -77,6 +77,7 @@ const IDENTICAL = [
   "src/schemas/episode.schema.json",
   "src/pipeline/validate-short-format.ts",
   "src/pipeline/validate-metadata.ts",
+  "src/pipeline/validate-ledger.ts",
   "src/schemas/metadata.schema.json",
   "src/schemas/episode-ledger.schema.json",
   "src/schemas/thumb-test.schema.json",
