@@ -29,6 +29,7 @@ const IDENTICAL = [
   "src/pipeline/tts.ts",
   "src/pipeline/parse-script.ts",
   "src/pipeline/validate-shots.ts",
+  "src/pipeline/lint-script.ts",
   "src/pipeline/qa.ts",
   "src/pipeline/qa-smoke.ts",
   "src/pipeline/repair-render.ts",
