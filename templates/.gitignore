@@ -17,6 +17,10 @@ shorts/*/narration/
 # render queue (job JSONs / log / pid — runtime state; root only, not .claude/skills/render-queue/)
 /render-queue/
 
+# scratch working files (制作残骸; regenerable)
+scratchpad_gen/
+*.bak
+
 # os
 .DS_Store
 voice-samples/
