@@ -128,7 +128,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
 - [ ] metadata.json に aiDisclosure: true と productionNotes(定型逐語)があり、description にも同文が含まれる
 - [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)。`npm run validate:ledger` がOK
-- [ ] 一言が感情中立・具体(感嘆詞・絶叫調・煽り語彙でない。docs/thumbnail-principles.md 原則2)
+- [ ] 一言が感情中立・具体(感嘆詞・絶叫調・煽り語彙でない。docs/thumbnail-principles.md 原則2。bible §13が別の語調様式を明示する場合はbible優先で、その旨をPUBLISH.mdに一言記す)
 - [ ] 各案の注目オブジェクトが少数(bible §13の構造要素+補助アクセント1個以内。同 原則1)
 - [ ] 3案とも動画本編が約束を回収できる(釣り超過なし。Test & Compareは視聴時間シェア判定。同 原則6)
 
