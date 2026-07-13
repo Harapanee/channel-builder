@@ -205,7 +205,7 @@ ffprobe -v error -select_streams v:0 \
 - **Remotion**: `Thumbnail.tsx` / `ThumbRoot.tsx`(サムネ合成、自動レイアウト+矢印アンカー)
 - **共有シーン**: `src/scenes/shared/`(JapanMap+japan-geometry / TruckIsekai / ThreeFaces / Outro=固定アウトロ)+ `assets/maps/japan-doodle.svg`
 - **契約拡張**: shots.json `bgmTracks[]`(章別BGM)/ validate-shotsのshotId一意性・bgmTracks検査
-- **チャンネル署名の既定**: トラック転生OP(bible-template §4)/ 地図での位置提示 / サムネ構造(中央主人公+矢印+一言)
+- **チャンネル署名の既定**: トラック転生OP(bible-template §4)/ 地図での位置提示 / サムネ構造(bible §13で方式を選択: AI生成1枚絵+事実型一言 / 既存素材の部品構成)
 - 同期の健全性は SRC側の `scripts/check-template-sync.mjs` で機械検証する(/system-refine 参照)
 
 ## 追補(2026-07-08): レンダー運用の高速化で追加された構成物
