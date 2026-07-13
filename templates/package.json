@@ -15,6 +15,7 @@
     "qa": "tsx src/pipeline/qa.ts",
     "validate:short-format": "tsx src/pipeline/validate-short-format.ts",
     "validate:metadata": "tsx src/pipeline/validate-metadata.ts",
+    "lint:script": "tsx src/pipeline/lint-script.ts",
     "validate:ledger": "tsx src/pipeline/validate-ledger.ts"
   },
   "dependencies": {
