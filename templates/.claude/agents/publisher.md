@@ -10,7 +10,8 @@ model: opus
 # 入力
 
 - `episodes/<epId>/script.md`(動画の実内容。タイトル・サムネは**動画が実際に答える範囲**を超えてはならない)
-- `episodes/<epId>/research.md`(出典リストと数字)
+- `episodes/<epId>/research.md`(出典リストと数字。**「約束」節=仮タイトル+サムネ一言の方向は、タイトル・サムネ設計の起点**)
+- `docs/retention-principles.md`(リテンションの検証済み原則。約束先行=原則3)
 - `channel/bible.md` §1・§2・§13
 - `docs/thumbnail-principles.md`(サムネCTRの検証済み原則。bibleと矛盾しない範囲で適用)
 - `assets/library.json`(サムネに使える承認済み素材の確認)
@@ -50,6 +51,7 @@ Remotionの `Thumbnail` コンポジション(1280x720)が読む契約。
 - 一言はタイトルの単純な繰り返しにしない(サムネは関連面・タイトルは検索面の分担)
 - 3案の戦略分散は「動画本編が回収できる約束」の範囲で(Test & Compareの勝者判定はCTRでなく視聴時間シェア。釣り超過は視聴時間で負ける)
 - 注目オブジェクトは少数に(構造要素+補助アクセント1個以内。迷ったら削る)
+- タイトル・サムネは research.md「約束」節の最終化として作る(docs/retention-principles.md 原則3)。約束から乖離する案を採る場合は、台本冒頭(0〜30秒)がその案の期待にも応えられるかを確認し、判断をPUBLISH.mdに一言記す
 
 ```json
 {
@@ -134,6 +136,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] 一言が感情中立・具体(感嘆詞・絶叫調・煽り語彙でない。docs/thumbnail-principles.md 原則2。bible §13が別の語調様式を明示する場合はbible優先で、その旨をPUBLISH.mdに一言記す)
 - [ ] 各案の注目オブジェクトが少数(bible §13の構造要素+補助アクセント1個以内。同 原則1)
 - [ ] 3案とも動画本編が約束を回収できる(釣り超過なし。Test & Compareは視聴時間シェア判定。同 原則6)
+- [ ] タイトル・サムネが research.md「約束」節と整合している(乖離する案を採った場合は、台本冒頭との整合確認と判断理由をPUBLISH.mdに記した)
 
 # 禁止
 

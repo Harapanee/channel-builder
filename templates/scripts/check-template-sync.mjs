@@ -40,6 +40,7 @@ const IDENTICAL = [
   "src/pipeline/thumb-metrics.ts",
   "src/schemas/thumb-metrics.schema.json",
   "docs/thumbnail-principles.md",
+  "docs/retention-principles.md",
   "src/remotion/Root.tsx",
   "src/remotion/Episode.tsx",
   "src/remotion/QASmokeRoot.tsx",
