@@ -62,14 +62,32 @@ export async function generateImage(opts: GenImageOptions): Promise<string[]> {
     body.image_urls = opts.refPaths.map(fileToDataUri);
   }
 
-  const res = await fetch(`${API_BASE}/v1/images/generations`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let res!: Response;
+  let lastDetail = "";
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    if (attempt > 0) {
+      const waitMs = 2000 * 2 ** (attempt - 1);
+      console.error(`生成リクエストを再試行 ${attempt}/3(${waitMs}ms待機)${lastDetail}`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    try {
+      res = await fetch(`${API_BASE}/v1/images/generations`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) break;
+      lastDetail = ` (HTTP ${res.status})`;
+      if (res.status < 500 && res.status !== 429) break; // 4xx(429以外)は再試行しない
+    } catch (err) {
+      lastDetail = ` (${String(err)})`;
+      res = undefined as unknown as Response;
+    }
+  }
+  if (!res) throw new Error(`生成リクエスト失敗(接続不能)${lastDetail}`);
   if (!res.ok) {
     throw new Error(`生成リクエスト失敗 HTTP ${res.status}: ${await res.text()}`);
   }
@@ -121,11 +139,77 @@ export async function generateImage(opts: GenImageOptions): Promise<string[]> {
   return saved;
 }
 
+const BATCH_CONCURRENCY = 3;
+
+type BatchEntry = GenImageOptions & { ref?: string[] };
+
+/** 複数プロンプトを同時3件で生成する。1件の失敗で全体を止めず、末尾に成否表を出す */
+async function runBatch(batchPath: string, skipPaintCheck: boolean): Promise<void> {
+  const entries = JSON.parse(fs.readFileSync(batchPath, "utf8")) as Array<
+    Record<string, unknown>
+  >;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error(`--batch: 空または配列でないJSONです: ${batchPath}`);
+  }
+  const results: { out: string; ok: boolean; error?: string }[] = [];
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const idx = cursor++;
+      if (idx >= entries.length) return;
+      const e = entries[idx]!;
+      const opts: GenImageOptions = {
+        prompt: String(e.prompt ?? ""),
+        outPath: String(e.out ?? ""),
+        model: e.model as string | undefined,
+        refPaths: (e.ref as string[] | undefined) ?? [],
+        size: e.size as string | undefined,
+        resolution: e.resolution as string | undefined,
+        n: e.n as number | undefined,
+      };
+      if (!opts.prompt || !opts.outPath) {
+        results.push({ out: opts.outPath || `#${idx}`, ok: false, error: "prompt/out欠落" });
+        continue;
+      }
+      try {
+        const saved = await generateImage(opts);
+        let bad = 0;
+        if (!skipPaintCheck) {
+          for (const f of saved) {
+            const g = await analyzeGreenCoverage(f);
+            if (g.borderGreenRatio > 0.6 && g.totalGreenRatio > PAINT_GATE_RATIO) bad++;
+          }
+        }
+        results.push(
+          bad > 0
+            ? { out: opts.outPath, ok: false, error: `塗りゲートNG ${bad}枚(未着色線画の疑い)` }
+            : { out: opts.outPath, ok: true }
+        );
+      } catch (err) {
+        results.push({ out: opts.outPath, ok: false, error: String(err) });
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(BATCH_CONCURRENCY, entries.length) }, worker)
+  );
+  console.error("---- batch結果 ----");
+  for (const r of results) {
+    console.error(`${r.ok ? "OK" : "NG"}: ${r.out}${r.error ? ` — ${r.error}` : ""}`);
+  }
+  const failed = results.filter((r) => !r.ok).length;
+  if (failed > 0) {
+    console.error(`${failed}/${results.length} 件失敗。NG分のみ修正句を直して再実行すること。`);
+    process.exit(1);
+  }
+}
+
 // ---- CLI ----
 async function main() {
   const args = process.argv.slice(2);
   const opts: GenImageOptions = { prompt: "", outPath: "", refPaths: [] };
   let skipPaintCheck = false;
+  let batchPath = "";
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "--prompt") opts.prompt = args[++i];
@@ -136,11 +220,16 @@ async function main() {
     else if (a === "--resolution") opts.resolution = args[++i];
     else if (a === "--n") opts.n = Number(args[++i]);
     else if (a === "--skip-paint-check") skipPaintCheck = true;
+    else if (a === "--batch") batchPath = args[++i];
     else throw new Error(`不明な引数: ${a}`);
+  }
+  if (batchPath) {
+    await runBatch(batchPath, skipPaintCheck);
+    return;
   }
   if (!opts.prompt || !opts.outPath) {
     console.error(
-      "usage: gen-image.ts --prompt <text> --out <file> [--model m] [--ref f]... [--skip-paint-check]"
+      "usage: gen-image.ts --prompt <text> --out <file> [--model m] [--ref f]... [--skip-paint-check] | --batch <batch.json>"
     );
     process.exit(1);
   }
