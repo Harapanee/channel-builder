@@ -85,7 +85,7 @@ few objects. 16:9 wide composition, no text.
 ```
 
 - 用途: publish/ 用のサムネ1枚絵(bible §13)。**PUBLISH.mdの「サムネ画像ブリーフ」を読んで各案1枚ずつ生成する**
-- コマンド: `npx tsx src/pipeline/gen-image.ts --prompt "..." --ref assets/chars/<主人公>/canonical.png --out episodes/<epId>/publish/thumb-image-<案番号>.png --size 16:9 --skip-paint-check`
+- コマンド: `npx tsx src/pipeline/gen-image.ts --prompt "..." --ref assets/characters/<主人公>/canonical.png --out episodes/<epId>/publish/thumb-image-<案番号>.png --size 16:9 --skip-paint-check`
   - 緑背景でないため塗り検査(緑面積検出)は対象外 → `--skip-paint-check` を付ける。remove-bgは通さない(透過不要)
   - `--size 16:9` が生成APIに拒否された場合は `--size 1:1` 等で生成後、`sharp` で中央16:9にcover-cropして保存(`npx tsx -e` の1行スクリプトで可)
 - 表情・状況の誇張は型2の道具箱(汗しずく・衝撃線・白目・震え線等)をそのまま使う
