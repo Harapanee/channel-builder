@@ -51,7 +51,7 @@ style-packs/slideshow-pd/
    `coreOverrides: string[]` に列挙する(props契約互換が条件。詳細は `scripts/check-template-sync.mjs` のコメント参照)
 3. **image-researcher の配置**: `.claude/agents/image-researcher.md` を適用先チャンネルの
    `.claude/agents/` へコピーする。asset-generator(AI生成)と役割が分かれる点に注意 —
-   このパックの方針では**PD/CC実写料の調達を第一手段、AI生成は補完**とする(bible側にもその旨を明記する)
+   このパックの方針では**PD/CC実資料の調達を第一手段、AI生成は補完**とする(bible側にもその旨を明記する)
 4. **registry 登録**: `src/scenes/registry.ts` に import と `sceneRegistry` への追記を行う
 
    ```ts
