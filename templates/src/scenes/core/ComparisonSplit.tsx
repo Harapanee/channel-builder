@@ -5,9 +5,9 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { seedFrom, seededRange } from "../../motion";
+import { boiling, seedFrom, seededRange } from "../../motion";
 import { roughLinePath } from "../doodle-svg";
-import { PALETTE } from "../style";
+import { PALETTE, SUBTITLE_SAFE_BOTTOM_PCT } from "../style";
 import { DOODLE_FONT_STACK, useDoodleFont } from "../use-doodle-font";
 import { useOptionalAsset } from "../asset-context";
 
@@ -148,20 +148,22 @@ export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
 
     if (mode === "size") {
       const frac = side.value / maxValue;
-      const maxSize = height * 0.62;
+      // 円+数字+ラベルの合計高さが字幕セーフゾーン(SUBTITLE_SAFE_BOTTOM_PCT)を
+      // 超えないよう、ラベル下端を固定アンカーにして円の拡大方向を上向きだけにする
+      // (中央寄せだと value が大きいほどラベルが字幕帯に沈み込んでいた)。
+      const maxSize = height * 0.48;
       const sizePx = maxSize * (0.28 + 0.72 * frac) * (0.3 + 0.7 * progress);
+      const anchorBottomFrac = SUBTITLE_SAFE_BOTTOM_PCT - 0.02;
       return (
         <div
           style={{
             position: "absolute",
             left: centerX,
-            top: 0,
+            bottom: height * (1 - anchorBottomFrac),
             width: 0,
-            height: "100%",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            justifyContent: "center",
           }}
         >
           <div
@@ -246,13 +248,18 @@ export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
     );
   };
 
+  // 手描きの boiling を薄く常時適用(カウントアップ完了後の完全静止=frozen_video QA落ち防止)。
+  // 背景は外側に固定し、中身だけを ±0.5° / ±0.5% で揺らす(回転しても縁は見えない)。
+  const boil = boiling(frame, fps, { seed: dividerSeed });
   return (
     <AbsoluteFill style={{ backgroundColor: PALETTE.paper }}>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ position: "absolute", inset: 0 }}>
-        <path d={dividerPath} fill="none" stroke={PALETTE.ink} strokeWidth={5} strokeLinecap="round" opacity={0.75} />
-      </svg>
-      {renderSide(l, leftUrl, PALETTE.indigo, true)}
-      {renderSide(r, rightUrl, PALETTE.red, false)}
+      <AbsoluteFill style={{ transform: `rotate(${boil.rotate}deg) scale(${boil.scale})` }}>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ position: "absolute", inset: 0 }}>
+          <path d={dividerPath} fill="none" stroke={PALETTE.ink} strokeWidth={5} strokeLinecap="round" opacity={0.75} />
+        </svg>
+        {renderSide(l, leftUrl, PALETTE.indigo, true)}
+        {renderSide(r, rightUrl, PALETTE.red, false)}
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
