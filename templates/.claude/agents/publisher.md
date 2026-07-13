@@ -28,7 +28,7 @@ model: opus
 - C(感情・自分事型): ...
 
 ## 概要欄
-(bible §13の5部構成そのまま。コピペで使える完成形)
+(bible §13の5部構成そのまま+末尾に制作工程・AI利用の開示の定型ブロック。コピペで使える完成形)
 ```
 
 # 出力2: `episodes/<epId>/publish/thumbnails.json`
@@ -70,17 +70,42 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 ```json
 {
   "title": "<採用タイトル(固定型ならその1案。100文字以内)>",
-  "description": "<概要欄の完成形(補足・出典・クレジット・ハッシュタグまで全文)>",
-  "tags": ["<人物名>", "<時代・出来事>", "歴史解説", "転生"],
+  "description": "<概要欄の完成形(補足・出典・クレジット・制作工程開示・ハッシュタグまで全文)>",
+  "tags": ["<題材の固有名>", "<時代・出来事>", "<ジャンル語>", "<チャンネルの定番タグ>"],
   "categoryId": "27",
   "privacyStatus": "private",
-  "thumbnail": "publish/thumb-1.png"
+  "thumbnail": "publish/thumb-1.png",
+  "aiDisclosure": true,
+  "productionNotes": "<制作工程・AI利用の開示の定型ブロック(下記)>"
 }
 ```
 
 - `privacyStatus` は常に `"private"`(公開操作は人間がYouTube Studioで行う)
 - `tags` はハッシュタグの語+検索語(人物の別表記・関連事件)を8〜15個
 - 書いたら `npm run validate:metadata episodes/<epId>` で自己検証し、結果を最終メッセージに含める
+- `aiDisclosure` は常に `true`(合成音声ナレーションのため。アップロード時にYouTubeの合成メディア開示へ反映される)
+- `productionNotes` は次の定型を**逐語**で使い、同じ文面を概要欄(description)の末尾(クレジットの後)にも必ず含める(validate-metadataが包含を検証する):
+
+  【制作工程・AI利用の開示】
+  この動画は当チャンネルのオリジナル制作です。台本は資料調査に基づくオリジナル執筆、映像は自作プログラム(Remotion)による独自描画、ナレーションは合成音声(VOICEVOX)です。
+
+- `publishAt`(任意)は公開予約日時(ISO8601)。書く場合は `privacyStatus: "private"` のまま(公開予約はアップロード側が処理)
+
+# 出力4: `channel/episode-ledger.json` への追記
+
+全話台帳(契約: `src/schemas/episode-ledger.schema.json`)に、このエピソードのエントリを**追記**する(ファイルが無ければ `{"episodes": []}` から作る。既存エントリは変更しない):
+
+```json
+{
+  "epId": "<epId>",
+  "subject": "<題材名(backlog.mdの表記と揃える)>",
+  "arcType": "<bible §6のアーク型>",
+  "signatures": ["<使用したチャンネル署名>"],
+  "motifs": ["<ギャグ・モチーフ・決めレトリックのタグ(3〜8個)>"],
+  "era": "<時代・地域>",
+  "packagedAt": "<今日の日付 YYYY-MM-DD>"
+}
+```
 
 # セルフチェック(最終メッセージに含める)
 
@@ -90,6 +115,8 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] 概要欄にVOICEVOXクレジットと出典3〜5件とハッシュタグがある
 - [ ] metadata.json がPUBLISH.mdの採用案と一致し、`npm run validate:metadata` がOK
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
+- [ ] metadata.json に aiDisclosure: true と productionNotes(定型逐語)があり、description にも同文が含まれる
+- [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)
 
 # 禁止
 

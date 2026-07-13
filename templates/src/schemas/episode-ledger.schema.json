@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "episode-ledger.schema.json",
+  "title": "全話台帳契約 (channel/episode-ledger.json)",
+  "description": "マンネリ・共食い検出のための全話横断台帳。publisherが公開パッケージ時に追記し、script-director/script-reviewer/theme-scoutが読む。",
+  "type": "object",
+  "required": ["episodes"],
+  "additionalProperties": false,
+  "properties": {
+    "episodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["epId", "subject", "arcType", "signatures", "motifs"],
+        "additionalProperties": false,
+        "properties": {
+          "epId": { "type": "string", "minLength": 1 },
+          "subject": { "type": "string", "minLength": 1, "description": "題材(backlog.mdの題材名と表記を揃える)" },
+          "arcType": { "type": "string", "minLength": 1, "description": "bible §6のアーク型(例 \"型A\")" },
+          "signatures": { "type": "array", "items": { "type": "string" }, "description": "使用したチャンネル署名" },
+          "motifs": { "type": "array", "items": { "type": "string" }, "description": "ギャグ・モチーフ・決めレトリックのタグ" },
+          "era": { "type": "string", "description": "時代・地域(多様性判定用)" },
+          "packagedAt": { "type": "string", "description": "公開パッケージ日(YYYY-MM-DD)" }
+        }
+      }
+    }
+  }
+}

@@ -9,6 +9,8 @@ import Ajv from "ajv";
  *  1. src/schemas/metadata.schema.json への適合
  *  2. thumbnail がエピソード内に収まる安全な相対パスであること(絶対・「..」拒否)
  *  3. thumbnail の実ファイル存在
+ *  4. productionNotes が description に含まれること
+ *  5. publishAt の整合
  * 失敗は exit 1(理由を列挙)。
  */
 export function validateMetadata(
@@ -46,7 +48,13 @@ export function validateMetadata(
     return errors;
   }
 
-  const meta = data as { thumbnail?: string };
+  const meta = data as {
+    thumbnail?: string;
+    description: string;
+    productionNotes: string;
+    publishAt?: string;
+    privacyStatus?: string;
+  };
   if (meta.thumbnail !== undefined) {
     if (!isSafeRel(meta.thumbnail)) {
       errors.push(
@@ -54,6 +62,25 @@ export function validateMetadata(
       );
     } else if (!existsSync(path.join(epDir, meta.thumbnail))) {
       errors.push(`thumbnail の実ファイルがない: ${meta.thumbnail}`);
+    }
+  }
+
+  // YPP対策: 制作工程明記ブロックが概要欄に含まれていること
+  if (!meta.description.includes(meta.productionNotes)) {
+    errors.push(
+      "description に productionNotes の全文が含まれていない(概要欄への制作工程明記が必須)"
+    );
+  }
+
+  // 公開予約: 日時として解釈でき、privacyStatusと矛盾しないこと
+  if (meta.publishAt !== undefined) {
+    if (Number.isNaN(Date.parse(meta.publishAt))) {
+      errors.push(`publishAt が日時として解釈できない: ${meta.publishAt}`);
+    }
+    if (meta.privacyStatus !== undefined && meta.privacyStatus !== "private") {
+      errors.push(
+        "publishAt 指定時は privacyStatus は private(YouTubeの公開予約仕様)"
+      );
     }
   }
 

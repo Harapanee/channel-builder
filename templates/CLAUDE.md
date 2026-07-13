@@ -8,6 +8,7 @@
 - `channel/voice.json` — ナレーション音声の定義(話者・話速・creditNotice)。**変更禁止**
 - `channel/review-checklist.md` — レビュアーの検査観点
 - `src/schemas/` — 全データ契約(shots/timing/library/episode)のJSON Schema
+- `channel/episode-ledger.json` — 全話台帳(題材・アーク・署名・モチーフ。マンネリ検出の機械可読契約)
 - 仕様書: `docs/spec-v1.1.md`(設計判断の根拠)
 
 # Mandatory rules

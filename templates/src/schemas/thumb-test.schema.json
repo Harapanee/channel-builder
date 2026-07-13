@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "thumb-test.schema.json",
+  "title": "サムネABテスト結果 (publish/thumb-test.json)",
+  "description": "YouTube Studio「テストと比較」の結果の手動記録(結果はAPIで取得不可)。factory-uiのフォームから人間が記録し、channel-refineが勝ちパターン分析に読む。",
+  "type": "object",
+  "required": ["winner", "recordedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "winner": { "type": "string", "enum": ["thumb-1", "thumb-2", "thumb-3"], "description": "勝者サムネ" },
+    "shares": { "type": "object", "additionalProperties": { "type": "number" }, "description": "各案の視聴シェア%(任意)" },
+    "note": { "type": "string", "description": "所感(なぜ勝ったかの仮説)" },
+    "recordedAt": { "type": "string", "description": "記録日(YYYY-MM-DD)" }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "analytics.schema.json",
+  "title": "実測アナリティクス (episodes/<epId>/analytics.json)",
+  "description": "YouTube Analytics APIから取得した実測値。factory-uiが書き、channel-refineが読む。インプレッションCTRはAPI非公開のため手動転記(manual)。",
+  "type": "object",
+  "required": ["videoId", "fetchedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "videoId": { "type": "string", "minLength": 1 },
+    "fetchedAt": { "type": "string", "description": "取得日時(ISO8601)" },
+    "views": { "type": "number" },
+    "estimatedMinutesWatched": { "type": "number" },
+    "averageViewDuration": { "type": "number", "description": "平均視聴時間(秒)" },
+    "averageViewPercentage": { "type": "number", "description": "平均視聴率(%)" },
+    "subscribersGained": { "type": "number" },
+    "likes": { "type": "number" },
+    "comments": { "type": "number" },
+    "retentionCurve": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["elapsedRatio", "watchRatio"],
+        "additionalProperties": false,
+        "properties": {
+          "elapsedRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+          "watchRatio": { "type": "number", "minimum": 0 }
+        }
+      },
+      "description": "視聴維持率カーブ(dimension=elapsedVideoTimeRatio × metric=audienceWatchRatio)"
+    },
+    "manual": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "impressions": { "type": "number" },
+        "impressionsCtr": { "type": "number", "description": "インプレッションCTR%(YouTube Studioから手動転記)" }
+      }
+    }
+  }
+}

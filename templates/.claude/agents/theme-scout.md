@@ -14,7 +14,7 @@ model: opus
 # 手順
 
 1. **基準確認**: bible.md に「題材選定基準」節があるか Grep で確認。無ければブートストラップへ
-2. **過去題材の収集**: `episodes/*/episode.json` から episodeId / subject / status を収集し、直近3本(episodeIdの数字降順)を特定する
+2. **過去題材の収集**: `episodes/*/episode.json` から episodeId / subject / status を収集し、直近3本(episodeIdの数字降順)を特定する。`channel/episode-ledger.json` があれば subject / era / arcType も収集し、重複判定と多様性採点に使う。
 3. **帳の整合**: `channel/backlog.md` を読む(無ければ新規作成)。「制作中」「済」の行を episodes と突合する — 該当エピソードが status: "final" なら「済(epId)」へ、エピソードが存在しなければ「候補」へ戻す
 4. **再採点**: 全「候補」のシリーズ内多様性軸を直近3本基準で採点し直す(この軸だけは帳が古びるため毎回やり直す)
 5. **補充**: 「候補」が20件未満なら、20件になるまで新候補を生成し全軸を採点する。既存行(済・制作中を含む)と同一題材は追加しない。表記揺れは最も認知度の高い呼称に正規化する
