@@ -177,14 +177,50 @@ function applyShortFormatSpeechOverride(
 
 // ---- VOICEVOX HTTP クライアント -----------------------------------------
 
+const VOICEVOX_RETRY_MAX = 3;
+const VOICEVOX_RETRY_BASE_MS = 1000;
+
+/**
+ * VOICEVOX への fetch を一過性障害(ネットワークエラー・5xx)に限りリトライする。
+ * 4xx はリクエスト自体の問題なので即座に返す(呼び出し元が本文つきで throw する)。
+ */
+async function voicevoxFetch(
+  url: string,
+  init: RequestInit,
+  what: string
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= VOICEVOX_RETRY_MAX; attempt++) {
+    if (attempt > 0) {
+      const waitMs = VOICEVOX_RETRY_BASE_MS * 2 ** (attempt - 1);
+      console.error(
+        `VOICEVOX ${what} を再試行します ${attempt}/${VOICEVOX_RETRY_MAX}(${waitMs}ms待機)`
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    try {
+      const res = await fetch(url, init);
+      if (res.ok || res.status < 500) return res;
+      lastErr = new TtsError(
+        `VOICEVOX ${what} が失敗しました: HTTP ${res.status} ${await res.text()}`
+      );
+    } catch (err) {
+      lastErr = err; // エンジン未起動・一時断
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new TtsError(String(lastErr));
+}
+
 async function fetchAudioQuery(
   text: string,
   speakerId: number
 ): Promise<AudioQuery> {
   const qs = new URLSearchParams({ text, speaker: String(speakerId) });
-  const res = await fetch(`${VOICEVOX_BASE_URL}/audio_query?${qs}`, {
-    method: "POST",
-  });
+  const res = await voicevoxFetch(
+    `${VOICEVOX_BASE_URL}/audio_query?${qs}`,
+    { method: "POST" },
+    "/audio_query"
+  );
   if (!res.ok) {
     throw new TtsError(
       `VOICEVOX /audio_query が失敗しました: HTTP ${res.status} ${await res.text()}`
@@ -195,11 +231,15 @@ async function fetchAudioQuery(
 
 async function synthesize(query: AudioQuery, speakerId: number): Promise<Buffer> {
   const qs = new URLSearchParams({ speaker: String(speakerId) });
-  const res = await fetch(`${VOICEVOX_BASE_URL}/synthesis?${qs}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(query),
-  });
+  const res = await voicevoxFetch(
+    `${VOICEVOX_BASE_URL}/synthesis?${qs}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(query),
+    },
+    "/synthesis"
+  );
   if (!res.ok) {
     throw new TtsError(
       `VOICEVOX /synthesis が失敗しました: HTTP ${res.status} ${await res.text()}`
