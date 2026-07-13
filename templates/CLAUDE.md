@@ -34,7 +34,7 @@
 - `npx tsx src/pipeline/qa-smoke.ts episodes/<epId>` — レンダー前スモークQA(全ショット2フレームサンプリングでランタイムエラー・静止・黒を3〜10分検出。**NGゼロまでフルレンダー禁止**)
 - `npx tsx src/pipeline/repair-render.ts episodes/<epId> <shotId> [--out preview]` — 部分再レンダー+継ぎ接ぎ(1ショット修正を2〜3分に。局所修正はフル再レンダーよりこちらが原則)
 - `npx tsx src/pipeline/retime-shots.ts episodes/<epId>` — 台本改訂後のショット追従
-- `npx tsx src/pipeline/render-thumbs.ts episodes/<epId>` — サムネ3枚(CLIのremotion still直叩き禁止)
+- `npx tsx src/pipeline/render-thumbs.ts episodes/<epId>` — サムネ3枚+計測(thumb-metrics.json)+モバイルプレビュー(CLIのremotion still直叩き禁止。720p未満はexit 1)
 - `scripts/render-episode.sh episodes/<epId> [out名]` — レンダリング(Infinityゲート・QA・状態書き出し内蔵。remotion render直叩きより優先)
 - `npm run tts shorts/<shortId>` — ショート台本→音声+timing.json(本編と同じTTSパイプライン)
 - `npm run validate shorts/<shortId>` — ショートshots.json契約検証

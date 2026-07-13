@@ -131,7 +131,7 @@ claude
 
 ### エージェント一覧(制作の実働部隊)
 
-fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(台本審査・合否)**/ visual-director(絵コンテ・ショット)/ scene-implementer(シーン実装・演出コード)/ asset-generator(画像素材のプロンプト技能)/ compliance-reviewer(準拠・合否)/ audience-sim(疑似初見)/ theme-scout(題材候補の採点・ネタ帳維持)/ publisher(タイトル・サムネ・概要欄+YouTubeメタデータ契約 publish/metadata.json)
+fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(台本審査・合否)**/ visual-director(絵コンテ・ショット)/ scene-implementer(シーン実装・演出コード)/ asset-generator(画像素材のプロンプト技能)/ compliance-reviewer(準拠・合否)/ audience-sim(疑似初見)/ theme-scout(題材候補の採点・ネタ帳維持)/ publisher(タイトル・サムネ・概要欄+YouTubeメタデータ契約 publish/metadata.json。サムネは docs/thumbnail-principles.md の検証済みCTR原則に従う)
 
 ---
 
@@ -177,7 +177,7 @@ npx tsx src/pipeline/repair-render.ts episodes/<ep> <shotId> [--out preview]  # 
 scripts/render-queue.sh add episodes/<ep> [out]  # 夜間キューへ積む(list/run/clearもあり)
 scripts/wait-render.sh episodes/<ep> [final]     # レンダー完了待ち(即時検知)
 scripts/promote-preview.sh episodes/<ep>         # 委任モード: preview→final昇格
-npx tsx src/pipeline/render-thumbs.ts episodes/<ep>   # サムネ3枚
+npx tsx src/pipeline/render-thumbs.ts episodes/<ep>   # サムネ3枚+計測+モバイルプレビュー
 npm run validate:metadata episodes/<ep>          # YouTube公開メタデータ契約の検証(factory-uiアップロードが読む)
 open episodes/<ep>/out/final.mp4 # 視聴
 cat .channel-system.json         # 状態

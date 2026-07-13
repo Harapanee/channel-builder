@@ -12,6 +12,7 @@ model: opus
 - `episodes/<epId>/script.md`(動画の実内容。タイトル・サムネは**動画が実際に答える範囲**を超えてはならない)
 - `episodes/<epId>/research.md`(出典リストと数字)
 - `channel/bible.md` §1・§2・§13
+- `docs/thumbnail-principles.md`(サムネCTRの検証済み原則。bibleと矛盾しない範囲で適用)
 - `assets/library.json`(サムネに使える承認済み素材の確認)
 - `assets/audio/LICENSES.md` 末尾(概要欄クレジット文例)
 
@@ -36,6 +37,14 @@ model: opus
 Remotionの `Thumbnail` コンポジション(1280x720)が読む契約。
 
 **構造はbible §13で固定**: 主人公を中央に大きく(xPct 50前後 / heightPct 85〜95)、手描き矢印(arrow)が主人公を指し、矢印の根本に「何が最悪か」の一言(8文字以内)を置く。3案は「一言の切り口(状況/数字/皮肉)× 表情バリアント」の違い。
+
+**CTR原則(docs/thumbnail-principles.md 準拠)**:
+
+- キャラの表情・ポーズは感情を強く誇張する(正負問わず。画像の感情強度は視聴にプラス)
+- 一言は感情中立・具体・情報型(感嘆詞・絶叫調・煽り語彙を避け、数字や状況の事実で驚かせる。文字の強い感情表現は逆効果)
+- 一言はタイトルの単純な繰り返しにしない(サムネは関連面・タイトルは検索面の分担)
+- 3案の戦略分散は「動画本編が回収できる約束」の範囲で(Test & Compareの勝者判定はCTRでなく視聴時間シェア。釣り超過は視聴時間で負ける)
+- 注目オブジェクトは少数に(構造要素+補助アクセント1個以内。迷ったら削る)
 
 ```json
 {
@@ -119,6 +128,9 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
 - [ ] metadata.json に aiDisclosure: true と productionNotes(定型逐語)があり、description にも同文が含まれる
 - [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)。`npm run validate:ledger` がOK
+- [ ] 一言が感情中立・具体(感嘆詞・絶叫調・煽り語彙でない。docs/thumbnail-principles.md 原則2)
+- [ ] 各案の注目オブジェクトが少数(bible §13の構造要素+補助アクセント1個以内。同 原則1)
+- [ ] 3案とも動画本編が約束を回収できる(釣り超過なし。Test & Compareは視聴時間シェア判定。同 原則6)
 
 # 禁止
 
