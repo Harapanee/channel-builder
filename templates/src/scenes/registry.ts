@@ -50,6 +50,7 @@ import { JapanMap } from "./shared/JapanMap";
 import { WorldMap } from "./shared/WorldMap";
 import { ThreeFaces } from "./shared/ThreeFaces";
 import { TruckIsekai } from "./shared/TruckIsekai";
+import { LegendBoard } from "./shared/LegendBoard";
 import { Outro } from "./shared/Outro";
 
 export const customRegistry: Record<string, ComponentType<any>> = {
@@ -60,6 +61,7 @@ export const customRegistry: Record<string, ComponentType<any>> = {
   ThreeFaces,
   // 全動画共通のチャンネル署名(bible §4): トラック転生OPと固定アウトロ
   TruckIsekai,
+  LegendBoard,
   Outro,
 };
 
