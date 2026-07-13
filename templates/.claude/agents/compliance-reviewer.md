@@ -25,7 +25,7 @@ model: opus
    - 各ショットの中央時刻のフレームを抽出して見る: `ffmpeg -ss <秒> -i episodes/<epId>/out/preview.mp4 -frames:v 1 -q:v 3 /tmp/frames/<shotId>.jpg`(Readで画像を開く)
    - 各フレームについて、**台本もintentも知らない初見がこの画面から受け取る内容**を一文で言語化する → その一文を該当ショットのintentと台本行に突合する。一致しない(初見に伝わらない・別の意味に読める・何の画面か分からない)場合は shotId・時刻・「初見が受け取る内容」・修正案を付けてFAIL
    - 文字の切れ・重なり・省略記号(…)もこのフレームで同時に検査する
-7. **YPP適合検査(再利用コンテンツ誤判定の回避。docs/ypp-reused-content-appeal-research.md §4 準拠)**:
+7. **YPP適合検査(再利用コンテンツ誤判定の回避。ファクトリールート直下の docs/ypp-reused-content-appeal-research.md(チャンネルフォルダからは ../docs/) §4 準拠)**:
    - **構成のテンプレ感**: 直近2本のエピソードと章構成・演出の並び順を突合する。章の数・順序・演出の種類がほぼ同一(=表面的な題材差し替えに見える)ならFAIL。差分が「題材固有の構成判断」として説明できることを確認する
    - **出典の明示**: research.md の主要出典が概要欄(publish/PUBLISH.md の概要欄案)に3件以上引き写されているか。公有素材(PD画像等)を使う回は出典台帳(research-images.md等)と概要欄の出典表記が対応しているか
    - **AI開示の整合**: publish/metadata.json が存在する場合、aiDisclosure が true であり productionNotes(制作工程明記)が description に含まれているか(無い時点での検査はスキップし、publisherのセルフチェックに委ねる)

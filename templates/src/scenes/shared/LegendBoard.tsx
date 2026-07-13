@@ -12,40 +12,31 @@ import { DOODLE_FONT_STACK, useDoodleFont } from "../use-doodle-font";
 import { DoodleCharacter } from "../core/DoodleCharacter";
 
 /**
- * 共有スパイン(Group α 実装 / ep005 全編の背骨モチーフ)。
- * 教科書が坂本龍馬像に掲げた「五枚の看板(= 木札)」を可視化する。
- * 中央に龍馬の肖像、周囲に 5 枚の木札(藍の看板・白文字)を吊るす。
+ * 共有スパイン(汎用: 「掲げられた肩書き/評価が章ごとに剥がれ・書き換わる」演出)。
+ * 中央にキャラクターの肖像、周囲に最大 5 枚の木札(藍の看板・白文字)を吊るす。
  *
- *   index 0 = 剣豪
- *   index 1 = 塾頭
- *   index 2 = 日本初の会社
- *   index 3 = 立役者
- *   index 4 = 船中八策
- *
- * 各章が 1 枚ずつ外す/書き換える。除去・書換の固定順(全 Phase 2 が矛盾なく積む):
- *   一章 = 剣豪 remove[0] → 三章 = 塾頭 remove[1] → 四章 = 日本初 remove[2]
- *   → 五章 = 立役者 downgrade[3](外さず「保証人」へ書換) → 七章 = 船中八策 remove[4]
- *   → 終章 = stripped(全札に取り消し線 → 等身大の実像が残る)。
+ * 各章が 1 枚ずつ外す/書き換える構成を想定するコンポーネント。具体的な札の
+ * 内容・除去順・除去タイミングは呼び出し側(storyboard / shots.json)で規定する。
  * priorRemoved[] で「既に外れた札」を外れたまま保持するので、各章は自分の
  * remove/downgrade を積むだけでよい(累積状態は priorRemoved が運ぶ契約)。
  *
- * props 契約(storyboard §5 / §9): mode / removeIndex / priorRemoved /
- * downgradeText / boards / charAssetId / strippedLabel は固定。
+ * props 契約: mode / removeIndex / priorRemoved / downgradeText / boards /
+ * charAssetId / strippedLabel は固定。
  * 表示用の任意 props(appearFrames / removeFrame / fallFrame / showPortrait /
  * keepStruckBoards)は既定値ありの非破壊追加(ThreeFaces と同じ運用)。
  */
 export type LegendBoardProps = {
   /** intro=五札掲示 / remove=1枚を外し落とす / downgrade=1枚を書換 / stripped=全札なし・等身大 */
   mode: "intro" | "remove" | "downgrade" | "stripped";
-  /** remove/downgrade で対象になる札(0=剣豪..4=船中八策) */
+  /** remove/downgrade で対象になる札(0〜4のインデックス) */
   removeIndex?: 0 | 1 | 2 | 3 | 4;
   /** 既に外れている札(外れたまま=取り消し線の残骸として薄く保持) */
   priorRemoved?: number[];
   /** downgrade(index=3)で札に書き直す文字。例「保証人」「仲介者のひとり」 */
   downgradeText?: string;
-  /** 五札のラベル。既定 ["剣豪","塾頭","日本初の会社","立役者","船中八策"] */
+  /** 五札のラベル。既定 ["項目1","項目2","項目3","項目4","項目5"](呼び出し側で必ず上書きすること) */
   boards?: [string, string, string, string, string];
-  /** 中央の龍馬肖像(library の assetId)。stripped で等身大があらわになる */
+  /** 中央の肖像(library の assetId)。stripped で等身大があらわになる */
   charAssetId?: string;
   /** stripped 時に肖像の下に残す実像の一言(例「規格外の、等身大」) */
   strippedLabel?: string;
@@ -65,20 +56,20 @@ export type LegendBoardProps = {
 };
 
 const DEFAULT_BOARDS: [string, string, string, string, string] = [
-  "剣豪",
-  "塾頭",
-  "日本初の会社",
-  "立役者",
-  "船中八策",
+  "項目1",
+  "項目2",
+  "項目3",
+  "項目4",
+  "項目5",
 ];
 
 /** 五札の配置(キャンバス幅/高さに対する中心比率)。中央肖像を囲む輪。 */
 const BOARD_POS = [
-  { xf: 0.205, yf: 0.30 }, // 0 剣豪   左上
-  { xf: 0.16, yf: 0.605 }, // 1 塾頭   左下
-  { xf: 0.5, yf: 0.155 }, // 2 日本初の会社 上
-  { xf: 0.795, yf: 0.30 }, // 3 立役者 右上
-  { xf: 0.84, yf: 0.605 }, // 4 船中八策 右下
+  { xf: 0.205, yf: 0.30 }, // 0 左上
+  { xf: 0.16, yf: 0.605 }, // 1 左下
+  { xf: 0.5, yf: 0.155 }, // 2 上
+  { xf: 0.795, yf: 0.30 }, // 3 右上
+  { xf: 0.84, yf: 0.605 }, // 4 右下
 ];
 
 /** 直線の辺を細分して手描きの矩形(角の立った箱)を作る。 */
@@ -126,7 +117,7 @@ export const LegendBoard: React.FC<LegendBoardProps> = ({
   const ringX = 0.5 * width;
   const ringY = 0.325 * height;
 
-  // ---- 中央の龍馬肖像(stripped で等身大があらわに)------------------------
+  // ---- 中央の肖像(stripped で等身大があらわに)------------------------
   const stripped = mode === "stripped";
   const portraitHeightPct = stripped && !keepStruckBoards ? 60 : 44;
   const portraitYPct =
@@ -386,7 +377,7 @@ export const LegendBoard: React.FC<LegendBoardProps> = ({
 
   return (
     <AbsoluteFill style={{ backgroundColor: PALETTE.paper }}>
-      {/* 中央の龍馬肖像(看板の主) */}
+      {/* 中央の肖像(看板の主) */}
       {showPortrait && charAssetId ? (
         <AbsoluteFill style={{ opacity: portraitOpacity }}>
           <DoodleCharacter
