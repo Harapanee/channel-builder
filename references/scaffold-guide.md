@@ -76,6 +76,14 @@ Stage 1〜2(織田信長・ナポレオンの2本)で安定した部分だけを
 | `episodes/ep000-test/` | **レンダリングのスモークテスト用フィクスチャ**(§4参照)。`publish/thumbnails.json` は Thumbnail コンポジションの見本スペック(キャラ無しの文字主体3案) | なし |
 | `docs/spec-v1.1.md` | 設計判断の根拠(全設計文書) | なし |
 
+### 映像スタイルの選択肢(style-packs/)
+
+`src/scenes/core/` のDoodle系6個はテンプレ既定の参照実装であり、唯一の選択肢ではない。bible §8(映像スタイル)が
+別系統の場合、SKILL.md ステップ5で再実装する前に `<SKILL>/templates/style-packs/` の既製パックが使えないか確認する。
+
+- **スライドショー型(PD/CC画像調達によるドキュメンタリー調)**: `style-packs/slideshow-pd/` を適用する。
+  適用手順・依存関係(`src/scenes/style.ts` への追加要件等)は同パックの README.md 参照
+
 ---
 
 ## 2. プレースホルダ一覧と埋め方
