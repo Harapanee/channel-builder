@@ -61,7 +61,7 @@
 
 # Agents(制作の実働。メインセッションは監査・ゲート管理のみ)
 
-fact-checker / script-director / **script-reviewer(台本合否)** / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット)
+fact-checker / script-director / **script-reviewer(台本合否)** / reading-checker(誤読検査) / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット)
 
 # ショート動画の運用注記
 

@@ -53,15 +53,18 @@ claude
 ### パイプライン(全自動、あなたの判定は通常2〜3回)
 
 ```
-調査(出典つき) → 台本(script-director)
+調査(出典つき・fact-checker) → 台本(script-director)
 → 二重審査【fact-checker=事実 + script-reviewer=構造・笑い・テンポ(合否権)】
-→ 音声合成+タイミング(自己検証つき) → 絵コンテ+ショット設計(visual-director)
+→ 誤読プリチェック(reading-checker・合否権) → 音声合成+タイミング(自己検証つき)
+→ 絵コンテ+ショット設計(visual-director)
 → 不足素材リスト → 素材生成(asset-generator)【あなた: キュレーション】
-→ シーン実装 → スモークQA(レンダー前に全ショット抜き取り検査)
-→ レンダリング(即時 or 夜間キュー /render-queue)【あなた: どちらか選ぶ】 → 機械検査(QA 7項目)
+→ シーン実装(scene-implementer) → Studio早期確認(推奨・レンダー前)
+→ レンダー前検査(型検査・契約検証・スモークQAでレンダー失敗を前倒しで潰す)
 → AIレビュー2系統(準拠=合否 / 疑似初見=助言)
-→ 【あなた: 視聴・最終判定】 → final確定
-→ 公開パッケージ(タイトル3案・サムネ3案・概要欄)【あなた: 選ぶ】
+→ 公開パッケージ(タイトル・サムネ3案・概要欄・metadata)【あなた: タイトル選ぶ(方式による)】
+→ 人間レビュー(動画・サムネ・タイトル一括)【あなた: 承認】
+→ 夜間レンダーキュー(サーバーが焼いて機械検査→final確定。即時レンダーはしない)
+→ 朝: 確認・アップロード(YouTube Studioへ手動。サムネはA/Bテストへ投入)
 ```
 
 - **全動画はトラック転生オープニングで始まる**(チャンネル署名: 現代のあなた→トラック→転生、5〜10秒、血なしの記号表現)
@@ -100,7 +103,7 @@ claude
 | 知りたいこと | 場所 |
 |---|---|
 | チャンネル状態・実測メトリクス | `.channel-system.json` |
-| 各動画の進捗 | `episodes/<ep>/episode.json`(researched→scripted→voiced→storyboarded→implemented→qa_passed→reviewed→final) |
+| 各動画の進捗 | `episodes/<ep>/episode.json`(researched→scripted→voiced→storyboarded→implemented→prechecked→reviewed→packaged→render_ready→final。final は夜間レンダー成功時にサーバーが書く) |
 | 恒久ルールの変更履歴 | `CHANGELOG.md` |
 | 機械検査・AIレビュー | `episodes/<ep>/review/` |
 | **テンプレート同期の健全性** | `node scripts/check-template-sync.mjs`(全緑=次のチャンネルに最新が入る) |
@@ -113,7 +116,7 @@ claude
 |---|---|---|
 | `channel/bible.md` | チャンネル憲法 | ❌ /channel-refine 経由(承認後は保護hookがブロック) |
 | `channel/voice.json` | ナレーターの声 | ❌ 原則変更禁止 |
-| `.claude/agents/*.md` | エージェント10体の技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
+| `.claude/agents/*.md` | エージェント12体の技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
 | `.claude/skills/*` | video-create / channel-refine / system-refine | ❌ /system-refine 経由 |
 | `src/pipeline/` | ツール群(tts / validate / qa / gen-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
@@ -121,7 +124,7 @@ claude
 
 ### エージェント一覧(制作の実働部隊)
 
-fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(台本審査・合否)**/ visual-director(絵コンテ・ショット)/ asset-generator(画像素材のプロンプト技能)/ compliance-reviewer(準拠・合否)/ audience-sim(疑似初見)/ publisher(タイトル・サムネ・概要欄)
+fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(台本審査・合否)**/ reading-checker(誤読検査・合否)/ visual-director(絵コンテ・ショット)/ scene-implementer(シーン実装)/ asset-generator(画像素材のプロンプト技能)/ compliance-reviewer(準拠・合否)/ audience-sim(疑似初見)/ theme-scout(題材採点)/ publisher(タイトル・サムネ・概要欄・metadata)/ short-director(ショート台本+ショット)
 
 ---
 
