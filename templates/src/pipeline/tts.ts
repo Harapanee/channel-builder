@@ -725,6 +725,13 @@ export async function runTts(
   const pauseSecs: number[] = results
     .slice(0, -1)
     .map((r) => r.line.pauseAfterSec ?? voice.defaultPauseAfterLineSec);
+  // 最終行に明示的な pause_after_sec がある場合のみ無音尾として付与する
+  // (既定は従来どおり付けない。アウトロの規定尺(bible §4 約6〜8秒)を
+  //  静かな余韻で満たすための明示オプトイン)
+  const lastPauseSec = results[results.length - 1]?.line.pauseAfterSec;
+  if (typeof lastPauseSec === "number" && lastPauseSec > 0) {
+    pauseSecs.push(lastPauseSec);
+  }
 
   const narrationWavPath = path.join(narrationDir, "narration.wav");
   concatWithPauses(

@@ -34,3 +34,18 @@ export const STROKE = {
  * 使用例: `top: \`${SUBTITLE_SAFE_BOTTOM_PCT * 100 - 5}%\`` のように上限として使う。
  */
 export const SUBTITLE_SAFE_BOTTOM_PCT = 0.82;
+
+/**
+ * 画面フレーム設定(全チャンネル共通の Episode.tsx が参照するチャンネル可変の見た目)。
+ * 既定は従来のDoodle系挙動(帯なし・角丸字幕・紙背景)。
+ * スライドショー型など別様式のチャンネルはここを書き換える
+ * (例: letterboxPct: 0.12, letterboxColor: "#060504", subtitleVariant: "band",
+ *  subtitleFontFamily: 明朝スタック, rootBackground: 帯色)。
+ * このエクスポート自体を消しても Episode.tsx は既定値で動く(防御的読み込み)。
+ */
+export const FRAME_STYLE = {
+  /** 上下黒帯の高さ(キャンバス高さ比)。0で帯なし */
+  letterboxPct: 0,
+  /** 横型字幕の様式: "rounded"=角丸ボックス / "band"=下帯内の帯文字 */
+  subtitleVariant: "rounded",
+} as const;

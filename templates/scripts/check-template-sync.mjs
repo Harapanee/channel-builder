@@ -39,7 +39,6 @@ const IDENTICAL = [
   "src/remotion/Root.tsx",
   "src/remotion/Episode.tsx",
   "src/remotion/QASmokeRoot.tsx",
-  "src/remotion/Thumbnail.tsx",
   "src/remotion/ThumbRoot.tsx",
   "src/motion/index.ts",
   "src/motion/noise.ts",
@@ -57,7 +56,6 @@ const IDENTICAL = [
   "scripts/hooks/validate-json.mjs",
   ".claude/settings.json",
   ".claude/agents/publisher.md",
-  ".claude/agents/asset-generator.md",
   ".claude/agents/reading-checker.md",
   ".claude/agents/script-reviewer.md",
   ".claude/agents/theme-scout.md",
@@ -91,6 +89,12 @@ const IDENTICAL = [
 // 意図的な汎用化版(存在+禁止語なしのみ検査)
 const VARIANT = [
   "package.json", // name がチャンネルごとに異なる
+  // サムネ構造は bible §13 のチャンネル教義そのもの(例: 中央主人公+矢印 / 1枚絵+帯文字)。
+  // コアコンポーネントと同格のチャンネル可変とし、テンプレ版はDoodle系の参照実装
+  "src/remotion/Thumbnail.tsx",
+  // 画像生成のプロンプト技法は映像スタイル(bible §8)に従属する(グリーンバック/フルフレーム等)。
+  // visual-director / scene-implementer と同じ理由でチャンネル適合版を許容する
+  ".claude/agents/asset-generator.md",
   "CLAUDE.md",
   ".channel-system.json",
   "channel/bible-template.md",

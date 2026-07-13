@@ -95,6 +95,7 @@ export const GAZETTEER: Record<string, WorldPlace> = {
   "lisbon": { x: 474.7, y: 156.0, label: "リスボン" },
   "paris": { x: 506.4, y: 115.5, label: "パリ" },
   "london": { x: 499.7, y: 105.2, label: "ロンドン" },
+  "calais": { x: 505.2, y: 107.4, label: "カレー" }, // lonLatToXY(1.8587, 50.9513)
   "vienna": { x: 545.6, y: 118.3, label: "ウィーン" },
   "moscow": { x: 604.4, y: 88.1, label: "モスクワ" },
   "versailles": { x: 505.8, y: 115.9, label: "ヴェルサイユ" },

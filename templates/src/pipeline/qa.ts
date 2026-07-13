@@ -57,6 +57,12 @@ export type QaReport = {
 // ---- 閾値(仕様書 §10.1 / §9) --------------------------------------------
 
 const BLACKDETECT_MIN_DURATION_SEC = 0.1;
+// 黒区間をNGとする最短尺。黒へのディゾルブ(暗転演出・アウトロの出入り)を
+// 映像文法に持つチャンネルがあるため、2.0秒未満の黒区間は演出として許容する
+// (ep001-medieval-bedで実測: 設計フェード5区間が全てNG誤検出になった)。
+// 壊れた黒(ショット丸ごと数秒)はこの閾値でも検出される。
+// 検出された短黒区間はdetailに参考情報として残す。
+const BLACK_FAIL_MIN_DURATION_SEC = 2.0;
 const SILENCE_MIN_DURATION_SEC = 2.0;
 const SILENCE_NOISE_FLOOR_DB = -30;
 const FROZEN_MIN_DURATION_SEC = 3.0;
@@ -225,10 +231,20 @@ async function checkBlackFrames(videoPath: string): Promise<QaCheckResult> {
     endSec: Number(m[2]),
     durationSec: Number(m[3]),
   }));
+  const failing = ranges.filter(
+    (r) => (r.durationSec ?? Number.POSITIVE_INFINITY) >= BLACK_FAIL_MIN_DURATION_SEC
+  );
+  if (failing.length === 0) {
+    return {
+      id: "black_frames",
+      pass: true,
+      detail: `短い黒区間(フェード演出として許容 <${BLACK_FAIL_MIN_DURATION_SEC}s): ${formatRanges(ranges)}`,
+    };
+  }
   return {
     id: "black_frames",
     pass: false,
-    detail: `黒フレーム区間を検出: ${formatRanges(ranges)}`,
+    detail: `黒フレーム区間を検出: ${formatRanges(failing)}`,
   };
 }
 

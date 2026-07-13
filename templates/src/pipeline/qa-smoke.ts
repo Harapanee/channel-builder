@@ -57,6 +57,14 @@ import type { ShotsFile } from "../schemas/types";
 
 /** 「ほぼ黒」判定: RGB各チャネルの平均輝度がこの値未満(0-255) */
 const BLACK_MEAN_THRESHOLD = 20;
+/**
+ * 「ほぼ黒」判定の明部条件: RGB各チャネルの最大輝度がこの値未満(0-255)。
+ * 平均輝度だけで判定すると「暗い背景+少量の明るい前景」という意図的な暗い画
+ * (例: band背景+白ロゴの固定Outro、暗転演出)を黒フレームと誤検出する
+ * (ep001で実測)。壊れて真っ黒なフレームは明部を持たない(max≈0)ため、
+ * 平均が暗く**かつ**明部も無いときだけ黒フレームと判定する。
+ */
+const BLACK_MAX_THRESHOLD = 64;
 /** 静止疑い検査を行う最小ショット尺(秒) */
 const STATIC_CHECK_MIN_DUR_SEC = 3;
 /** レンダー倍率(1920x1080 → 480x270) */
@@ -98,9 +106,12 @@ function parseArgs(argv: string[]) {
 
 async function isNearlyBlack(pngPath: string): Promise<boolean> {
   const stats = await sharp(pngPath).stats();
-  // PNGはRGBAの4チャネル。RGBの3チャネルすべての平均輝度がしきい値未満なら黒疑い
+  // PNGはRGBAの4チャネル。RGBの3チャネルすべての平均輝度がしきい値未満で、
+  // かつ明部(max)も無い場合のみ黒疑い(BLACK_MAX_THRESHOLD のコメント参照)
   const rgb = stats.channels.slice(0, 3);
-  return rgb.every((c) => c.mean < BLACK_MEAN_THRESHOLD);
+  const dimMean = rgb.every((c) => c.mean < BLACK_MEAN_THRESHOLD);
+  const noHighlight = rgb.every((c) => c.max < BLACK_MAX_THRESHOLD);
+  return dimMean && noHighlight;
 }
 
 function shortError(e: unknown): string {

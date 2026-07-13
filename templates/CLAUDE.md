@@ -24,7 +24,7 @@
 
 # Key commands
 
-- `npm run tts episodes/<epId>` — 台本→音声+timing.json(自己検証・ラウドネス正規化つき)
+- `npm run tts episodes/<epId>` — 台本→音声+timing.json(自己検証・ラウドネス正規化つき。最終行に pause_after_sec を明示するとその秒数の無音尾が付く=アウトロ尺の確保用)
 - `npm run tts episodes/<epId> -- --readings-only` — 誤読プリチェック(audio_queryのみ・数十秒。合成前にreading-checkerへ)
 - `npm run validate episodes/<epId>` — shots.json契約検証(shotId一意性・bgmTracks含む)
 - `npx tsx src/pipeline/gen-image.ts ...` — AI画像生成(**直接叩かずasset-generatorエージェント経由**)
