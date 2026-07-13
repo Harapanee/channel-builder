@@ -2,6 +2,7 @@ import React from "react";
 import {
   AbsoluteFill,
   Freeze,
+  Img,
   staticFile,
   useVideoConfig,
   type CalculateMetadataFunction,
@@ -127,15 +128,25 @@ type ThumbAccent =
 
 export type ThumbVariant = {
   /**
-   * "1" | "2" | "3"。§13の固定構造(中央主人公+手描き矢印+最悪の一言)を保ち、
-   * 「一言の切り口(状況/数字/皮肉)× 主人公の表情バリアント」で3案を作り分ける。
+   * "1" | "2" | "3"。3案の構造と作り分け(分散軸)は channel/bible.md §13 の規定に従う。
    */
   id: string;
   strategy?: string;
   background?: ThumbBackground;
   /**
+   * AI生成のフルフレーム1枚絵(episodeDir相対・publish/配下。例: "publish/thumb-image-1.png")。
+   * 指定時は「1枚絵+事実型の一言」の新方式(bible §13)で描画し、character / scene /
+   * burst / 矢印の自動アンカーは使わない(指定されていても無視する)。lines は
+   * 顔帯回避をせず指定座標へ直接配置される(絵側が文字予定領域をシンプルに保つ契約)。
+   * `accents`(dangerCircle / underline / vs / 座標明示のarrow)は新方式でも描画される
+   * (自動アンカーのみ無効)。
+   * 未指定時は従来方式で描画する(後方互換: 既存エピソードの thumbnails.json はそのまま動く)。
+   */
+  image?: string;
+  /**
    * 動画内の実シーンを背景として静止描画する(ThumbScene のJSDoc参照)。
    * 描画順は background → scene → character → accents → lines。
+   * `image` 指定時はこの順序ごとscene自体が描画されない(image側のJSDoc参照)。
    * シーン内に主人公が含まれる場合、重複する character は省略する。
    * 省略時は従来どおり(後方互換: 既存の thumbnails.json はそのまま動く)。
    */
@@ -287,13 +298,49 @@ export function layoutCallout(
   return { fontSize, xPct, yPct, halfWPct, halfHPct, side };
 }
 
-const ThumbText: React.FC<{ line: ThumbLine; font: string; canvasH: number }> = ({
-  line,
-  font,
-  canvasH,
-}) => {
+/**
+ * image(1枚絵)方式の直接配置。顔帯回避はせず、テキストがフレーム内に収まるよう
+ * クランプするだけ。文字予定領域を絵側でシンプルに保つのはブリーフの責務(bible §13)。
+ */
+export function directLayout(
+  line: ThumbLine,
+  canvasW: number,
+  canvasH: number
+): CalloutLayout {
+  const emUnits =
+    Array.from(line.text).reduce(
+      (w, ch) => w + (/[ -ÿ]/.test(ch) ? 0.55 : 1.0),
+      0
+    ) * 1.04;
+  const fontSize = Math.min(
+    (line.sizePct / 100) * canvasH,
+    canvasH * 0.5,
+    (canvasW * 0.94) / Math.max(1, emUnits)
+  );
+  const halfWPct = ((emUnits * fontSize) / 2 / canvasW) * 100 + 1;
+  const halfHPct = ((fontSize / canvasH) * 100) / 2 + 1;
+  const xPct = Math.min(Math.max(line.xPct, halfWPct + 1), 99 - halfWPct);
+  const yPct = Math.min(Math.max(line.yPct, halfHPct + 2), 98 - halfHPct);
+  return {
+    fontSize,
+    xPct,
+    yPct,
+    halfWPct,
+    halfHPct,
+    side: line.xPct < 50 ? "left" : "right",
+  };
+}
+
+const ThumbText: React.FC<{
+  line: ThumbLine;
+  font: string;
+  canvasH: number;
+  direct?: boolean;
+}> = ({ line, font, canvasH, direct }) => {
   const { width: canvasW } = useVideoConfig();
-  const layout = layoutCallout(line, canvasW, canvasH);
+  const layout = direct
+    ? directLayout(line, canvasW, canvasH)
+    : layoutCallout(line, canvasW, canvasH);
   const fontSize = layout.fontSize;
   const clampedXPct = layout.xPct;
   const clampedYPct = layout.yPct;
@@ -686,6 +733,8 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   }
 
   const bg = resolveBackground(spec.background);
+  // 新方式(bible §13): AI生成のフルフレーム1枚絵。指定時は旧方式の部品を使わない
+  const useImageLayout = Boolean(spec.image);
   const accents = spec.accents ?? [];
   const bursts = accents.filter(
     (a): a is Extract<ThumbAccent, { type: "burst" }> => a.type === "burst"
@@ -696,7 +745,7 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   // 一言の自動レイアウト(顔帯回避)に矢印が追従し、顔に被らない。
   const firstLine = (spec.lines ?? [])[0];
   const autoAnchor =
-    firstLine && spec.character
+    !useImageLayout && firstLine && spec.character
       ? (() => {
           const l = layoutCallout(firstLine, width, height);
           const charX = spec.character.xPct ?? 50;
@@ -728,16 +777,31 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   return (
     <AssetProvider library={library}>
       <AbsoluteFill style={{ backgroundColor: bg, overflow: "hidden" }}>
-        {/* 動画内シーン(背景の直上・他要素の背面): §13「動画内の実素材を使う」 */}
-        {spec.scene ? <SceneLayer scene={spec.scene} /> : null}
+        {/* 新方式: AI生成のフルフレーム1枚絵(cover配置で1280x720を満たす) */}
+        {spec.image ? (
+          <Img
+            src={thumbnailAssetUrl(episodeDir, spec.image)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        ) : null}
 
-        {/* 背面: 放射(halo 様式) */}
-        {bursts.map((a, i) => (
-          <BurstAccent key={`burst-${i}`} a={a} width={width} height={height} />
-        ))}
+        {/* 旧方式: 動画内シーン */}
+        {!useImageLayout && spec.scene ? <SceneLayer scene={spec.scene} /> : null}
 
-        {/* キャラクター(透過PNG) */}
-        {spec.character ? (
+        {/* 旧方式: 背面の放射 */}
+        {!useImageLayout &&
+          bursts.map((a, i) => (
+            <BurstAccent key={`burst-${i}`} a={a} width={width} height={height} />
+          ))}
+
+        {/* 旧方式: キャラクター(透過PNG) */}
+        {!useImageLayout && spec.character ? (
           <DoodleCharacter
             assetId={spec.character.assetId}
             xPct={spec.character.xPct ?? 50}
@@ -795,9 +859,15 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
           return null;
         })}
 
-        {/* 文字(最前面) */}
+        {/* 文字(最前面)。新方式は直接配置、旧方式は顔帯回避の自動レイアウト */}
         {(spec.lines ?? []).map((line, i) => (
-          <ThumbText key={`line-${i}`} line={line} font={font} canvasH={height} />
+          <ThumbText
+            key={`line-${i}`}
+            line={line}
+            font={font}
+            canvasH={height}
+            direct={useImageLayout}
+          />
         ))}
       </AbsoluteFill>
     </AssetProvider>

@@ -30,13 +30,18 @@ model: opus
 
 ## 概要欄
 (bible §13の5部構成そのまま+末尾に制作工程・AI利用の開示の定型ブロック。コピペで使える完成形)
+
+## サムネ画像ブリーフ
+(bible §13がAI生成画像を要求するチャンネルのみ。各案1ブロック:
+場面の内容 / 主人公の表情・ポーズ=誇張表現を身体語彙で / 文字予定領域(例: 上部1/3)/ 参照する正典(assetIdまたはcanonicalパス)。
+生成はasset-generatorの責務 — publisherは生成コマンドを叩かない)
 ```
 
 # 出力2: `episodes/<epId>/publish/thumbnails.json`
 
 Remotionの `Thumbnail` コンポジション(1280x720)が読む契約。
 
-**構造はbible §13で固定**: 主人公を中央に大きく(xPct 50前後 / heightPct 85〜95)、手描き矢印(arrow)が主人公を指し、矢印の根本に「何が最悪か」の一言(8文字以内)を置く。3案は「一言の切り口(状況/数字/皮肉)× 表情バリアント」の違い。
+**構造・部品・レイアウトは `channel/bible.md` §13 に従う**(チャンネルごとに異なる)。契約の形は `src/remotion/Thumbnail.tsx` の型定義(`ThumbVariant`)に従い、bibleが要求する要素だけを使う。3案の分散軸(切り口)もbible §13の規定に従う。
 
 **CTR原則(docs/thumbnail-principles.md 準拠)**:
 
@@ -53,24 +58,22 @@ Remotionの `Thumbnail` コンポジション(1280x720)が読む契約。
     {
       "id": "1",
       "strategy": "situation",
-      "background": "paper",
-      "character": { "assetId": "char_...", "xPct": 50, "yPct": 55, "heightPct": 90, "flip": false },
+      "image": "publish/thumb-image-1.png",
       "lines": [
-        { "text": "味方ゼロ", "sizePct": 20, "color": "red", "xPct": 20, "yPct": 22, "rotateDeg": -4 }
-      ],
-      "accents": [
-        { "type": "arrow", "fromXPct": 26, "fromYPct": 32, "toXPct": 42, "toYPct": 48, "color": "red" }
+        { "text": "味方ゼロ", "sizePct": 20, "color": "red", "xPct": 24, "yPct": 18, "rotateDeg": -3 }
       ]
     }
   ]
 }
 ```
 
-- `lines[0]` = 「何が最悪か」の一言(8文字以内)。矢印の根本(from側)の近くに置く
-- `accents` の先頭は必ず `arrow`(from=一言の近く → to=主人公の体の縁。**顔に被せない**)
-- `color` はパレット名のみ(ink / red / indigo / yellow / paper)
-- `character.assetId` は library.json に実在する承認済みIDのみ(この構造ではキャラ必須)
-- 補助アクセント(任意・控えめ): "burst"(放射)| "dangerCircle"(赤円)| "underline"(下線)| "vs"(対比仕切り)
+- 使える部品は `ThumbVariant` 型のJSDocを参照(`image` / `character` / `scene` / `lines` / `accents`)。どれを使うかはbible §13が決める
+- 様式の代表例(**全列挙ではない** — 自チャンネルのbible §13とThumbnail.tsx型定義が正):
+  - AI生成の1枚絵を使うチャンネル: `image`(episodeDir相対・`publish/thumb-image-<案番号>.png`)を宣言し、PUBLISH.mdの「サムネ画像ブリーフ」節に各案の場面を書く(生成はasset-generatorの責務)
+  - 承認済み素材の部品構成のチャンネル: `character.assetId` は library.json に実在する承認済みIDのみ
+  - 上記以外の様式(PD調達の1枚絵等): bible §13の規定と自チャンネルの Thumbnail.tsx 型定義に従って部品を宣言する(素材の調達・生成の担当もbibleの規定に従う)
+- `lines` / `accents` の `color` はパレット名のみ(src/scenes/style.ts の PALETTE)
+- 一言の文字数・語調・配置の方針はbible §13とセルフチェックの規定に従う
 
 # 出力3: `episodes/<epId>/publish/metadata.json`
 
@@ -122,7 +125,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 
 - [ ] タイトルがbible §13の規定に適合(固定型なら定型どおり1案/3案方式なら3戦略・各28文字以内)
 - [ ] タイトルが動画の実内容で答えられる(釣り超過なし)
-- [ ] サムネ文字が各案3語以内・パレット色のみ・実在assetIdのみ
+- [ ] サムネ文字が各案3語以内・パレット色のみ。参照するassetId/imageパスが実在する(imageはpublish/配下)
 - [ ] 概要欄にVOICEVOXクレジットと出典3〜5件とハッシュタグがある
 - [ ] metadata.json がPUBLISH.mdの採用案と一致し、`npm run validate:metadata` がOK
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)

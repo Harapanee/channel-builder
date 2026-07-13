@@ -123,7 +123,7 @@ npx remotion studio src/remotion/Root.tsx --props='{"episodeDir":"episodes/<epId
 
 ## 11. 公開パッケージ(タイトル・サムネ・概要欄 — finalレンダー前に作る)
 
-**publisherエージェントへ委譲**: `publish/PUBLISH.md`(タイトル・概要欄)+ `publish/thumbnails.json`(サムネ3案スペック、bible §13)+ `publish/metadata.json`(factory-uiのYouTubeアップロードが読む機械可読契約。`npm run validate:metadata episodes/<epId>` で検証)+ `channel/episode-ledger.json` への追記(全話台帳。マンネリ検出の入力)。
+**publisherエージェントへ委譲**: `publish/PUBLISH.md`(タイトル・概要欄)+ `publish/thumbnails.json`(サムネ3案スペック+image宣言、bible §13)+ `publish/metadata.json`(factory-uiのYouTubeアップロードが読む機械可読契約。`npm run validate:metadata episodes/<epId>` で検証)+ `channel/episode-ledger.json` への追記(全話台帳。マンネリ検出の入力)。
 サムネイル3枚をレンダリング(静止画で軽負荷。軽量バンドル+再試行内蔵。CLIのremotion stillを直接使わない — メモリ逼迫時に不安定):
 
 ```
@@ -131,7 +131,7 @@ npx tsx src/pipeline/render-thumbs.ts episodes/<epId>
 ```
 
 タイトルはbible(公開パッケージ節)の規定に従う — 固定型ならそのまま確定、3案方式ならユーザーが1案選定。**サムネは選定不要 — 3枚とも朝のアップロード時にYouTube Studio「テストと比較」へ投入**しABテストする(bibleの公開パッケージ節)。
-一言と矢印の配置はコンポジション側で自動補正される(顔帯回避・矢印は一言→胴へ自動接続)。publisherは一言のxPctで左右(<50=左)だけ決めればよい。
+publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像ブリーフ」から `publish/thumb-image-{1..3}.png` を生成する(型5・正典`--ref`・16:9)。生成完了後に上のrender-thumbsを実行する。
 → status: "packaged"
 
 ## 12. 人間レビュー(一括)→ 承認 → 夜間レンダーキューへ

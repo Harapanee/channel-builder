@@ -69,6 +69,29 @@ centered, nothing else in frame, no people, no text, no ground shadow.
 - 建物など大きい物も「単体・中央・全体が収まる」で生成する(見切れ禁止)。画面上のスケールはRemotion側で調整する
 - library.json の kind は "prop"(小物・道具)または "place"(建物・風景の主体)
 
+## 型5: サムネ場面(16:9フルフレーム・緑背景なし)
+
+```
+<bible §8の確定スタイルプロンプトのうち画風記述(グリーンバック指定は使わない)>
+Scene for a video thumbnail: <最悪の瞬間の場面内容>. The main character: use
+the exact same character from the reference image (same simple doodle style,
+same proportions with oversized round head, SAME TINY BLACK DOT EYES exactly
+as in the reference, same colors), with STRONGLY EXAGGERATED expression and
+pose: <誇張表現を身体語彙で>. Full-color scene WITH a simple doodle background
+(NOT green screen), high contrast between the main character and the
+background. Keep the <文字予定領域: 例 upper third> of the frame simple and
+low-detail (large text will be placed there). Single main focal point,
+few objects. 16:9 wide composition, no text.
+```
+
+- 用途: publish/ 用のサムネ1枚絵(bible §13)。**PUBLISH.mdの「サムネ画像ブリーフ」を読んで各案1枚ずつ生成する**
+- コマンド: `npx tsx src/pipeline/gen-image.ts --prompt "..." --ref assets/chars/<主人公>/canonical.png --out episodes/<epId>/publish/thumb-image-<案番号>.png --size 16:9 --skip-paint-check`
+  - 緑背景でないため塗り検査(緑面積検出)は対象外 → `--skip-paint-check` を付ける。remove-bgは通さない(透過不要)
+  - `--size 16:9` が生成APIに拒否された場合は `--size 1:1` 等で生成後、`sharp` で中央16:9にcover-cropして保存(`npx tsx -e` の1行スクリプトで可)
+- 表情・状況の誇張は型2の道具箱(汗しずく・衝撃線・白目・震え線等)をそのまま使う
+- 品質確認は「主人公の顔文法一致 / 文字予定領域がシンプルか / 主役と背景のコントラスト」の3点を自己評価して報告。**最終確認はStudio投入前の人間ゲート**(型1のような事前キュレーション提出はしない)
+- リトライは1案につき3回まで(既存ルールと同じ)
+
 # よくある失敗と修正(リトライ時にこの表を見る)
 
 | 症状 | 修正句 |

@@ -72,4 +72,4 @@ fact-checker / script-director / **script-reviewer(台本合否)** / reading-che
 
 - 冒頭はトラック転生オープニング(you-modern+TruckIsekai、bible §4)
 - 地名の初出はJapanMapで位置を示す(bible §8)
-- サムネは「中央主人公+矢印+最悪の一言」構造(bible §13)
+- サムネは「最悪の瞬間のAI生成1枚絵(画風はbible準拠)+事実型の一言」構造(bible §13)

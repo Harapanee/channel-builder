@@ -11,6 +11,10 @@
 
 まだ変更はない。Pilot 承認までは systemVersion 0.1.0 / status: building。 -->
 
+## 2026-07-13 system-refine: サムネのAI生成1枚絵方式(image契約)+publisher中立化(全チャンネル適用)
+- 変更: Thumbnail.tsx参照実装にimageバリアント(旧contract後方互換)/ publisher.mdの旧構造焼き込みを除去しbible §13へ委譲 / asset-generator型5(サムネ場面)/ bible-template §13雛形とvideo-create SKILL更新
+- 期待効果: サムネ構造が完全にbible §13の教義になり、チャンネルごとにAI生成/素材構成を選べる
+
 ## 2026-07-13 system-refine: サムネCTR原則の組み込み(全チャンネル適用)
 
 - 契機: クリックされやすいサムネの実証リサーチ(deep-research、査読付き研究3本+公式ヘルプ検証)
