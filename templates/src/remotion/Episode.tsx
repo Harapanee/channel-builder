@@ -211,10 +211,16 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
   // 次のフレーズ開始まで余韻として残し(上限LINGER)、短い句には最低表示時間を保証する。
   const LINGER_SEC = 1.2;
   const MIN_READ_SEC = 1.6;
+  // `- subtitle: off` の行(画面内テキストと重複)は字幕として描かないが、
+  // 余韻の締切としては数える。除外してから次フレーズを探すと、その行を飛び越えて
+  // 前行の字幕が残り、順位カード等の画面文字に重なる。
   const allPhrases = timing.lines
-    // `- subtitle: off` の行(画面内テキストと重複)は字幕対象から除外する
-    .filter((line) => !line.noSubtitle)
-    .flatMap((line) => line.phrases)
+    .flatMap((line) =>
+      line.phrases.map((phrase) => ({
+        ...phrase,
+        noSubtitle: Boolean(line.noSubtitle),
+      }))
+    )
     .sort((a, b) => a.startSec - b.startSec)
     .map((phrase, i, arr) => {
       const nextStart =
@@ -224,7 +230,8 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
         phrase.startSec + MIN_READ_SEC
       );
       return { ...phrase, displayEndSec: Math.min(nextStart, wantedEnd) };
-    });
+    })
+    .filter((phrase) => !phrase.noSubtitle);
   const active = allPhrases.find(
     (phrase) => tSec >= phrase.startSec && tSec < phrase.displayEndSec
   );
