@@ -8,6 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseScriptFile, ParsedScriptLine } from "./parse-script";
 
 const HEDGES = ["一説に", "という説", "とも言われ", "諸説あ"];
@@ -97,21 +98,28 @@ function main() {
     console.error("usage: lint-script.ts episodes/<epId>");
     process.exit(2);
   }
-  const episode = JSON.parse(
-    fs.readFileSync(path.join(epDir, "episode.json"), "utf8")
-  ) as { targetDurationSec?: number };
-  if (!episode.targetDurationSec) {
-    console.error(`episode.json に targetDurationSec がありません: ${epDir}`);
+  let episode: { targetDurationSec?: number };
+  let speedScale = 1.05;
+  let parsed: ReturnType<typeof parseScriptFile>;
+  try {
+    episode = JSON.parse(
+      fs.readFileSync(path.join(epDir, "episode.json"), "utf8")
+    ) as { targetDurationSec?: number };
+    if (!episode.targetDurationSec) {
+      console.error(`episode.json に targetDurationSec がありません: ${epDir}`);
+      process.exit(2);
+    }
+    const voicePath = path.join("channel", "voice.json");
+    if (fs.existsSync(voicePath)) {
+      const v = JSON.parse(fs.readFileSync(voicePath, "utf8")) as { speedScale?: number };
+      if (typeof v.speedScale === "number") speedScale = v.speedScale;
+    }
+    parsed = parseScriptFile(path.join(epDir, "script.md"));
+  } catch (e) {
+    console.error(`入力不備: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(2);
   }
-  const voicePath = path.join("channel", "voice.json");
-  let speedScale = 1.05;
-  if (fs.existsSync(voicePath)) {
-    const v = JSON.parse(fs.readFileSync(voicePath, "utf8")) as { speedScale?: number };
-    if (typeof v.speedScale === "number") speedScale = v.speedScale;
-  }
-  const parsed = parseScriptFile(path.join(epDir, "script.md"));
-  const result = lintScript(parsed.lines, episode.targetDurationSec, speedScale);
+  const result = lintScript(parsed.lines, episode.targetDurationSec!, speedScale);
   for (const s of result.summary) console.log(s);
   for (const v of result.violations) {
     console.log(`NG [${v.check}]${v.lineId ? ` ${v.lineId}` : ""}: ${v.detail}`);
@@ -120,4 +128,16 @@ function main() {
   process.exit(result.ok ? 0 : 1);
 }
 
-if (process.argv[1] && process.argv[1].endsWith("lint-script.ts")) main();
+function isMainModule(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return (
+      path.resolve(fileURLToPath(import.meta.url)) ===
+      path.resolve(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) main();
