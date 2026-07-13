@@ -44,6 +44,12 @@ export function lintScript(
       detail: `推定尺が目標の${(ratio * 100).toFixed(0)}%(100%超過)。約${Math.ceil((estimatedSec - targetDurationSec) * charsPerSec)}文字の削減が必要`,
     });
   }
+  if (ratio < 0.85) {
+    violations.push({
+      check: "L1",
+      detail: `推定尺が目標の${(ratio * 100).toFixed(0)}%(下限85%)。約${Math.ceil((targetDurationSec * 0.85 - estimatedSec) * charsPerSec)}文字の追加が必要`,
+    });
+  }
 
   // L2 読点上限(1文に「、」2個まで)
   let l2count = 0;
@@ -117,6 +123,12 @@ function main() {
     parsed = parseScriptFile(path.join(epDir, "script.md"));
   } catch (e) {
     console.error(`入力不備: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(2);
+  }
+  if (parsed.lines.length === 0) {
+    console.error(
+      "入力不備: 台本に行が1つもありません(見出し形式 `## [Lxx]` を確認)"
+    );
     process.exit(2);
   }
   const result = lintScript(parsed.lines, episode.targetDurationSec!, speedScale);

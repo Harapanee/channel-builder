@@ -141,8 +141,6 @@ export async function generateImage(opts: GenImageOptions): Promise<string[]> {
 
 const BATCH_CONCURRENCY = 3;
 
-type BatchEntry = GenImageOptions & { ref?: string[] };
-
 /** 複数プロンプトを同時3件で生成する。1件の失敗で全体を止めず、末尾に成否表を出す */
 async function runBatch(batchPath: string, skipPaintCheck: boolean): Promise<void> {
   const entries = JSON.parse(fs.readFileSync(batchPath, "utf8")) as Array<
