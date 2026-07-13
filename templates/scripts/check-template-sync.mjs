@@ -50,6 +50,7 @@ const IDENTICAL = [
   "src/scenes/shared/world-geometry.ts",
   "src/scenes/shared/ThreeFaces.tsx",
   "src/scenes/shared/TruckIsekai.tsx",
+  "src/scenes/shared/LegendBoard.tsx",
   "src/scenes/shared/japan-geometry.ts",
   "assets/maps/japan-doodle.svg",
   "scripts/hooks/guard-approved.mjs",
@@ -84,6 +85,25 @@ const IDENTICAL = [
   "shorts/sh000-test/short.json",
   "shorts/sh000-test/shots.json",
   "shorts/sh000-test/timing.json",
+];
+
+// コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。
+// チャンネル固有の再スキン(props契約互換が条件)は、そのチャンネルの
+// .channel-system.json の coreOverrides: string[] に列挙すると存在チェックのみに緩和される。
+const CORE_IDENTICAL = [
+  "src/scenes/core/ComparisonSplit.tsx",
+  "src/scenes/core/DangerCircle.tsx",
+  "src/scenes/core/DoodleCharacter.tsx",
+  "src/scenes/core/DoodleMap.tsx",
+  "src/scenes/core/PlaceholderBase.tsx",
+  "src/scenes/core/SpeechBubble.tsx",
+  "src/scenes/core/TitleCard.tsx",
+];
+
+// VARIANTのうちテンプレ専用ファイル(scaffold時に別名で展開されるためSRC側に存在しない)
+const VARIANT_TEMPLATE_ONLY = [
+  "channel/bible-template.md", // 展開後は channel/bible.md
+  "channel/voice-template.json", // 展開後は channel/voice.json
 ];
 
 // 意図的な汎用化版(存在+禁止語なしのみ検査)
@@ -157,8 +177,39 @@ for (const f of IDENTICAL) {
     fail(`IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
 }
 
+let coreOverrides = [];
+try {
+  coreOverrides =
+    JSON.parse(fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8"))
+      .coreOverrides ?? [];
+} catch {}
+
+for (const f of CORE_IDENTICAL) {
+  const a = path.join(SRC, f);
+  const b = path.join(TPL, f);
+  if (!fs.existsSync(b)) {
+    fail(`CORE欠落(テンプレ側): ${f}`);
+    continue;
+  }
+  if (!fs.existsSync(a)) {
+    fail(`CORE未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
+    continue;
+  }
+  if (coreOverrides.includes(f)) continue; // 再スキン宣言済み(props契約互換が条件)
+  if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8"))
+    fail(
+      `CORE乖離: ${f}(SRC側の改善なら/system-refineで還元、受領漏れならテンプレからコピー。` +
+        `意図的な再スキンなら .channel-system.json の coreOverrides に追加)`
+    );
+}
+
 for (const f of VARIANT) {
   if (!fs.existsSync(path.join(TPL, f))) fail(`VARIANT欠落: ${f}`);
+  else if (
+    !VARIANT_TEMPLATE_ONLY.includes(f) &&
+    !fs.existsSync(path.join(SRC, f))
+  )
+    fail(`VARIANT未受領: ${f}(このFactoryに無い — テンプレ版を基に同等適用が必要)`);
 }
 
 // 禁止語スキャン
@@ -216,7 +267,7 @@ checkBuilderRepoPushed();
 
 if (failures === 0) {
   console.log(
-    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
+    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
   );
 } else {
   console.error(`\n${failures}件の乖離。同期後に再実行すること。`);
