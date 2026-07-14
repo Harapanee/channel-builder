@@ -17,6 +17,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { analyzeGreenCoverage, PAINT_GATE_RATIO } from "./remove-bg";
+import {
+  CodexError,
+  codexOnCooldown,
+  generateViaCodex,
+  recordCodexRateLimit,
+  resolveCodexBin,
+} from "./codex-image";
 
 const API_BASE = "https://api.evolink.ai";
 const POLL_INTERVAL_MS = 3000;
@@ -47,9 +54,10 @@ export interface GenImageOptions {
   size?: string;
   resolution?: string;
   n?: number;
+  provider?: "codex" | "evolink";
 }
 
-export async function generateImage(opts: GenImageOptions): Promise<string[]> {
+async function generateViaEvolink(opts: GenImageOptions): Promise<string[]> {
   const key = loadApiKey();
   const body: Record<string, unknown> = {
     model: opts.model ?? "gemini-3-pro-image-preview",
@@ -139,10 +147,44 @@ export async function generateImage(opts: GenImageOptions): Promise<string[]> {
   return saved;
 }
 
+export async function generateImage(opts: GenImageOptions): Promise<string[]> {
+  if (opts.provider === "evolink") return generateViaEvolink(opts);
+  if (opts.provider === "codex") return generateViaCodex(opts);
+
+  if (!resolveCodexBin()) {
+    console.error("codex CLI が見つからないため evolink で生成します");
+    return generateViaEvolink(opts);
+  }
+  if (codexOnCooldown()) {
+    console.error("codex クールダウン中のため evolink で生成します");
+    return generateViaEvolink(opts);
+  }
+  try {
+    return await generateViaCodex(opts);
+  } catch (err) {
+    if (err instanceof CodexError && err.isRateLimit) {
+      recordCodexRateLimit();
+      console.error("codex レートリミット検出 → 30分間 evolink 直行に切替");
+    }
+    console.error(`codex 失敗 → evolink へフォールバック: ${String(err)}`);
+    try {
+      return await generateViaEvolink(opts);
+    } catch (err2) {
+      throw new Error(
+        `両プロバイダで生成失敗 — codex: ${String(err)} / evolink: ${String(err2)}`
+      );
+    }
+  }
+}
+
 const BATCH_CONCURRENCY = 3;
 
 /** 複数プロンプトを同時3件で生成する。1件の失敗で全体を止めず、末尾に成否表を出す */
-async function runBatch(batchPath: string, skipPaintCheck: boolean): Promise<void> {
+async function runBatch(
+  batchPath: string,
+  skipPaintCheck: boolean,
+  provider?: "codex" | "evolink"
+): Promise<void> {
   const entries = JSON.parse(fs.readFileSync(batchPath, "utf8")) as Array<
     Record<string, unknown>
   >;
@@ -164,6 +206,7 @@ async function runBatch(batchPath: string, skipPaintCheck: boolean): Promise<voi
         size: e.size as string | undefined,
         resolution: e.resolution as string | undefined,
         n: e.n as number | undefined,
+        provider,
       };
       if (!opts.prompt || !opts.outPath) {
         results.push({ out: opts.outPath || `#${idx}`, ok: false, error: "prompt/out欠落" });
@@ -217,17 +260,18 @@ async function main() {
     else if (a === "--size") opts.size = args[++i];
     else if (a === "--resolution") opts.resolution = args[++i];
     else if (a === "--n") opts.n = Number(args[++i]);
+    else if (a === "--provider") opts.provider = args[++i] as "codex" | "evolink";
     else if (a === "--skip-paint-check") skipPaintCheck = true;
     else if (a === "--batch") batchPath = args[++i];
     else throw new Error(`不明な引数: ${a}`);
   }
   if (batchPath) {
-    await runBatch(batchPath, skipPaintCheck);
+    await runBatch(batchPath, skipPaintCheck, opts.provider);
     return;
   }
   if (!opts.prompt || !opts.outPath) {
     console.error(
-      "usage: gen-image.ts --prompt <text> --out <file> [--model m] [--ref f]... [--skip-paint-check] | --batch <batch.json>"
+      "usage: gen-image.ts --prompt <text> --out <file> [--model m] [--ref f]... [--provider codex|evolink] [--skip-paint-check] | --batch <batch.json>"
     );
     process.exit(1);
   }

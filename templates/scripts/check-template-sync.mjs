@@ -34,6 +34,7 @@ const IDENTICAL = [
   "src/pipeline/qa-smoke.ts",
   "src/pipeline/repair-render.ts",
   "src/pipeline/gen-image.ts",
+  "src/pipeline/codex-image.ts",
   "src/pipeline/remove-bg.ts",
   "src/pipeline/retime-shots.ts",
   "src/pipeline/render-thumbs.ts",

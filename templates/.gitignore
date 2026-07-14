@@ -21,6 +21,9 @@ shorts/*/narration/
 scratchpad_gen/
 *.bak
 
+# provider runtime state (codexクールダウン等; regenerable)
+.cache/
+
 # os
 .DS_Store
 voice-samples/

@@ -14,7 +14,7 @@
 | 確認 | 方法 | ダメなとき |
 |---|---|---|
 | VOICEVOX起動 | `curl -s http://127.0.0.1:50021/version` | VOICEVOXアプリを起動 |
-| 画像生成キー | Factoryの `.env` に `EVOLINK_API_KEY=...` | キーを取得して書く(gitには載らない) |
+| 画像生成 | 主経路はcodex CLI(自動検出)。フォールバック用にFactoryの `.env` に `EVOLINK_API_KEY=...` | キーを取得して書く(gitには載らない)。codex不在でもevolinkだけで動く |
 | Node / ffmpeg | `node -v` / `ffmpeg -version` | インストール |
 
 ---
@@ -125,7 +125,7 @@ claude
 | `channel/voice.json` | ナレーターの声 | ❌ 原則変更禁止 |
 | `.claude/agents/*.md` | エージェント11体の技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
 | `.claude/skills/*` | video-create / theme-scout / render-queue / channel-refine / system-refine | ❌ /system-refine 経由 |
-| `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / repair-render / gen-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
+| `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
 

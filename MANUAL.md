@@ -14,7 +14,7 @@
 | 確認 | 方法 | ダメなとき |
 |---|---|---|
 | VOICEVOX起動 | `curl -s http://127.0.0.1:50021/version` | VOICEVOXアプリを起動 |
-| 画像生成キー | Factoryの `.env` に `EVOLINK_API_KEY=...` | キーを取得して書く(gitには載らない) |
+| 画像生成 | 主経路はcodex CLI(自動検出)。フォールバック用にFactoryの `.env` に `EVOLINK_API_KEY=...` | キーを取得して書く(gitには載らない)。codex不在でもevolinkだけで動く |
 | Node / ffmpeg | `node -v` / `ffmpeg -version` | インストール |
 
 ---
