@@ -58,7 +58,16 @@ description: 完成済みエピソードの要素からショート動画(縦型
 - NG項目は該当工程(台本 or ショット)へ差し戻し
 - 承認で status: "studio_checked"
 
-## 6. 夜間レンダーキュー投入
+## 6. 公開メタデータ
+
+- `/short-publish <shortId>` の手順(`.claude/skills/short-publish/SKILL.md`)に従い、
+  publisher エージェントへ委譲して `shorts/<shortId>/publish/metadata.json` を生成する
+- `npm run validate:metadata shorts/<shortId>` がOKになるまで差し戻す(最大2周)
+- `short.json` の status は変更しない(この工程に対応するstatusは持たない。
+  factory-ui の工程レールは metadata.json の存在で完了を判定する)
+- レンダー前にここを済ませておくことで、夜間レンダー明けにそのままアップロードできる
+
+## 7. 夜間レンダーキュー投入
 
 - factory-ui 起動確認: `curl -s http://127.0.0.1:4700/api/render-queue`
 - 投入(dir は `basename $(pwd)` = チャンネルフォルダ名):

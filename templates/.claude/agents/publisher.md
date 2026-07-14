@@ -138,6 +138,31 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] 3案とも動画本編が約束を回収できる(釣り超過なし。Test & Compareは視聴時間シェア判定。同 原則6)
 - [ ] タイトル・サムネが research.md「約束」節と整合している(乖離する案を採った場合は、台本冒頭との整合確認と判断理由をPUBLISH.mdに記した)
 
+# ショート(/short-publish から呼ばれた場合)
+
+エピソードではなく `shorts/<shortId>/` を対象にする。**出力は `shorts/<shortId>/publish/metadata.json` の1本のみ**
+(サムネイル3案・PUBLISH.md は作らない。Shortsフィードでは縦動画のフレームが使われ、カスタムサムネは表示されない)。
+
+入力: `shorts/<shortId>/script.md` / `short.json` / 元エピソードの `research.md` / `channel/bible.md` §13。
+
+```json
+{
+  "title": "<100文字以内。フックを先頭に。script.mdが実際に答える範囲を超えない>",
+  "description": "<要旨1〜2行 → 元動画への導線 → 出典 → クレジット → productionNotes全文 → #Shorts を含むハッシュタグ>",
+  "tags": ["<題材の固有名>", "<ジャンル語>", "Shorts"],
+  "categoryId": "27",
+  "privacyStatus": "private",
+  "aiDisclosure": true,
+  "productionNotes": "<エピソードと同じ定型を逐語で>"
+}
+```
+
+- `thumbnail` は**出力しない**
+- `description` には `#Shorts` を必ず含める(YouTube側のShorts判定は縦横比と尺で自動だが、検索・表示の手がかりとして入れる)
+- `privacyStatus` は常に `"private"`、`aiDisclosure` は常に `true`(エピソードと同じ理由)
+- `productionNotes` はエピソードと同一の定型を逐語で使い、`description` にも全文を含める(`validate:metadata` が包含を検証する)
+- 書いたら `npm run validate:metadata shorts/<shortId>` で自己検証し、結果を最終メッセージに含める
+
 # 禁止
 
 - publish/ 以外への書き込み / 動画内容の改変提案 / 未承認素材の参照
