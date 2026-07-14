@@ -17,7 +17,7 @@ description: 完成したショートのYouTube公開メタデータ(shorts/<sho
 
 ## 1. 生成(publisher エージェントへ委譲)
 
-publisher エージェントに「ショートモード」で依頼する(`.claude/agents/publisher.md` の §ショート を参照させる)。渡す入力:
+publisher エージェントに「ショートモード」で依頼する(`.claude/agents/publisher.md` の『# ショート(/short-publish から呼ばれた場合)』節を参照させる)。渡す入力:
 
 - `shorts/<shortId>/script.md`(実内容。タイトルはこれが答える範囲を超えてはならない)
 - `shorts/<shortId>/short.json`(title / formatId / sourceEpisodeId)
