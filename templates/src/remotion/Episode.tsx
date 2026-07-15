@@ -336,6 +336,28 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
   );
 };
 
+/**
+ * bgmTracks 1区間ぶんの再生。フェードアウト/無音ギャップの音量計算は
+ * Sequence相対フレーム(useCurrentFrame)で行う。<Audio loop> の volume
+ * コールバック引数はループ1周ごとに0へリセットされるため、区間をまたぐ
+ * フェード計算には使えない(実測で発覚した罠)。
+ */
+const BgmSegment: React.FC<{
+  src: string;
+  base: number;
+  audibleEndF: number;
+  fadeOutF: number;
+}> = ({ src, base, audibleEndF, fadeOutF }) => {
+  const f = useCurrentFrame();
+  let v = 0;
+  if (f < audibleEndF) {
+    const vOut =
+      fadeOutF > 0 ? Math.min(1, (audibleEndF - f) / fadeOutF) : 1;
+    v = base * Math.max(0, vOut);
+  }
+  return <Audio src={src} volume={v} loop />;
+};
+
 export const Episode: React.FC<EpisodeProps> = ({
   episodeDir,
   shots,
@@ -420,17 +442,11 @@ export const Episode: React.FC<EpisodeProps> = ({
                 from={Math.round(t.startSec * fps)}
                 durationInFrames={durF}
                 name={`bgm:${t.file}`}>
-                <Audio
+                <BgmSegment
                   src={staticFile(`assets/${t.file}`)}
-                  volume={(f) => {
-                    if (f >= audibleEndF) return 0;
-                    const vOut =
-                      fadeOutF > 0
-                        ? Math.min(1, (audibleEndF - f) / fadeOutF)
-                        : 1;
-                    return base * Math.max(0, vOut);
-                  }}
-                  loop
+                  base={base}
+                  audibleEndF={audibleEndF}
+                  fadeOutF={fadeOutF}
                 />
               </Sequence>
             );
