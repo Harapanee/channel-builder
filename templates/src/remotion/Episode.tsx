@@ -389,30 +389,30 @@ export const Episode: React.FC<EpisodeProps> = ({
         {narrationSrc ? <Audio src={narrationSrc} /> : null}
         {shots.bgmTracks && shots.bgmTracks.length > 0 ? (
           // 章別BGM(bgmTracksはbgmより優先)。各区間内でループ再生。
-          // 曲が切り替わる境界(隣接区間とfileが異なる/区間が途切れる)では
-          // フェードイン/アウトする。同一曲のゲイン変更(ダッキング)連結では
-          // フェードしない。
+          // 曲が切り替わる境界では「前曲フェードアウト → 約3秒の無音 →
+          // 区間頭(=次章の頭)から次曲がフェードインなしで鳴る」。
+          // 同一曲のゲイン変更(ダッキング)連結ではフェード・無音を入れない。
+          // 最終区間は動画末尾に向けてフェードアウトのみ(無音ギャップなし)。
           (shots.bgmTracks.map((t, i) => {
-            const BGM_FADE_SEC = 1.5;
+            const BGM_FADE_SEC = 1.5; // フェードアウトの長さ
+            const BGM_GAP_SEC = 3; // 曲切り替え前の無音の長さ
             const tracks = shots.bgmTracks!;
             const durF = Math.max(1, Math.round((t.endSec - t.startSec) * fps));
-            const prev = tracks[i - 1];
             const next = tracks[i + 1];
-            const contiguousPrev =
-              prev &&
-              prev.file === t.file &&
-              Math.abs(prev.endSec - t.startSec) < 0.05;
             const contiguousNext =
               next &&
               next.file === t.file &&
               Math.abs(t.endSec - next.startSec) < 0.05;
-            const fadeInF =
-              contiguousPrev || i === 0 // 動画冒頭(最初の区間)はフェードインしない
-                ? 0
-                : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
+            // 次と地続きの同一曲: フェードなし / 曲が変わる: 無音ギャップあり /
+            // 最終区間: ギャップなしで末尾フェードアウト
+            const gapF =
+              next && !contiguousNext
+                ? Math.min(durF, Math.round(BGM_GAP_SEC * fps))
+                : 0;
             const fadeOutF = contiguousNext
               ? 0
-              : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
+              : Math.min(durF - gapF, Math.round(BGM_FADE_SEC * fps));
+            const audibleEndF = durF - gapF; // ここで音量0に到達し、以降は無音
             const base = dbToVolume(t.gainDb);
             return (
               <Sequence
@@ -423,10 +423,12 @@ export const Episode: React.FC<EpisodeProps> = ({
                 <Audio
                   src={staticFile(`assets/${t.file}`)}
                   volume={(f) => {
-                    const vIn = fadeInF > 0 ? Math.min(1, f / fadeInF) : 1;
+                    if (f >= audibleEndF) return 0;
                     const vOut =
-                      fadeOutF > 0 ? Math.min(1, (durF - f) / fadeOutF) : 1;
-                    return base * Math.max(0, Math.min(vIn, vOut));
+                      fadeOutF > 0
+                        ? Math.min(1, (audibleEndF - f) / fadeOutF)
+                        : 1;
+                    return base * Math.max(0, vOut);
                   }}
                   loop
                 />
