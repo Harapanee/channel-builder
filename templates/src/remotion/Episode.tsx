@@ -397,7 +397,8 @@ export const Episode: React.FC<EpisodeProps> = ({
                 1,
                 Math.round((t.endSec - t.startSec) * fps)
               )}
-              name={`bgm:${t.file}`}>
+              name={`bgm:${t.file}`}
+              hidden>
               <Audio
                 src={staticFile(`assets/${t.file}`)}
                 volume={dbToVolume(t.gainDb)}
