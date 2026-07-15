@@ -388,24 +388,50 @@ export const Episode: React.FC<EpisodeProps> = ({
       >
         {narrationSrc ? <Audio src={narrationSrc} /> : null}
         {shots.bgmTracks && shots.bgmTracks.length > 0 ? (
-          // 章別BGM(bgmTracksはbgmより優先)。各区間内でループ再生
-          (shots.bgmTracks.map((t, i) => (
-            <Sequence
-              key={`bgm-${i}`}
-              from={Math.round(t.startSec * fps)}
-              durationInFrames={Math.max(
-                1,
-                Math.round((t.endSec - t.startSec) * fps)
-              )}
-              name={`bgm:${t.file}`}
-              hidden>
-              <Audio
-                src={staticFile(`assets/${t.file}`)}
-                volume={dbToVolume(t.gainDb)}
-                loop
-              />
-            </Sequence>
-          )))
+          // 章別BGM(bgmTracksはbgmより優先)。各区間内でループ再生。
+          // 曲が切り替わる境界(隣接区間とfileが異なる/区間が途切れる)では
+          // フェードイン/アウトする。同一曲のゲイン変更(ダッキング)連結では
+          // フェードしない。
+          (shots.bgmTracks.map((t, i) => {
+            const BGM_FADE_SEC = 1.5;
+            const tracks = shots.bgmTracks!;
+            const durF = Math.max(1, Math.round((t.endSec - t.startSec) * fps));
+            const prev = tracks[i - 1];
+            const next = tracks[i + 1];
+            const contiguousPrev =
+              prev &&
+              prev.file === t.file &&
+              Math.abs(prev.endSec - t.startSec) < 0.05;
+            const contiguousNext =
+              next &&
+              next.file === t.file &&
+              Math.abs(t.endSec - next.startSec) < 0.05;
+            const fadeInF = contiguousPrev
+              ? 0
+              : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
+            const fadeOutF = contiguousNext
+              ? 0
+              : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
+            const base = dbToVolume(t.gainDb);
+            return (
+              <Sequence
+                key={`bgm-${i}`}
+                from={Math.round(t.startSec * fps)}
+                durationInFrames={durF}
+                name={`bgm:${t.file}`}>
+                <Audio
+                  src={staticFile(`assets/${t.file}`)}
+                  volume={(f) => {
+                    const vIn = fadeInF > 0 ? Math.min(1, f / fadeInF) : 1;
+                    const vOut =
+                      fadeOutF > 0 ? Math.min(1, (durF - f) / fadeOutF) : 1;
+                    return base * Math.max(0, Math.min(vIn, vOut));
+                  }}
+                  loop
+                />
+              </Sequence>
+            );
+          }))
         ) : shots.bgm ? (
           <Audio
             src={staticFile(`assets/${shots.bgm.file}`)}
