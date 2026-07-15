@@ -62,7 +62,6 @@ const IDENTICAL = [
   "scripts/hooks/guard-approved.mjs",
   "scripts/hooks/validate-json.mjs",
   ".claude/settings.json",
-  ".claude/agents/publisher.md",
   ".claude/agents/reading-checker.md",
   ".claude/agents/script-reviewer.md",
   ".claude/agents/theme-scout.md",
@@ -125,6 +124,9 @@ const VARIANT = [
   // 画像生成のプロンプト技法は映像スタイル(bible §8)に従属する(グリーンバック/フルフレーム等)。
   // visual-director / scene-implementer と同じ理由でチャンネル適合版を許容する
   ".claude/agents/asset-generator.md",
+  // サムネの構造型・言語規則は bible §13 のチャンネル教義に従属する(Thumbnail.tsx と同じ理由)。
+  // 参照チャンネル分析に基づくレイアウト型等のチャンネル適合版を許容する
+  ".claude/agents/publisher.md",
   "CLAUDE.md",
   ".channel-system.json",
   "channel/bible-template.md",

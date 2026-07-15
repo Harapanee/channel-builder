@@ -389,7 +389,7 @@ export const Episode: React.FC<EpisodeProps> = ({
         {narrationSrc ? <Audio src={narrationSrc} /> : null}
         {shots.bgmTracks && shots.bgmTracks.length > 0 ? (
           // 章別BGM(bgmTracksはbgmより優先)。各区間内でループ再生
-          shots.bgmTracks.map((t, i) => (
+          (shots.bgmTracks.map((t, i) => (
             <Sequence
               key={`bgm-${i}`}
               from={Math.round(t.startSec * fps)}
@@ -397,15 +397,14 @@ export const Episode: React.FC<EpisodeProps> = ({
                 1,
                 Math.round((t.endSec - t.startSec) * fps)
               )}
-              name={`bgm:${t.file}`}
-            >
+              name={`bgm:${t.file}`}>
               <Audio
                 src={staticFile(`assets/${t.file}`)}
                 volume={dbToVolume(t.gainDb)}
                 loop
               />
             </Sequence>
-          ))
+          )))
         ) : shots.bgm ? (
           <Audio
             src={staticFile(`assets/${shots.bgm.file}`)}
@@ -429,7 +428,7 @@ export const Episode: React.FC<EpisodeProps> = ({
               <ShotRenderer shot={shot} debug={debug} />
               {(shot.sfx ?? []).map((s, i) => (
                 // atSec はショット開始からの相対秒。cue は assets/audio/se/ のファイル名
-                <Sequence
+                (<Sequence
                   key={`${shot.shotId}-sfx-${i}`}
                   from={Math.round(s.atSec * fps)}
                   name={`sfx:${s.cue}`}
@@ -438,7 +437,7 @@ export const Episode: React.FC<EpisodeProps> = ({
                     src={staticFile(`assets/audio/se/${s.cue}`)}
                     volume={dbToVolume(s.gainDb)}
                   />
-                </Sequence>
+                </Sequence>)
               ))}
             </Sequence>
           );
