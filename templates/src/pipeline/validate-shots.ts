@@ -117,6 +117,88 @@ function validateTimeline(shots: ShotsFile, report: ValidationReport): void {
   }
 }
 
+/**
+ * 視覚多様性の定量規則(チャンネル別オプトイン)。
+ *
+ * `channel/visual-rules.json` が存在するチャンネルでのみ有効になる。
+ * ファイルが無ければ全ルールをスキップする(AI生成主体・非スライドショー等、
+ * 形式の異なるチャンネルに一律適用しないため)。しきい値は同ファイルで指定する:
+ *
+ *   { "minDurationSec": 300,        // これ未満の尺には適用しない(スモーク用短尺の除外)
+ *     "maxUsesPerImage": 3,         // 同一画像の使用回数上限(超過は BLOCK)
+ *     "minUniqueImagesPerMin": 4,   // ユニーク画像密度の下限(枚/分)
+ *     "maxAiRatio": 0.5 }           // source:"ai_image" のユニーク比率上限
+ *
+ * 各キーは省略可(省略したルールは検査しない)。shorts/ は常に対象外。
+ */
+interface VisualRulesConfig {
+  minDurationSec?: number;
+  maxUsesPerImage?: number;
+  minUniqueImagesPerMin?: number;
+  maxAiRatio?: number;
+}
+
+function loadVisualRules(projectRoot: string): VisualRulesConfig | null {
+  const p = path.join(projectRoot, "channel", "visual-rules.json");
+  if (!existsSync(p)) return null;
+  return loadJson<VisualRulesConfig>(p);
+}
+
+function validateVisualDiversity(
+  shots: ShotsFile,
+  library: LibraryFile,
+  rules: VisualRulesConfig,
+  report: ValidationReport
+): void {
+  const durationSec = shots.narration.durationSec;
+  if (durationSec < (rules.minDurationSec ?? 300)) return;
+
+  const libraryIndex = new Map(library.assets.map((a) => [a.assetId, a]));
+  const useCount = new Map<string, number>();
+  for (const shot of shots.shots) {
+    for (const assetId of shot.assets) {
+      if (!libraryIndex.has(assetId)) continue; // 存在チェックは Rule 3 が担当
+      useCount.set(assetId, (useCount.get(assetId) ?? 0) + 1);
+    }
+  }
+
+  // Rule 6: 同一画像の使用回数上限
+  if (rules.maxUsesPerImage !== undefined) {
+    for (const [assetId, count] of useCount) {
+      if (count > rules.maxUsesPerImage) {
+        report.add(
+          `[visual] assetId "${assetId}" が ${count} 回使用されています(同一画像はエピソード全体で${rules.maxUsesPerImage}回まで。channel/visual-rules.json)`
+        );
+      }
+    }
+  }
+
+  // Rule 7: ユニーク画像密度
+  const uniqueCount = useCount.size;
+  if (rules.minUniqueImagesPerMin !== undefined) {
+    const perMin = uniqueCount / (durationSec / 60);
+    if (perMin < rules.minUniqueImagesPerMin) {
+      report.add(
+        `[visual] ユニーク画像密度が ${perMin.toFixed(1)}枚/分 です(尺${(durationSec / 60).toFixed(1)}分に対しユニーク${uniqueCount}枚。1分あたり${rules.minUniqueImagesPerMin}枚以上が必要。channel/visual-rules.json)`
+      );
+    }
+  }
+
+  // Rule 8: AI生成比率の上限
+  if (rules.maxAiRatio !== undefined && uniqueCount > 0) {
+    let aiCount = 0;
+    for (const assetId of useCount.keys()) {
+      if (libraryIndex.get(assetId)?.source === "ai_image") aiCount++;
+    }
+    const aiRatio = aiCount / uniqueCount;
+    if (aiRatio > rules.maxAiRatio) {
+      report.add(
+        `[visual] AI生成画像がユニーク${uniqueCount}枚中 ${aiCount}枚(${(aiRatio * 100).toFixed(0)}%)です(上限${rules.maxAiRatio * 100}%。PD/CC調達・ライブラリ再利用を主体にする。channel/visual-rules.json)`
+      );
+    }
+  }
+}
+
 export function validateEpisode(
   episodeDir: string,
   projectRoot: string
@@ -257,6 +339,12 @@ export function validateEpisode(
         `[${shot.shotId}] DoodleCharacter に props.assetId がありません(点線プレースホルダが本番に出る可能性)`
       );
     }
+  }
+
+  // ---- Rule 6-8: 視覚多様性の定量規則(オプトイン。shorts/ は対象外) -----
+  const visualRules = loadVisualRules(projectRoot);
+  if (visualRules && !episodeDir.replace(/\\/g, "/").includes("shorts/")) {
+    validateVisualDiversity(shots, library, visualRules, report);
   }
 
   // ---- Rule 5: lineIds が timing.json に存在し、重複割り当てがない -------

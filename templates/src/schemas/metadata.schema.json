@@ -40,7 +40,7 @@
     },
     "aiDisclosure": {
       "type": "boolean",
-      "description": "合成メディア開示。合成音声ナレーションを使う当工場では常にtrue。アップロード時にYouTubeの「改変または合成されたコンテンツ」開示(containsSyntheticMedia)へ反映される"
+      "description": "改変コンテンツ開示(containsSyntheticMedia)。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。合成音声ナレーション+スライドショーは該当しないため通常false"
     },
     "productionNotes": {
       "type": "string",

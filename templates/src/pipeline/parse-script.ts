@@ -17,6 +17,10 @@ import { fileURLToPath } from "node:url";
  * - HTMLコメント — 1行で完結するコメント(`^\s*<!--.*-->\s*$` にマッチする行)
  *   はどこにあっても無視する(引用ブロックの区切りとしても扱わない)。
  *   複数行にまたがるHTMLコメントは対象外で、従来どおりフォーマットエラーになる。
+ * - 付録節 — 行IDを持たない `##` 見出し(`## 新規主張リスト` 等)以降は台本本文の
+ *   終端とみなし、ファイル末尾まで無視する。script-director が義務づけられている
+ *   「新規主張リスト」節(fact-checker の検証対象)を台本と同居させるための規則。
+ * - 水平線(`---` / `***` / `___`)— 節の区切りとして無視する(引用ブロックは区切る)。
  *
  * 不正形式はエラーにする:
  * - 行ID(`Lxx`)の重複
@@ -56,6 +60,10 @@ const BLOCKQUOTE_RE = /^>\s?(.*)$/;
 const BULLET_RE = /^-\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/;
 /** 1行完結のHTMLコメント。マッチする行はパース対象から除外する */
 const HTML_COMMENT_RE = /^\s*<!--.*-->\s*$/;
+/** 行IDを持たない `##` 見出し。ここから先は付録節とみなし台本本文から除外する */
+const APPENDIX_HEADING_RE = /^##\s+/;
+/** 水平線。節の区切りとして無視する */
+const THEMATIC_BREAK_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const NUMERIC_KEYS = new Set(["pause_after_sec", "speed_scale"]);
 
 type RawSection = {
@@ -90,6 +98,12 @@ function splitIntoSections(content: string): {
       continue;
     }
 
+    // 行IDを持たない `##` 見出し(`## 新規主張リスト` 等)は付録節の始まり。
+    // 以降はファイル末尾まで台本本文として扱わない。
+    if (APPENDIX_HEADING_RE.test(line)) {
+      break;
+    }
+
     if (!current) {
       const titleMatch = TITLE_RE.exec(line);
       if (titleMatch && title === undefined) {
@@ -119,6 +133,10 @@ function parseSection(section: RawSection): ParsedScriptLine {
     }
     if (text.trim() === "") {
       currentBlock = null; // 空行はブロックの区切り
+      continue;
+    }
+    if (THEMATIC_BREAK_RE.test(text)) {
+      currentBlock = null; // 水平線は節の区切り
       continue;
     }
 

@@ -183,4 +183,6 @@ open episodes/<ep>/out/final.mp4 # 視聴
 cat .channel-system.json         # 状態
 ```
 
-`publish/metadata.json` は `aiDisclosure`(合成音声ナレーションの開示。常にtrue)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。
+`npm run validate` は、チャンネルに `channel/visual-rules.json` が存在する場合のみ**視覚多様性の定量規則**(Rule 6-8)も検査する: `maxUsesPerImage`(同一画像の使用回数上限)・`minUniqueImagesPerMin`(ユニーク画像密度の下限)・`maxAiRatio`(source: "ai_image" のユニーク比率上限)。各キーは省略可(省略したルールは検査しない)。`minDurationSec`(既定300)未満の尺と `shorts/` は対象外。スライドショー型など画像多様性が命のチャンネルがオプトインで使う(AI生成主体・立ち芝居型のチャンネルはファイルを置かなければ従来どおり)。
+
+`publish/metadata.json` は `aiDisclosure`(YouTubeの改変コンテンツ開示。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。通常はfalse)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。

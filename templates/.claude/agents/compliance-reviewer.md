@@ -28,7 +28,7 @@ model: opus
 7. **YPP適合検査(再利用コンテンツ誤判定の回避。ファクトリールート直下の docs/ypp-reused-content-appeal-research.md(チャンネルフォルダからは ../docs/) §4 準拠)**:
    - **構成のテンプレ感**: 直近2本のエピソードと章構成・演出の並び順を突合する。章の数・順序・演出の種類がほぼ同一(=表面的な題材差し替えに見える)ならFAIL。差分が「題材固有の構成判断」として説明できることを確認する
    - **出典の明示**: research.md の主要出典が概要欄(publish/PUBLISH.md の概要欄案)に3件以上引き写されているか。公有素材(PD画像等)を使う回は出典台帳(research-images.md等)と概要欄の出典表記が対応しているか
-   - **AI開示の整合**: publish/metadata.json が存在する場合、aiDisclosure が true であり productionNotes(制作工程明記)が description に含まれているか(無い時点での検査はスキップし、publisherのセルフチェックに委ねる)
+   - **AI開示の整合**: publish/metadata.json が存在する場合、aiDisclosure が false であり(実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する演出がある場合のみtrue)、 productionNotes(制作工程明記)が description に含まれているか(無い時点での検査はスキップし、publisherのセルフチェックに委ねる)
    - 判定に迷う場合は「YouTubeの審査員が『量産された再利用コンテンツ』と誤読する余地があるか」を基準にする
 
 # 出力

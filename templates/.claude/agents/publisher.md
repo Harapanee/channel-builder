@@ -89,7 +89,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
   "categoryId": "27",
   "privacyStatus": "private",
   "thumbnail": "publish/thumb-1.png",
-  "aiDisclosure": true,
+  "aiDisclosure": false,
   "productionNotes": "<制作工程・AI利用の開示の定型ブロック(下記)>"
 }
 ```
@@ -97,7 +97,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - `privacyStatus` は常に `"private"`(公開操作は人間がYouTube Studioで行う)
 - `tags` はハッシュタグの語+検索語(人物の別表記・関連事件)を8〜15個
 - 書いたら `npm run validate:metadata episodes/<epId>` で自己検証し、結果を最終メッセージに含める
-- `aiDisclosure` は常に `true`(合成音声ナレーションのため。アップロード時にYouTubeの合成メディア開示へ反映される)
+- `aiDisclosure` は常に `false`(YouTubeの開示設問の対象は「実在人物の偽装・実映像の改変・現実のように見える架空場面」のみで、合成音声ナレーション+スライドショーは該当しない。該当する演出を入れた場合のみtrue)
 - `productionNotes` は次の定型を**逐語**で使い、同じ文面を概要欄(description)の末尾(クレジットの後)にも必ず含める(validate-metadataが包含を検証する):
 
   【制作工程・AI利用の開示】
@@ -131,7 +131,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] 概要欄にVOICEVOXクレジットと出典3〜5件とハッシュタグがある
 - [ ] metadata.json がPUBLISH.mdの採用案と一致し、`npm run validate:metadata` がOK
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
-- [ ] metadata.json に aiDisclosure: true と productionNotes(定型逐語)があり、description にも同文が含まれる
+- [ ] metadata.json に aiDisclosure: false と productionNotes(定型逐語)があり、description にも同文が含まれる
 - [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)。`npm run validate:ledger` がOK
 - [ ] 一言が感情中立・具体(感嘆詞・絶叫調・煽り語彙でない。docs/thumbnail-principles.md 原則2。bible §13が別の語調様式を明示する場合はbible優先で、その旨をPUBLISH.mdに一言記す)
 - [ ] 各案の注目オブジェクトが少数(bible §13の構造要素+補助アクセント1個以内。同 原則1)
@@ -152,14 +152,14 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
   "tags": ["<題材の固有名>", "<ジャンル語>", "Shorts"],
   "categoryId": "27",
   "privacyStatus": "private",
-  "aiDisclosure": true,
+  "aiDisclosure": false,
   "productionNotes": "<エピソードと同じ定型を逐語で>"
 }
 ```
 
 - `thumbnail` は**出力しない**
 - `description` には `#Shorts` を必ず含める(YouTube側のShorts判定は縦横比と尺で自動だが、検索・表示の手がかりとして入れる)
-- `privacyStatus` は常に `"private"`、`aiDisclosure` は常に `true`(エピソードと同じ理由)
+- `privacyStatus` は常に `"private"`、`aiDisclosure` は常に `false`(エピソードと同じ理由)
 - `productionNotes` はエピソードと同一の定型を逐語で使い、`description` にも全文を含める(`validate:metadata` が包含を検証する)
 - 書いたら `npm run validate:metadata shorts/<shortId>` で自己検証し、結果を最終メッセージに含める
 

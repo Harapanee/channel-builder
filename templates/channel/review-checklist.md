@@ -32,6 +32,7 @@ bible.md と併読すること。各項目は PASS / FAIL と根拠(該当箇所
 - [ ] キャラ素材に緑透け・塗り省略がない(gen-image/remove-bgの塗り検査を通過している)
 - [ ] ショットの役割が show / explain に偏っていない(gag/reveal/payoff等が存在する)
 - [ ] 視覚多様性の定量規則(bible映像節): 同一コンポーネントが3ショット以上連続していない/文字主体ショットが2割以下(章カード除く)/各章に3種以上の視覚様式(shots.jsonから機械集計して判定)
+- [ ] `channel/visual-rules.json` を持つチャンネルでは: 同一画像の使用回数・ユニーク画像密度・AI生成比率が同ファイルのしきい値内(`npm run validate` と同基準。shots.json+library.jsonから機械集計)
 - [ ] 場面演出のゼロ持ち越し(bible三層規則): shots.json の custom: 参照が全て本エピソード新設(src/scenes/episodes/<epId>/)である。過去エピソード由来の場面演出参照は1件でもFAIL(registry.tsのimport元パスで機械検算)
 - [ ] 場面演出がテンプレ量産でない: 単一factory関数の文言差替え変種群は全体で1演出と数える(名前が違っても実装が同一テンプレなら同一演出)。実効演出数で定量規則を満たし、場面演出参照の過半が単一テンプレ由来でない
 - [ ] 地図・地理形状が実データ由来の共有ジオメトリ(japan-geometry / world-geometry)である(フリーハンドの大陸・海岸線はFAIL)
