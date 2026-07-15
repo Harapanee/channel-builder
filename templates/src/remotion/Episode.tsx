@@ -406,9 +406,10 @@ export const Episode: React.FC<EpisodeProps> = ({
               next &&
               next.file === t.file &&
               Math.abs(t.endSec - next.startSec) < 0.05;
-            const fadeInF = contiguousPrev
-              ? 0
-              : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
+            const fadeInF =
+              contiguousPrev || i === 0 // 動画冒頭(最初の区間)はフェードインしない
+                ? 0
+                : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
             const fadeOutF = contiguousNext
               ? 0
               : Math.min(durF, Math.round(BGM_FADE_SEC * fps));
