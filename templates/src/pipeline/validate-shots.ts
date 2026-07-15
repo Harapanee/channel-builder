@@ -136,6 +136,55 @@ interface VisualRulesConfig {
   maxUsesPerImage?: number;
   minUniqueImagesPerMin?: number;
   maxAiRatio?: number;
+  /**
+   * cover表示で主対象が切れやすい縦長画像の下限アスペクト比(width/height)。
+   * これ未満の画像を参照するショットは、scene.props に focus か fit の
+   * 明示的なフレーミング指定がなければ BLOCK(Rule 9)。
+   */
+  minCoverAspectRatio?: number;
+}
+
+/** PNG/JPEGのヘッダから寸法を同期取得する(失敗時 null)。 */
+function readImageSize(absPath: string): { w: number; h: number } | null {
+  let buf: Buffer;
+  try {
+    buf = readFileSync(absPath);
+  } catch {
+    return null;
+  }
+  // PNG: シグネチャ8B + IHDR(width/height が offset 16/20)
+  if (
+    buf.length > 24 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  ) {
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  // JPEG: SOFマーカー(C0-CF、C4/C8/CCを除く)を走査
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let off = 2;
+    while (off + 9 < buf.length) {
+      if (buf[off] !== 0xff) {
+        off++;
+        continue;
+      }
+      const marker = buf[off + 1];
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        return { w: buf.readUInt16BE(off + 7), h: buf.readUInt16BE(off + 5) };
+      }
+      const len = buf.readUInt16BE(off + 2);
+      off += 2 + len;
+    }
+  }
+  return null;
 }
 
 function loadVisualRules(projectRoot: string): VisualRulesConfig | null {
@@ -148,10 +197,34 @@ function validateVisualDiversity(
   shots: ShotsFile,
   library: LibraryFile,
   rules: VisualRulesConfig,
+  projectRoot: string,
   report: ValidationReport
 ): void {
   const durationSec = shots.narration.durationSec;
   if (durationSec < (rules.minDurationSec ?? 300)) return;
+
+  // Rule 9: 縦長画像のフレーミング明示(focus / fit のない cover 表示を禁止)
+  if (rules.minCoverAspectRatio !== undefined) {
+    const arCache = new Map<string, number | null>();
+    for (const shot of shots.shots) {
+      const props = shot.scene.props as Record<string, unknown> | undefined;
+      const assetId = props?.assetId;
+      if (typeof assetId !== "string") continue;
+      if (props?.focus !== undefined || props?.fit !== undefined) continue;
+      const asset = library.assets.find((a) => a.assetId === assetId);
+      if (!asset) continue;
+      if (!arCache.has(assetId)) {
+        const size = readImageSize(path.join(projectRoot, "assets", asset.file));
+        arCache.set(assetId, size && size.h > 0 ? size.w / size.h : null);
+      }
+      const ar = arCache.get(assetId);
+      if (ar !== null && ar !== undefined && ar < rules.minCoverAspectRatio) {
+        report.add(
+          `[visual] [${shot.shotId}] 縦長画像 "${assetId}"(縦横比 ${ar.toFixed(2)} < ${rules.minCoverAspectRatio})を focus / fit の指定なしで参照しています(cover表示で主対象が切れるため、focus(主対象位置)か fit:"contain" を明示する。channel/visual-rules.json)`
+        );
+      }
+    }
+  }
 
   const libraryIndex = new Map(library.assets.map((a) => [a.assetId, a]));
   const useCount = new Map<string, number>();
@@ -344,7 +417,7 @@ export function validateEpisode(
   // ---- Rule 6-8: 視覚多様性の定量規則(オプトイン。shorts/ は対象外) -----
   const visualRules = loadVisualRules(projectRoot);
   if (visualRules && !episodeDir.replace(/\\/g, "/").includes("shorts/")) {
-    validateVisualDiversity(shots, library, visualRules, report);
+    validateVisualDiversity(shots, library, visualRules, projectRoot, report);
   }
 
   // ---- Rule 5: lineIds が timing.json に存在し、重複割り当てがない -------
