@@ -60,8 +60,24 @@ const SPEAKER_STYLE: Record<string, { accent: string; label: string }> =
     | Record<string, { accent: string; label: string }>
     | undefined) ?? {};
 
-/** 立ち絵の高さ(キャンバス高さ比) */
-const STAND_HEIGHT_PCT = 0.45;
+/**
+ * 立ち絵の表示窓(バストアップ切り出し用のクリップ枠)の高さ(キャンバス高さ比)。
+ * 人間レビュー「顔をもっと大きく(バストアップ寄りに)」を受け、全身を表示していた
+ * 旧方式(STAND_HEIGHT_PCT=0.45 で height:100%/width:auto の全身描画)から、
+ * 「表示窓より大きく描いて上から覗き込む」方式へ変更した。
+ * 1080 * 0.42 ≈ 454px。字幕帯(下端から paddingBottom:72 起点、fontSize:46 の
+ * 角丸ボックス ≈ 下端72〜145px帯)より上に顔が来る余白を残すため、旧 0.45 より
+ * わずかに低く抑えている。
+ */
+const STAND_WINDOW_HEIGHT_PCT = 0.42;
+/**
+ * 表示窓に対する立ち絵画像の拡大率。画像は等縮尺(width:auto)で表示窓より
+ * 高く描き、窓の overflow:hidden で腰から下をクリップする(頭は画像の最上部にあり
+ * 窓の top と一致させるため頭頂は常に窓内 = 切れない)。
+ * 窓が見せるのは全身のうち上から 1/STAND_ZOOM ≈ 58.8% (頭〜胸)。
+ * ZOOM=1.7 は「顔が現状比 約1.7倍」という発注の目安値をそのまま採用。
+ */
+const STAND_ZOOM = 1.7;
 /** 左右端からの内側マージン(キャンバス幅比) */
 const EDGE_INSET_PCT = 0.02;
 /** 口パクの open/closed 切り替え間隔(秒) ≈ 120ms */
@@ -142,7 +158,9 @@ const StandFigure: React.FC<{
     ? -((Math.sin(tSec * Math.PI * 2 * BOB_FREQ_HZ) + 1) / 2) * BOB_TRAVEL_PX
     : 0;
 
-  const standH = Math.round(height * STAND_HEIGHT_PCT);
+  // 表示窓(バストアップのクリップ枠)と、その中に描く拡大画像の実高さ
+  const windowH = Math.round(height * STAND_WINDOW_HEIGHT_PCT);
+  const imgH = Math.round(windowH * STAND_ZOOM);
   const inset = Math.round(width * EDGE_INSET_PCT);
   const accent = SPEAKER_STYLE[speakerKey]?.accent ?? PALETTE.ink;
 
@@ -152,21 +170,26 @@ const StandFigure: React.FC<{
         position: "absolute",
         bottom: 0,
         ...(config.side === "left" ? { left: inset } : { right: inset }),
-        height: standH,
+        height: windowH,
+        overflow: "hidden",
         transform: `translateY(${bobY}px)`,
       }}
     >
       {src ? (
+        // 窓より高く(拡大して)描き、頭を窓上端に揃える。腰から下は overflow:hidden で
+        // クリップされる = バストアップ。open/closed とも同じ height/位置で描くため
+        // 口パクで画像がズレて見えることはない。
         <Img
           src={src}
-          style={{ height: "100%", width: "auto", display: "block" }}
+          style={{ height: imgH, width: "auto", display: "block" }}
         />
       ) : (
         // 未登録の仮枠: 点線ボックス+話者accent色+assetId明記(本番混入の検出用)
+        // 表示窓(windowH)にそのまま追従させる(実素材の縦横比とは無関係な仮の枠)。
         <div
           style={{
             height: "100%",
-            width: Math.round(standH * 0.55),
+            width: Math.round(windowH * 0.55),
             boxSizing: "border-box",
             border: `6px dashed ${accent}`,
             borderRadius: 16,
