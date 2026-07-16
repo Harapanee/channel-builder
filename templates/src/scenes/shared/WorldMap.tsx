@@ -45,6 +45,23 @@ export type PlaceSpec = {
   color?: PaletteColor;
   marker?: MarkerKind;
   appearFrame?: number;
+  /**
+   * ラベルをマーカーのどちら側に置くか。既定 "auto"(=上。入らなければ下)。
+   * 経路・人物・素材がマーカーの真上を通るショットでは "left"/"right" に逃がして、
+   * 絵と文字のどちらも隠さない(ItalyMap と同一契約)。
+   */
+  labelAnchor?: "auto" | "above" | "below" | "left" | "right";
+  /**
+   * true = マーカーを**画面上一定サイズのピン**として描く(ズームしても地理的な面積を
+   * 主張しない)。都市など「点」を指すときに使う。
+   *
+   * 既定 false = viewBox 単位の円(= ズームすると画面上も地理的にも大きくなる)。
+   * 「エジプト」「カリブ海」のように**面**を指す主張はこちら。
+   *
+   * ⚠ zoom 3 の全世界図で pin を付けずに都市を指すと、円の半径が実距離で 600km 相当に
+   * なり「オランダの円がブリテン島を丸ごと囲む」ような地理的誤主張になる(ep011 実測)。
+   */
+  pin?: boolean;
 };
 
 export type FocusSpec = {
@@ -71,6 +88,20 @@ export type WorldMapProps = {
   focus?: FocusSpec;
   arrows?: ArrowSpec[];
   backgroundColor?: string;
+  /**
+   * 拡張スロット(shots.json からは渡さない・custom が内包して使う)。
+   * カメラ <g> の内側・マーカーの**下**に描く。座標系は viewBox(0..1000 × 0..540)。
+   */
+  children?: React.ReactNode;
+  /** カメラ <g> の内側・マーカーの**上**に描く。 */
+  overlay?: React.ReactNode;
+  /**
+   * **画面座標(px)** の層。地図SVGの上・**地名ラベルの下**に描く。
+   * 地図の縮尺では豆粒になる人物・素材を実寸で重ねるためのスロット
+   * (useWorldCamera().project() で投影した座標をそのまま使う)。
+   * ⚠ ここに置いた絵は地名ラベルを**覆わない**。地図の主張(地名)は常に最前面に残る。
+   */
+  screenOverlay?: React.ReactNode;
 };
 
 const VW = WORLD_VIEWBOX_W;
@@ -90,6 +121,56 @@ function resolveViewPoint(
     return [(spec.xPct / 100) * VW, (spec.yPct / 100) * VH];
   }
   return null;
+}
+
+export type WorldCamera = {
+  /** SVG <g> に渡すカメラ変換(viewBox 単位)。 */
+  camTransform: string;
+  /** 現在のズーム倍率(線幅を /z して画面上一定に保つのに使う)。 */
+  z: number;
+  /** viewBox 座標 → 画面 px。 */
+  project: (px: number, py: number) => [number, number];
+};
+
+/**
+ * WorldMap と同一のカメラを外側でも再現するためのフック。
+ * custom が「地図の上の任意の位置に自前の絵を重ねる」ときに使う
+ * (WorldMap 本体と同じ写像を保証し、ズレを防ぐ)。
+ * ⚠ 自前で写像を書き直さないこと(focus が id か xPct/yPct かで分岐を落とし、
+ *    地図と演出層がズレる事故が起きる)。
+ */
+export function useWorldCamera(focus?: FocusSpec): WorldCamera {
+  const frame = useCurrentFrame();
+  const { width, height } = useVideoConfig();
+  const s = Math.min(width / VW, height / VH);
+  const offX = (width - VW * s) / 2;
+  const offY = (height - VH * s) / 2;
+
+  let fx = CX;
+  let fy = CY;
+  let z = 1;
+  const fp = resolveViewPoint(focus);
+  if (focus && fp) {
+    const start = focus.startFrame ?? 0;
+    const dur = Math.max(1, focus.durationFrames ?? 30);
+    const t = interpolate(frame, [start, start + dur], [0, 1], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+      easing: Easing.inOut(Easing.cubic),
+    });
+    fx = interpolate(t, [0, 1], [CX, fp[0]]);
+    fy = interpolate(t, [0, 1], [CY, fp[1]]);
+    z = interpolate(t, [0, 1], [1, focus.zoom ?? 2]);
+  }
+  return {
+    camTransform: `translate(${CX} ${CY}) scale(${z}) translate(${-fx} ${-fy})`,
+    z,
+    project: (px: number, py: number): [number, number] => {
+      const cx = (px - fx) * z + CX;
+      const cy = (py - fy) * z + CY;
+      return [offX + cx * s, offY + cy * s];
+    },
+  };
 }
 
 const drawOn = (frame: number, appearFrame: number, len = 16) =>
@@ -114,6 +195,9 @@ export const WorldMap: React.FC<WorldMapProps> = ({
   focus,
   arrows = [],
   backgroundColor,
+  children,
+  overlay,
+  screenOverlay,
 }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
@@ -122,32 +206,9 @@ export const WorldMap: React.FC<WorldMapProps> = ({
 
   // ---- viewBox → 画面 の投影(preserveAspectRatio=xMidYMid meet と一致) ----
   const s = Math.min(width / VW, height / VH);
-  const offX = (width - VW * s) / 2;
-  const offY = (height - VH * s) / 2;
 
   // ---- カメラ(全図→focus へのズーム) ----
-  let fx = CX;
-  let fy = CY;
-  let z = 1;
-  const fp = resolveViewPoint(focus);
-  if (focus && fp) {
-    const start = focus.startFrame ?? 0;
-    const dur = Math.max(1, focus.durationFrames ?? 30);
-    const t = interpolate(frame, [start, start + dur], [0, 1], {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-      easing: Easing.inOut(Easing.cubic),
-    });
-    fx = interpolate(t, [0, 1], [CX, fp[0]]);
-    fy = interpolate(t, [0, 1], [CY, fp[1]]);
-    z = interpolate(t, [0, 1], [1, focus.zoom ?? 2]);
-  }
-  const camTransform = `translate(${CX} ${CY}) scale(${z}) translate(${-fx} ${-fy})`;
-  const project = (px: number, py: number): [number, number] => {
-    const cx = (px - fx) * z + CX;
-    const cy = (py - fy) * z + CY;
-    return [offX + cx * s, offY + cy * s];
-  };
+  const { camTransform, z, project } = useWorldCamera(focus);
 
   // 手描きの boiling。線幅は /z で画面上ほぼ一定に。
   const step = boilStep(frame, fps, 7);
@@ -172,17 +233,39 @@ export const WorldMap: React.FC<WorldMapProps> = ({
     if (my < -height * 0.1 || my > height * 1.1) return;
 
     const kind = pl.marker ?? "circle";
-    const markerScreenR = kind === "circle" ? 24 * s * z : 16 * s * Math.max(1, z * 0.5);
+    // pin=true のマーカーは画面上一定サイズ(= z を掛けない)。
+    const markerScreenR = pl.pin
+      ? (kind === "circle" ? 24 : 16) * s
+      : kind === "circle"
+        ? 24 * s * z
+        : 16 * s * Math.max(1, z * 0.5);
     const gap = markerScreenR + labelHalfH + 12;
-
-    let cy = my - gap;
-    if (cy - labelHalfH < topMargin) cy = my + gap;
-    if (cy + labelHalfH > bandTop) {
-      cy = my - gap;
-      if (cy - labelHalfH < topMargin) cy = topMargin + labelHalfH;
-    }
     const halfW = (text.length * labelFontPx * 1.02) / 2 + labelFontPx * 0.9;
-    const cx = Math.max(sideMargin + halfW, Math.min(width - sideMargin - halfW, mx));
+    const anchor = pl.labelAnchor ?? "auto";
+
+    let cy: number;
+    let cxRaw = mx;
+    if (anchor === "left" || anchor === "right") {
+      // 横に逃がす(マーカーの真上・真下を経路や素材が通るショット用)
+      cy = my;
+      const side = anchor === "left" ? -1 : 1;
+      cxRaw = mx + side * (markerScreenR + halfW + 12);
+      if (cy + labelHalfH > bandTop) cy = bandTop - labelHalfH;
+      if (cy - labelHalfH < topMargin) cy = topMargin + labelHalfH;
+    } else if (anchor === "below") {
+      cy = my + gap;
+      if (cy + labelHalfH > bandTop) cy = bandTop - labelHalfH;
+      if (cy - labelHalfH < topMargin) cy = topMargin + labelHalfH;
+    } else {
+      // auto / above(既定・従来どおり)
+      cy = my - gap;
+      if (cy - labelHalfH < topMargin) cy = my + gap;
+      if (cy + labelHalfH > bandTop) {
+        cy = my - gap;
+        if (cy - labelHalfH < topMargin) cy = topMargin + labelHalfH;
+      }
+    }
+    const cx = Math.max(sideMargin + halfW, Math.min(width - sideMargin - halfW, cxRaw));
     boxes.push({
       key: `lbl-${i}`,
       cx,
@@ -243,6 +326,9 @@ export const WorldMap: React.FC<WorldMapProps> = ({
             />
           ))}
 
+          {/* 拡張スロット(勢力圏の面など・マーカーの下) */}
+          {children}
+
           {/* 航路・進軍矢印 */}
           {arrows.map((ar, i) => {
             const a = lookupWorldPlace(ar.fromId);
@@ -288,9 +374,11 @@ export const WorldMap: React.FC<WorldMapProps> = ({
             const kind = pl.marker ?? "circle";
             const col = PALETTE[pl.color ?? "red"];
             const seed = seedFrom("wm-mark", i, pl.id ?? "", px, py);
+            // pin=true は「点」を指すピン(画面上一定サイズ)。既定は viewBox 単位の面。
+            const pinDiv = pl.pin ? z : 1;
 
             if (kind === "circle") {
-              const r = 24;
+              const r = 24 / pinDiv;
               const p = drawOn(frame, appear, 16);
               return (
                 <path
@@ -307,7 +395,7 @@ export const WorldMap: React.FC<WorldMapProps> = ({
               );
             }
             if (kind === "cross") {
-              const h = 16;
+              const h = 16 / pinDiv;
               const p = drawOn(frame, appear, 14);
               const l1 = roughLinePath(px - h, py - h, px + h, py + h, seed ^ step, 2, 5);
               const l2 = roughLinePath(px - h, py + h, px + h, py - h, seed ^ (step + 9), 2, 5);
@@ -330,9 +418,9 @@ export const WorldMap: React.FC<WorldMapProps> = ({
               );
             }
             const { scale } = popIn(frame, fps, { delayFrames: appear });
-            const poleH = 32;
-            const flagW = 24;
-            const flagDrop = 11;
+            const poleH = 32 / pinDiv;
+            const flagW = 24 / pinDiv;
+            const flagDrop = 11 / pinDiv;
             const top = py - poleH;
             const pennant = `M ${px} ${top} L ${px + flagW} ${top + flagDrop * 0.5} L ${px} ${top + flagDrop} Z`;
             return (
@@ -353,10 +441,16 @@ export const WorldMap: React.FC<WorldMapProps> = ({
               </g>
             );
           })}
+
+          {/* 拡張スロット(マーカーの上) */}
+          {overlay}
         </g>
       </svg>
 
-      {/* ラベル層(非ズーム。字幕帯・画面端回避済み) */}
+      {/* 画面座標の絵(人物・素材など)。地図の上・ラベルの下 */}
+      {screenOverlay}
+
+      {/* ラベル層(非ズーム。字幕帯・画面端回避済み。常に最前面 = 地名は必ず読める) */}
       {boxes.map((bx) => {
         const { scale, opacity } = popIn(frame, fps, { delayFrames: bx.appearFrame });
         return (

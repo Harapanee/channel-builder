@@ -125,6 +125,9 @@ export const GAZETTEER: Record<string, WorldPlace> = {
   "indian-ocean": { x: 708.3, y: 349.4, label: "インド洋" },
   "mediterranean": { x: 541.7, y: 170.7, label: "地中海" },
   "actium": { x: 557.7, y: 155.1, label: "アクティウム" },
+  // ---- ep011 追加(国境を越える経路の主張に使う。座標は lonLatToXY で算出) ----
+  "leiden": { x: 512.5, y: 102.6, label: "オランダ" }, // lonLatToXY(4.4970, 52.1601)
+  "firenze": { x: 531.3, y: 135.9, label: "フィレンツェ" }, // lonLatToXY(11.2558, 43.7696)
 };
 
 export function lookupWorldPlace(id: string): WorldPlace | null {

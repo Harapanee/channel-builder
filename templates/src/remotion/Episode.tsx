@@ -177,6 +177,26 @@ const ShotRenderer: React.FC<{ shot: Shot; debug?: boolean }> = ({
  * 全ショットの最前面に重畳する — ショット側は帯を意識せずフルフレームで描く。
  * 字幕は下帯の中に載せるため、SubtitleLayer はこの帯より前面に置く。
  */
+/**
+ * 合成のレイヤ契約(全チャンネル共通)。
+ *
+ * 「字幕は必ずシーンより前面」をシステムとして保証する。シーン(場面演出)側が
+ * 内部で zIndex を使うと、CSSの描画順では **positioned + 正のzIndex** の要素が
+ * z-index:auto の兄弟(=従来の SubtitleLayer)より上のペイント層に来るため、
+ * 字幕が絵の下に潜って消える(ep011 で全編の約3割が字幕消失)。
+ *
+ * 対策は2段構え:
+ *   1. シーン群を isolation:isolate の層に閉じ込める → シーン内部の zIndex が
+ *      この層の外へ影響しない(何を書かれても字幕を越えられない)
+ *   2. 黒帯・字幕に明示的な zIndex を与える → DOM順に依存せず前後関係が確定する
+ * 既存エピソード(シーンが zIndex 未使用)の見え方は変わらない(字幕は元から最前面)。
+ */
+const LAYER = {
+  scenes: 0,
+  letterbox: 10,
+  subtitle: 20,
+} as const;
+
 const LetterboxBars: React.FC = () => {
   const { width, height } = useVideoConfig();
   // 帯なしチャンネル・縦型ショート(height > width)には適用しない
@@ -191,7 +211,7 @@ const LetterboxBars: React.FC = () => {
     backgroundColor: FRAME.letterboxColor ?? "#000000",
   };
   return (
-    <AbsoluteFill style={{ pointerEvents: "none" }}>
+    <AbsoluteFill style={{ pointerEvents: "none", zIndex: LAYER.letterbox }}>
       <div style={{ ...barStyle, top: 0 }} />
       <div style={{ ...barStyle, bottom: 0 }} />
     </AbsoluteFill>
@@ -243,7 +263,7 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
   if (isVertical) {
     // 縦型ショート専用: 垂直中央より少し下(中心が高さの約60%)・幅基準の大きめ文字。
     return (
-      <AbsoluteFill>
+      <AbsoluteFill style={{ zIndex: LAYER.subtitle }}>
         <div
           style={{
             position: "absolute",
@@ -272,7 +292,13 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
     // 最大2行・帯内に収める。
     const bandPct = FRAME.letterboxPct > 0 ? FRAME.letterboxPct : 0.12;
     return (
-      <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center" }}>
+      <AbsoluteFill
+        style={{
+          justifyContent: "flex-end",
+          alignItems: "center",
+          zIndex: LAYER.subtitle,
+        }}
+      >
         <div
           style={{
             height: `${bandPct * 100}%`,
@@ -314,6 +340,7 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
         justifyContent: "flex-end",
         alignItems: "center",
         paddingBottom: 72,
+        zIndex: LAYER.subtitle,
       }}
     >
       <div
@@ -458,38 +485,42 @@ export const Episode: React.FC<EpisodeProps> = ({
             loop
           />
         ) : null}
-        {shots.shots.map((shot) => {
-          const from = Math.round(shot.startSec * fps);
-          const durationInFrames = Math.max(
-            1,
-            Math.round((shot.endSec - shot.startSec) * fps)
-          );
-          return (
-            <Sequence
-              key={shot.shotId}
-              from={from}
-              durationInFrames={durationInFrames}
-              name={shot.shotId}
-            >
-              <ShotRenderer shot={shot} debug={debug} />
-              {(shot.sfx ?? []).map((s, i) => (
-                // atSec はショット開始からの相対秒。cue は assets/audio/se/ のファイル名
-                (<Sequence
-                  key={`${shot.shotId}-sfx-${i}`}
-                  from={Math.round(s.atSec * fps)}
-                  name={`sfx:${s.cue}`}
-                >
-                  <Audio
-                    src={staticFile(`assets/audio/se/${s.cue}`)}
-                    // SEはgainDb未指定だと0dB=フル音量でナレーションより目立つため、
-                    // 既定を-9dBに下げる(明示指定があればそちらを使う)
-                    volume={dbToVolume(s.gainDb ?? -9)}
-                  />
-                </Sequence>)
-              ))}
-            </Sequence>
-          );
-        })}
+        {/* シーン層: isolation:isolate で独立したスタック文脈に閉じ込める。
+            シーン側が内部で zIndex を使っても、この層より前面(=字幕・黒帯)には出られない */}
+        <AbsoluteFill style={{ zIndex: LAYER.scenes, isolation: "isolate" }}>
+          {shots.shots.map((shot) => {
+            const from = Math.round(shot.startSec * fps);
+            const durationInFrames = Math.max(
+              1,
+              Math.round((shot.endSec - shot.startSec) * fps)
+            );
+            return (
+              <Sequence
+                key={shot.shotId}
+                from={from}
+                durationInFrames={durationInFrames}
+                name={shot.shotId}
+              >
+                <ShotRenderer shot={shot} debug={debug} />
+                {(shot.sfx ?? []).map((s, i) => (
+                  // atSec はショット開始からの相対秒。cue は assets/audio/se/ のファイル名
+                  (<Sequence
+                    key={`${shot.shotId}-sfx-${i}`}
+                    from={Math.round(s.atSec * fps)}
+                    name={`sfx:${s.cue}`}
+                  >
+                    <Audio
+                      src={staticFile(`assets/audio/se/${s.cue}`)}
+                      // SEはgainDb未指定だと0dB=フル音量でナレーションより目立つため、
+                      // 既定を-9dBに下げる(明示指定があればそちらを使う)
+                      volume={dbToVolume(s.gainDb ?? -9)}
+                    />
+                  </Sequence>)
+                ))}
+              </Sequence>
+            );
+          })}
+        </AbsoluteFill>
         {/* 上下黒帯(FRAME_STYLE準拠・横型のみ)→ その上に字幕(帯様式なら下帯の中に載る) */}
         <LetterboxBars />
         <SubtitleLayer timing={timing} />

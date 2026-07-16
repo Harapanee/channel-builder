@@ -18,6 +18,9 @@ import { fileURLToPath } from "node:url";
  *   はどこにあっても無視する(引用ブロックの区切りとしても扱わない)。
  *   複数行にまたがるHTMLコメントは対象外で、従来どおりフォーマットエラーになる。
  * - 水平線(`---` / `***` / `___`)— 節の区切りとして無視する(引用ブロックは区切る)。
+ * - メタ節見出し(`## 新規主張リスト` 等、`[Lxx]` 形式でない見出し)— その見出し
+ *   以降は本文外として無視する。`##` の直後が `[` で始まるのに行ID形式にならない
+ *   見出しは、書き損じとしてエラーにする(黙って本文を落とさない)。
  *
  * 不正形式はエラーにする:
  * - 行ID(`Lxx`)の重複
@@ -64,6 +67,8 @@ const HTML_COMMENT_RE = /^\s*<!--.*-->\s*$/;
  * (「最初の見出し以前の行は無視する」規則と対称。§5.4)。
  */
 const METADATA_HEADING_RE = /^#{1,6}\s+/;
+/** `##` 以下の見出し全般(行ID見出しの書き損じ検出に使う) */
+const ANY_HEADING_RE = /^#{2,}\s*(.*)$/;
 /** 水平線。節の区切りとして無視する(引用ブロックを終端させる) */
 const THEMATIC_BREAK_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const NUMERIC_KEYS = new Set(["pause_after_sec", "speed_scale"]);
@@ -98,6 +103,16 @@ function splitIntoSections(content: string): {
       };
       sections.push(current);
       continue;
+    }
+
+    // 行ID見出しの書き損じ(`##` の直後が `[` で始まるのに HEADING_RE に
+    // マッチしない)は、メタ節扱いで黙って本文を落とさず即エラーにする。
+    const anyHeading = ANY_HEADING_RE.exec(line);
+    if (anyHeading && anyHeading[1].startsWith("[")) {
+      throw new ScriptParseError(
+        `行ID見出しの形式が不正です: "${line.trim()}"(正: "## [Lxx] <beat>")`,
+        lineNumber
+      );
     }
 
     // 台本本文の後に続くメタ節見出し(`## 新規主張リスト` 等、`## [Lxx]` 以外の
