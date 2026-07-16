@@ -135,9 +135,14 @@ export type ThumbVariant = {
   background?: ThumbBackground;
   /**
    * AI生成のフルフレーム1枚絵(episodeDir相対・publish/配下。例: "publish/thumb-image-1.png")。
-   * 指定時は「1枚絵+事実型の一言」の新方式(bible §13)で描画し、character / scene /
-   * burst / 矢印の自動アンカーは使わない(指定されていても無視する)。lines は
-   * 顔帯回避をせず指定座標へ直接配置される(絵側が文字予定領域をシンプルに保つ契約)。
+   * 指定時は「1枚絵+事実型の一言」の新方式(bible §13)で描画し、scene / burst /
+   * 矢印の自動アンカーは使わない(指定されていても無視する)。
+   * `character`(承認済み立ち絵の透過PNG)は新方式でも1枚絵の上に合成される —
+   * 配布立ち絵素材を正典とするチャンネルではキャラクターのAI生成が禁じられるため
+   * (bible §8・§10)、§13が「キャラクターの顔(小)を隅に」を固定構造に含む場合、
+   * それは 1枚絵 + 立ち絵合成でのみ成立する。
+   * lines は顔帯回避をせず指定座標へ直接配置される(絵側が文字予定領域をシンプルに
+   * 保つ契約。立ち絵は隅へ小さく置き、一言の予定領域を避けるのがスペック側の責務)。
    * `accents`(dangerCircle / underline / vs / 座標明示のarrow)は新方式でも描画される
    * (自動アンカーのみ無効)。
    * 未指定時は従来方式で描画する(後方互換: 既存エピソードの thumbnails.json はそのまま動く)。
@@ -146,7 +151,8 @@ export type ThumbVariant = {
   /**
    * 動画内の実シーンを背景として静止描画する(ThumbScene のJSDoc参照)。
    * 描画順は background → scene → character → accents → lines。
-   * `image` 指定時はこの順序ごとscene自体が描画されない(image側のJSDoc参照)。
+   * `image` 指定時は scene 自体が描画されない(image が scene の代わりの
+   * フルフレーム背景。順は image → character → accents → lines。image側のJSDoc参照)。
    * シーン内に主人公が含まれる場合、重複する character は省略する。
    * 省略時は従来どおり(後方互換: 既存の thumbnails.json はそのまま動く)。
    */
@@ -733,7 +739,8 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   }
 
   const bg = resolveBackground(spec.background);
-  // 新方式(bible §13): AI生成のフルフレーム1枚絵。指定時は旧方式の部品を使わない
+  // 新方式(bible §13): AI生成のフルフレーム1枚絵。指定時は旧方式の
+  // scene / burst / 矢印の自動アンカーを使わない(character はAI生成禁止のため合成する)
   const useImageLayout = Boolean(spec.image);
   const accents = spec.accents ?? [];
   const bursts = accents.filter(
@@ -800,8 +807,10 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
             <BurstAccent key={`burst-${i}`} a={a} width={width} height={height} />
           ))}
 
-        {/* 旧方式: キャラクター(透過PNG) */}
-        {!useImageLayout && spec.character ? (
+        {/* キャラクター(承認済み立ち絵の透過PNG)。両方式で描画する:
+            配布立ち絵素材はAI生成できない(bible §8・§10)ため、image方式でも
+            §13の「キャラクターの顔(小)を隅に」はこの合成でしか満たせない */}
+        {spec.character ? (
           <DoodleCharacter
             assetId={spec.character.assetId}
             xPct={spec.character.xPct ?? 50}

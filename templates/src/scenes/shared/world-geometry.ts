@@ -118,6 +118,7 @@ export const GAZETTEER: Record<string, WorldPlace> = {
   "mongolia": { x: 788.9, y: 123.1, label: "モンゴル" },
   "persia": { x: 647.2, y: 182.6, label: "ペルシア" },
   "japan": { x: 880.6, y: 164.8, label: "日本" },
+  "korea": { x: 854.2, y: 164.8, label: "韓国" }, // lonLatToXY(127.5, 36.5)(ep001 追加)
   "cape-of-good-hope": { x: 551.4, y: 445.9, label: "喜望峰" },
   "timbuktu": { x: 491.7, y: 243.0, label: "トンブクトゥ" },
   "atlantic": { x: 388.9, y: 178.7, label: "大西洋" },

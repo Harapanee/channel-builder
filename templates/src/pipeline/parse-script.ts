@@ -12,8 +12,10 @@ import { fileURLToPath } from "node:url";
  * - 引用ブロック(`>`) — TTSへ渡す文字列はこれのみ。1行につき1引用ブロック。
  *   連続する `>` 行は1つのブロックとして連結する。
  * - 箇条書き(`- key: value`) — 演出注釈。`pause_after_sec` / `speed_scale` は
- *   TTSパラメータとして数値解釈する。それ以外(`delivery` 等)はLLM向けヒント
- *   として `hints` に保持するのみで、コードは意味を解釈しない。
+ *   TTSパラメータとして数値解釈する。`speaker` は話者指定の正式フィールドとして
+ *   保持する(値の妥当性はここでは検証しない。tts側で voice.json と突合する)。
+ *   それ以外(`delivery` 等)はLLM向けヒントとして `hints` に保持するのみで、
+ *   コードは意味を解釈しない。
  * - HTMLコメント — 1行で完結するコメント(`^\s*<!--.*-->\s*$` にマッチする行)
  *   はどこにあっても無視する(引用ブロックの区切りとしても扱わない)。
  *   複数行にまたがるHTMLコメントは対象外で、従来どおりフォーマットエラーになる。
@@ -34,6 +36,8 @@ export type ParsedScriptLine = {
   lineId: string;
   beat: string;
   text: string;
+  /** 話者キー(`- speaker:` 注釈由来。例 "zundamon")。tts側で voice.json と突合する */
+  speaker?: string;
   pauseAfterSec?: number;
   speedScale?: number;
   /** delivery 等、コードが解釈しない演出注釈。LLM向けヒントとして保持する */
@@ -72,6 +76,8 @@ const ANY_HEADING_RE = /^#{2,}\s*(.*)$/;
 /** 水平線。節の区切りとして無視する(引用ブロックを終端させる) */
 const THEMATIC_BREAK_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const NUMERIC_KEYS = new Set(["pause_after_sec", "speed_scale"]);
+/** 話者指定の注釈キー。正式フィールド(speaker)として保持する(hints行きにしない) */
+const SPEAKER_KEY = "speaker";
 
 type RawSection = {
   lineId: string;
@@ -140,6 +146,7 @@ function splitIntoSections(content: string): {
 function parseSection(section: RawSection): ParsedScriptLine {
   const blockquoteBlocks: string[][] = [];
   const hints: Record<string, string> = {};
+  let speaker: string | undefined;
   let pauseAfterSec: number | undefined;
   let speedScale: number | undefined;
 
@@ -183,6 +190,8 @@ function parseSection(section: RawSection): ParsedScriptLine {
         }
         if (key === "pause_after_sec") pauseAfterSec = num;
         if (key === "speed_scale") speedScale = num;
+      } else if (key === SPEAKER_KEY) {
+        speaker = value;
       } else {
         hints[key] = value;
       }
@@ -221,6 +230,7 @@ function parseSection(section: RawSection): ParsedScriptLine {
     beat: section.beat,
     text,
   };
+  if (speaker !== undefined) result.speaker = speaker;
   if (pauseAfterSec !== undefined) result.pauseAfterSec = pauseAfterSec;
   if (speedScale !== undefined) result.speedScale = speedScale;
   if (Object.keys(hints).length > 0) result.hints = hints;

@@ -11,6 +11,7 @@ import {
 import { resolveComponent } from "../scenes/registry";
 import { PlaceholderBase } from "../scenes/core/PlaceholderBase";
 import { AssetProvider } from "../scenes/asset-context";
+import { SpeakerStandsLayer } from "../scenes/shared/SpeakerStands";
 import { DOODLE_FONT_STACK, useDoodleFont } from "../scenes/use-doodle-font";
 import { PALETTE } from "../scenes/style";
 import * as channelStyle from "../scenes/style";
@@ -64,6 +65,26 @@ const FRAME: FrameStyle = {
     | Partial<FrameStyle>
     | undefined) ?? {}),
 };
+
+/**
+ * 話者別字幕スタイル(2話者掛け合いチャンネルのみ style.ts が SPEAKER_STYLE を
+ * エクスポートする)。timing.json の行に speaker があれば字幕文字色を accent に
+ * 切り替える。エクスポートの無いチャンネル・speaker の無い行は従来色のまま
+ * (FRAME_STYLE と同じ防御的読み込み)。
+ */
+const SPEAKER_STYLE: Record<string, { accent: string; label: string }> =
+  ((channelStyle as Record<string, unknown>).SPEAKER_STYLE as
+    | Record<string, { accent: string; label: string }>
+    | undefined) ?? {};
+
+/**
+ * 立ち絵レイヤーの有効判定(2話者掛け合いチャンネルのみ style.ts が
+ * SPEAKER_STANDS をエクスポートする)。無いチャンネルでは描画しない
+ * (SPEAKER_STYLE と同じ防御的読み込み)。実体は SpeakerStandsLayer 参照。
+ */
+const SPEAKER_STANDS_ENABLED = Boolean(
+  (channelStyle as Record<string, unknown>).SPEAKER_STANDS
+);
 
 /**
  * calculateMetadata / コンポーネント双方から呼ばれるため、Node.js と
@@ -193,6 +214,8 @@ const ShotRenderer: React.FC<{ shot: Shot; debug?: boolean }> = ({
  */
 const LAYER = {
   scenes: 0,
+  /** 立ち絵(SPEAKER_STANDS チャンネルのみ): シーンより前面・黒帯/字幕より背面 */
+  stands: 5,
   letterbox: 10,
   subtitle: 20,
 } as const;
@@ -239,6 +262,7 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
       line.phrases.map((phrase) => ({
         ...phrase,
         noSubtitle: Boolean(line.noSubtitle),
+        speaker: line.speaker,
       }))
     )
     .sort((a, b) => a.startSec - b.startSec)
@@ -260,6 +284,11 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
     return null;
   }
 
+  // 話者別の字幕文字色(2話者掛け合い)。speaker の無い行は undefined = 従来色
+  const speakerAccent = active.speaker
+    ? SPEAKER_STYLE[active.speaker]?.accent
+    : undefined;
+
   if (isVertical) {
     // 縦型ショート専用: 垂直中央より少し下(中心が高さの約60%)・幅基準の大きめ文字。
     return (
@@ -271,7 +300,7 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
             left: "50%",
             transform: "translate(-50%, -50%)",
             background: "rgba(27, 26, 23, 0.82)",
-            color: PALETTE.paper,
+            color: speakerAccent ?? PALETTE.paper,
             fontSize: Math.round(width * 0.058),
             padding: "12px 30px",
             borderRadius: 14,
@@ -310,7 +339,7 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
         >
           <div
             style={{
-              color: FRAME.subtitleColor ?? "#F2EFE6",
+              color: speakerAccent ?? FRAME.subtitleColor ?? "#F2EFE6",
               fontSize: 44,
               lineHeight: 1.35,
               fontFamily:
@@ -346,7 +375,7 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
       <div
         style={{
           background: "rgba(27, 26, 23, 0.82)",
-          color: PALETTE.paper,
+          color: speakerAccent ?? PALETTE.paper,
           fontSize: 46,
           padding: "12px 30px",
           borderRadius: 14,
@@ -521,6 +550,10 @@ export const Episode: React.FC<EpisodeProps> = ({
             );
           })}
         </AbsoluteFill>
+        {/* 立ち絵+口パク(SPEAKER_STANDS チャンネル・横型のみ。縦型ショートは非表示) */}
+        {SPEAKER_STANDS_ENABLED && !isVertical ? (
+          <SpeakerStandsLayer timing={timing} zIndex={LAYER.stands} />
+        ) : null}
         {/* 上下黒帯(FRAME_STYLE準拠・横型のみ)→ その上に字幕(帯様式なら下帯の中に載る) */}
         <LetterboxBars />
         <SubtitleLayer timing={timing} />

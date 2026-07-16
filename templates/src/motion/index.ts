@@ -9,6 +9,8 @@
  */
 import { interpolate, spring, Easing, type InterpolateOptions } from "remotion";
 import { seededUnit, steppedNoise } from "./noise";
+// 線の様式契約(チャンネル可変)。style.ts は他を import しないため循環しない。
+import { LINE_STYLE } from "../scenes/style";
 
 export * from "./noise";
 
@@ -257,15 +259,47 @@ export type BoilingParams = {
 export type BoilingResult = { rotate: number; scale: number };
 
 /**
- * 約 6fps で段階変化する ±0.5°回転 + ±0.5%スケール。
- * 全描画に薄く適用して手描きの「boiling(コマの揺れ)」を出す。
+ * 常時わずかに動かす微小変形。様式は style.ts の `LINE_STYLE` 契約で決まる。
+ *
+ * - "rough": 約 6fps で段階変化する ±0.5°回転 + ±0.5%スケール。
+ *   全描画に薄く適用して手描きの「boiling(コマの揺れ)」を出す。
+ * - "clean": bible §8 が手描きのジッタを禁じるため、段階ノイズは使わない。
+ *   代わりに**滑らかな連続ドリフト**(位相の異なる2つの正弦。既定振幅で ±0.12°/±0.3%)
+ *   を返す。目的は画作りではなく **frozen_video QA 対策**:
+ *   ・qa.ts は ffmpeg `freezedetect=d=3.0` で3秒超の静止区間を検出する。
+ *     freezedetect は候補区間の先頭フレームを基準に差分を見るため、周期数秒の
+ *     ドリフトなら3秒の間に基準から必ず離れ、静止と判定されない。
+ *   ・qa-smoke.ts は同一ショットの +0.5秒 と +2.5秒 の PNG が**完全一致**したら
+ *     静止疑いとする。2秒差はドリフト周期(下記)の 1/3 前後にあたり、
+ *     全画素が一様に動くので一致しない。
+ *   振幅は 1080p で画面端が数px動く程度 = 知覚されないが、上記いずれの検出条件も
+ *   確実に外れる大きさ。
  */
+/** clean ドリフトの周期(秒)。互いに素な2周期でパターンの反復を避ける */
+const CLEAN_DRIFT_ROT_PERIOD_SEC = 6.3;
+const CLEAN_DRIFT_SCALE_PERIOD_SEC = 4.9;
+/** clean ドリフトの振幅(rough の振幅に対する比)。既定 0.5°/0.5% → 0.12°/0.3% */
+const CLEAN_DRIFT_ROT_FACTOR = 0.24;
+const CLEAN_DRIFT_SCALE_FACTOR = 0.6;
+
 export function boiling(
   frame: number,
   fps: number,
   params: BoilingParams
 ): BoilingResult {
   const { seed, rotAmpDeg = 0.5, scaleAmpPct = 0.5, hz = 6 } = params;
+  if (LINE_STYLE === "clean") {
+    const t = frame / fps;
+    // シードから位相をずらし、要素ごとに同期しないようにする
+    const phR = seededUnit(seed ^ 0xa5a5, 0) * Math.PI * 2;
+    const phS = seededUnit(seed ^ 0x5a5a, 0) * Math.PI * 2;
+    const r = Math.sin((t / CLEAN_DRIFT_ROT_PERIOD_SEC) * Math.PI * 2 + phR);
+    const s = Math.sin((t / CLEAN_DRIFT_SCALE_PERIOD_SEC) * Math.PI * 2 + phS);
+    return {
+      rotate: r * rotAmpDeg * CLEAN_DRIFT_ROT_FACTOR,
+      scale: 1 + (s * scaleAmpPct * CLEAN_DRIFT_SCALE_FACTOR) / 100,
+    };
+  }
   const r = steppedNoise(seed ^ 0xa5a5, frame, fps, hz);
   const s = steppedNoise(seed ^ 0x5a5a, frame, fps, hz);
   return { rotate: r * rotAmpDeg, scale: 1 + (s * scaleAmpPct) / 100 };

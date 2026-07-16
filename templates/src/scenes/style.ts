@@ -19,6 +19,48 @@ export const PALETTE = {
 
 export type PaletteColor = keyof typeof PALETTE;
 
+/**
+ * 線の様式(全チャンネル共通の doodle-svg.ts / motion が参照するチャンネル可変の見た目)。
+ *
+ * - "rough": 手描き画風。シード付きジッタで頂点を歪ませ、Catmull-Rom で平滑化した
+ *   ゆらぐ線を描く。常時 boiling(コマ単位の揺れ)がかかる。
+ * - "clean": 均一で太い線。ジッタ・平滑化を使わず、直線セグメントと正確な円弧で
+ *   幾何的に整った形を描く。boiling は「滑らかな微小ドリフト」に置き換わる
+ *   (bible §8「手描き風のジッターを使わない」+ frozen_video QA 対策。motion/index.ts の
+ *   boiling() を参照)。
+ *
+ * 既定(テンプレート)は "rough"。この値だけを差し替えれば doodle-svg.ts の
+ * rough*Path 群と boiling() の全呼び出しが自動追従する(PALETTE と同じ考え方)。
+ */
+export type LineStyle = "rough" | "clean";
+export const LINE_STYLE: LineStyle = "rough";
+
+/**
+ * 本文・見出しの書体(全チャンネル共通の use-doodle-font.ts が参照するチャンネル可変の見た目)。
+ *
+ * assets/fonts/ に同梱した TTF を FontFace でロードする。ライセンスは
+ * assets/fonts/LICENSE.md に記録すること。
+ *
+ * ⚠️ family は **TTF の内部ファミリー名**を書くこと(配布サイトの表示名ではない)。
+ * FontFace(name, url) に渡した name がそのまま CSS の font-family 参照名になるため、
+ * ここが実物とずれるとフォールバックへ落ちる。
+ * 例: M PLUS Rounded 1c の TTF の内部ファミリー名は "Rounded Mplus 1c"。
+ *
+ * 既定は手描き風の "Yusei Magic"(SIL OFL 1.1)。bible §8 が別の書体を定めるチャンネルでは
+ * TTF を assets/fonts/ へ同梱し、ライセンスを assets/fonts/LICENSE.md に記録した上で
+ * ここを差し替える(例: 太いラウンドゴシックの M PLUS Rounded 1c Black / SIL OFL 1.1)。
+ */
+export const DOODLE_FONT = {
+  /** TTF の内部ファミリー名 = CSS 参照名 */
+  family: "Yusei Magic",
+  /** public/ からの相対パス(staticFile に渡す) */
+  file: "assets/fonts/YuseiMagic-Regular.ttf",
+  /** FontFace に登録するウェイト */
+  weight: "400",
+  /** ロード失敗時に落ちる先(同系統の書体を並べる) */
+  fallback: `"Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif`,
+} as const;
+
 /** 手描き風の太い線幅の目安(1080p キャンバス基準の px)。 */
 export const STROKE = {
   hair: 4,

@@ -6,6 +6,7 @@
 
 - `channel/bible.md` — チャンネル教義(人格・文法・画風・音)の唯一の定義。全工程がここを参照する
 - `channel/voice.json` — ナレーション音声の定義(話者・話速・creditNotice)。**変更禁止**
+- `DESIGN.md` — 映像の見た目トークン(配色・書体・線)の具体値。bible §8 の教義を実装値へ落とした契約で、`src/scenes/style.ts` はこれを実装する。変更は design-forge の手順(`validate_design.py` を通す)+ `/channel-refine`
 - `channel/review-checklist.md` — レビュアーの検査観点
 - `src/schemas/` — 全データ契約(shots/timing/library/episode)のJSON Schema
 - `channel/episode-ledger.json` — 全話台帳(題材・アーク・署名・モチーフ。マンネリ検出の機械可読契約)

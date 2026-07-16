@@ -87,8 +87,22 @@ type AudioQuery = {
   kana: string;
 };
 
+type SpeakerConfig = {
+  displayName?: string;
+  role?: string;
+  speakerId: number;
+  speakerName?: string;
+  speedScale: number;
+  pitchScale: number;
+  intonationScale: number;
+};
+
 type VoiceConfig = {
   provider: string;
+  /** 2話者掛け合い形式の話者マップ。無ければ旧形式(トップレベルの単一話者)で動く */
+  speakers?: Record<string, SpeakerConfig>;
+  /** speakers 形式で行注釈 `- speaker:` が無い行に使う既定話者キー */
+  defaultSpeaker?: string;
   speakerId: number;
   speakerName?: string;
   speedScale: number;
@@ -98,6 +112,77 @@ type VoiceConfig = {
   pauseLengthScale?: number;
   creditNotice: string;
 };
+
+/** 行に対して解決済みの話者パラメータ。key は speakers 形式のときのみ入る */
+type ResolvedSpeaker = {
+  /** 話者キー(例 "zundamon")。旧形式(speakers なし)では undefined */
+  key?: string;
+  speakerId: number;
+  speedScale: number;
+  pitchScale: number;
+  intonationScale: number;
+};
+
+/**
+ * 行の話者を解決する。voice.json に speakers マップがあれば
+ * 行注釈 `- speaker:`(無ければ defaultSpeaker)でキーを引き、無い旧形式では
+ * 従来どおりトップレベルの単一話者設定を返す(後方互換)。
+ * 未知の話者キーは行IDを添えて即エラーにする(黙って既定話者に落とさない)。
+ */
+function resolveSpeaker(
+  voice: VoiceConfig,
+  line: ParsedScriptLine
+): ResolvedSpeaker {
+  if (!voice.speakers) {
+    if (line.speaker !== undefined) {
+      throw new TtsError(
+        `[${line.lineId}] 行注釈 speaker "${line.speaker}" が指定されていますが、` +
+          `channel/voice.json に speakers マップがありません(旧形式=単一話者)`
+      );
+    }
+    return {
+      speakerId: voice.speakerId,
+      speedScale: voice.speedScale,
+      pitchScale: voice.pitchScale,
+      intonationScale: voice.intonationScale,
+    };
+  }
+  const key = line.speaker ?? voice.defaultSpeaker;
+  if (!key) {
+    throw new TtsError(
+      `[${line.lineId}] 話者を解決できません: 行注釈 speaker が無く、` +
+        `voice.json に defaultSpeaker もありません`
+    );
+  }
+  const sp = voice.speakers[key];
+  if (!sp) {
+    throw new TtsError(
+      `[${line.lineId}] 未知の話者 "${key}" です(voice.json の speakers: ` +
+        `${Object.keys(voice.speakers).join(", ")})`
+    );
+  }
+  return {
+    key,
+    speakerId: sp.speakerId,
+    speedScale: sp.speedScale,
+    pitchScale: sp.pitchScale,
+    intonationScale: sp.intonationScale,
+  };
+}
+
+/**
+ * 行の実効 speedScale。speakers 形式では行注釈 speed_scale を
+ * 「話者の speedScale への乗算」として扱い、旧形式では従来どおり
+ * 行注釈がトップレベル値を置換する(後方互換)。
+ */
+function effectiveSpeedScale(
+  sp: ResolvedSpeaker,
+  line: ParsedScriptLine
+): number {
+  return sp.key !== undefined
+    ? sp.speedScale * (line.speedScale ?? 1)
+    : line.speedScale ?? sp.speedScale;
+}
 
 // 句読点ポーズ長の倍率デフォルト。voice.json の pauseLengthScale で上書き可。
 // AudioQuery.pauseLengthScale ではなく pause_mora.vowel_length を直接スケール
@@ -164,6 +249,10 @@ function applyShortFormatSpeechOverride(
   const parts: string[] = [];
   if (typeof speech.speedScale === "number") {
     voice.speedScale = speech.speedScale;
+    // speakers 形式ではフォーマットの話速指定を全話者へ同値で適用する
+    for (const sp of Object.values(voice.speakers ?? {})) {
+      sp.speedScale = speech.speedScale;
+    }
     parts.push(`speedScale=${speech.speedScale}`);
   }
   if (typeof speech.pauseLengthScale === "number") {
@@ -552,6 +641,8 @@ export function buildPhraseTimings(
 type LineResult = {
   line: ParsedScriptLine;
   wavPath: string;
+  /** 解決済み話者キー(speakers 形式のみ。timing.json / readings.md に出力する) */
+  speaker?: string;
   kana: string;
   speedScale: number;
   calculatedDurationSec: number;
@@ -567,14 +658,16 @@ type LineResult = {
  * これを呼ぶことで、両モードのフォーマットを1箇所で同一に保つ。
  */
 function renderReadingsReport(
-  items: { line: ParsedScriptLine; kana: string }[]
+  items: { line: ParsedScriptLine; kana: string; speaker?: string }[]
 ): string {
   const readingsBody = items
     .map((r) => {
       const kana = (r.kana ?? "")
         .replace(/['_\/]/g, "") // アクセント記号を除去して可読化
         .replace(/、/g, " ");
-      return `- **${r.line.lineId}** ${r.line.text}\n  - 読み: ${kana}`;
+      // 2話者形式では話者を明記する(reading-checkerが読む)。旧形式は従来どおり
+      const who = r.speaker ? `【${r.speaker}】 ` : "";
+      return `- **${r.line.lineId}** ${who}${r.line.text}\n  - 読み: ${kana}`;
     })
     .join("\n");
   return `# 読み仮名レポート(VOICEVOX実読み)\n\n誤読チェック用。台本テキストと読みを突合すること。\n\n${readingsBody}\n`;
@@ -640,16 +733,19 @@ export async function runTts(
     line: ParsedScriptLine,
     index: number
   ): Promise<void> => {
-    const speedScale = line.speedScale ?? voice.speedScale;
+    const sp = resolveSpeaker(voice, line);
+    const speedScale = effectiveSpeedScale(sp, line);
     const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
+    // 解決済み話者のパラメータでハッシュする(話者変更で古いWAVが再利用されない)。
+    // 旧形式では voice.* と同値になるため既存キャッシュはそのまま生きる
     const hash = createHash("sha256")
       .update(
         JSON.stringify([
           line.text,
           speedScale,
-          voice.speakerId,
-          voice.pitchScale,
-          voice.intonationScale,
+          sp.speakerId,
+          sp.pitchScale,
+          sp.intonationScale,
           voice.pauseLengthScale ?? DEFAULT_PAUSE_LENGTH_SCALE,
         ])
       )
@@ -662,6 +758,7 @@ export async function runTts(
       results[index] = {
         line,
         wavPath: wavPathForLine,
+        speaker: sp.key,
         kana: cached.kana,
         speedScale: cached.speedScale,
         calculatedDurationSec: cached.calculatedDurationSec,
@@ -672,14 +769,14 @@ export async function runTts(
       return;
     }
 
-    const aq = await fetchAudioQuery(line.text, voice.speakerId);
-    // voice.json の値で上書きする(行注釈 speed_scale があれば行側優先)
+    const aq = await fetchAudioQuery(line.text, sp.speakerId);
+    // 解決済み話者の値で上書きする(行注釈 speed_scale は話者speedScaleに乗算済み)
     aq.speedScale = speedScale;
-    aq.pitchScale = voice.pitchScale;
-    aq.intonationScale = voice.intonationScale;
+    aq.pitchScale = sp.pitchScale;
+    aq.intonationScale = sp.intonationScale;
     scalePauseMoras(aq, voice.pauseLengthScale ?? DEFAULT_PAUSE_LENGTH_SCALE);
 
-    const wavBuffer = await synthesize(aq, voice.speakerId);
+    const wavBuffer = await synthesize(aq, sp.speakerId);
     const wavPath = path.join(narrationDir, `${line.lineId}.wav`);
     writeFileSync(wavPath, wavBuffer);
 
@@ -709,6 +806,7 @@ export async function runTts(
     results[index] = {
       line,
       wavPath,
+      speaker: sp.key,
       kana: aq.kana ?? "",
       speedScale: aq.speedScale,
       calculatedDurationSec,
@@ -837,6 +935,8 @@ export async function runTts(
     return {
       lineId: r.line.lineId,
       text: r.line.text,
+      // 解決済み話者キー(speakers 形式のみ)。SubtitleLayerが字幕色分けに使う
+      ...(r.speaker ? { speaker: r.speaker } : {}),
       ...(displayRaw ? { displayText: displayRaw } : {}),
       ...(noSubtitle ? { noSubtitle: true } : {}),
       startSec,
@@ -911,9 +1011,8 @@ export async function runReadingsOnly(
     }
   }
 
-  const items: { line: ParsedScriptLine; kana: string }[] = new Array(
-    parsed.lines.length
-  );
+  const items: { line: ParsedScriptLine; kana: string; speaker?: string }[] =
+    new Array(parsed.lines.length);
   let cacheHits = 0;
 
   // 合成しないので同時実行はエンジンの audio_query 応答性のみに依存する。
@@ -924,30 +1023,31 @@ export async function runReadingsOnly(
     line: ParsedScriptLine,
     index: number
   ): Promise<void> => {
-    const speedScale = line.speedScale ?? voice.speedScale;
+    const sp = resolveSpeaker(voice, line);
+    const speedScale = effectiveSpeedScale(sp, line);
     const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
     const hash = createHash("sha256")
       .update(
         JSON.stringify([
           line.text,
           speedScale,
-          voice.speakerId,
-          voice.pitchScale,
-          voice.intonationScale,
+          sp.speakerId,
+          sp.pitchScale,
+          sp.intonationScale,
         ])
       )
       .digest("hex");
 
     const cached = lineCache[line.lineId];
     if (cached && cached.hash === hash && existsSync(wavPathForLine)) {
-      items[index] = { line, kana: cached.kana ?? "" };
+      items[index] = { line, kana: cached.kana ?? "", speaker: sp.key };
       cacheHits++;
       return;
     }
 
     // synthesis は呼ばない。kana は audio_query の戻り値から得る。
-    const aq = await fetchAudioQuery(line.text, voice.speakerId);
-    items[index] = { line, kana: aq.kana ?? "" };
+    const aq = await fetchAudioQuery(line.text, sp.speakerId);
+    items[index] = { line, kana: aq.kana ?? "", speaker: sp.key };
   };
 
   let nextIndex = 0;
