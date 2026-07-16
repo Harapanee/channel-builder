@@ -52,6 +52,27 @@ export type ShotsFile = {
 
 // ---- §5.5 timing.json --------------------------------------------------
 
+/**
+ * 立ち絵の表情キー(全チャンネル共通の語彙)。
+ *
+ * 台本注釈 `- expression:` の許可値であり、parse-script.ts がこの集合で検証する
+ * (自由文の `- delivery:` は演者向けの散文として hints に残り、コードは解釈しない。
+ *  「契約に機械検証できない値を書かない」= CLAUDE.md)。
+ *
+ * 素材の assetId 規約は `<立ち絵接頭辞>-<expression>-<open|closed>`。
+ * 表情差分を持たないチャンネルは style.ts の SPEAKER_STANDS で expressionPrefixes を
+ * 宣言しなければよく、その場合は全行が既定表情(DEFAULT_EXPRESSION)で描かれる。
+ */
+export const EXPRESSIONS = ["normal", "smile", "surprise", "trouble"] as const;
+export type Expression = (typeof EXPRESSIONS)[number];
+
+/** `- expression:` 注釈が無い行・表情素材が無いチャンネルの既定表情 */
+export const DEFAULT_EXPRESSION: Expression = "normal";
+
+export function isExpression(value: string): value is Expression {
+  return (EXPRESSIONS as readonly string[]).includes(value);
+}
+
 export type PhraseTiming = {
   text: string;
   /** 字幕表示用テキスト(- display: 注釈由来)。読み(text)がひらがな開きでも字幕は漢字にできる */
@@ -69,6 +90,11 @@ export type LineTiming = {
   displayText?: string;
   /** 字幕非表示。`- subtitle: off` 注釈由来。画面内テキストと重複する行に使う */
   noSubtitle?: boolean;
+  /**
+   * この行を話す話者の表情(`- expression:` 注釈由来)。省略時は DEFAULT_EXPRESSION 相当。
+   * 立ち絵レイヤー(SpeakerStands.tsx)が読む。表情素材の無いチャンネルでは無視される
+   */
+  expression?: Expression;
   startSec: number;
   endSec: number;
   phrases: PhraseTiming[];

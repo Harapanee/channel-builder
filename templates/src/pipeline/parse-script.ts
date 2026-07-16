@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { EXPRESSIONS, isExpression, type Expression } from "../schemas/types";
 
 /**
  * §5.4 script.md パーサ。
@@ -14,8 +15,11 @@ import { fileURLToPath } from "node:url";
  * - 箇条書き(`- key: value`) — 演出注釈。`pause_after_sec` / `speed_scale` は
  *   TTSパラメータとして数値解釈する。`speaker` は話者指定の正式フィールドとして
  *   保持する(値の妥当性はここでは検証しない。tts側で voice.json と突合する)。
+ *   `expression` は立ち絵の表情指定の正式フィールドとして保持し、値が
+ *   schemas/types.ts の EXPRESSIONS に含まれることをここで検証する(機械可読の契約)。
  *   それ以外(`delivery` 等)はLLM向けヒントとして `hints` に保持するのみで、
- *   コードは意味を解釈しない。
+ *   コードは意味を解釈しない(`delivery` は自由文の演者向け散文であり、
+ *   表情へ機械的に写像しない。表情は `expression` で明示すること)。
  * - HTMLコメント — 1行で完結するコメント(`^\s*<!--.*-->\s*$` にマッチする行)
  *   はどこにあっても無視する(引用ブロックの区切りとしても扱わない)。
  *   複数行にまたがるHTMLコメントは対象外で、従来どおりフォーマットエラーになる。
@@ -30,6 +34,7 @@ import { fileURLToPath } from "node:url";
  * - 引用ブロックの複数出現(2個以上)
  * - 認識できない行フォーマット
  * - pause_after_sec / speed_scale が数値として解釈できない
+ * - expression が EXPRESSIONS(normal|smile|surprise|trouble)以外
  */
 
 export type ParsedScriptLine = {
@@ -38,6 +43,11 @@ export type ParsedScriptLine = {
   text: string;
   /** 話者キー(`- speaker:` 注釈由来。例 "zundamon")。tts側で voice.json と突合する */
   speaker?: string;
+  /**
+   * 立ち絵の表情(`- expression:` 注釈由来)。この行を話す話者の表情を指す。
+   * 省略時は undefined = 描画側の既定表情(DEFAULT_EXPRESSION = "normal")。
+   */
+  expression?: Expression;
   pauseAfterSec?: number;
   speedScale?: number;
   /** delivery 等、コードが解釈しない演出注釈。LLM向けヒントとして保持する */
@@ -78,6 +88,8 @@ const THEMATIC_BREAK_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const NUMERIC_KEYS = new Set(["pause_after_sec", "speed_scale"]);
 /** 話者指定の注釈キー。正式フィールド(speaker)として保持する(hints行きにしない) */
 const SPEAKER_KEY = "speaker";
+/** 表情指定の注釈キー。正式フィールド(expression)として保持する(hints行きにしない) */
+const EXPRESSION_KEY = "expression";
 
 type RawSection = {
   lineId: string;
@@ -147,6 +159,7 @@ function parseSection(section: RawSection): ParsedScriptLine {
   const blockquoteBlocks: string[][] = [];
   const hints: Record<string, string> = {};
   let speaker: string | undefined;
+  let expression: Expression | undefined;
   let pauseAfterSec: number | undefined;
   let speedScale: number | undefined;
 
@@ -192,6 +205,15 @@ function parseSection(section: RawSection): ParsedScriptLine {
         if (key === "speed_scale") speedScale = num;
       } else if (key === SPEAKER_KEY) {
         speaker = value;
+      } else if (key === EXPRESSION_KEY) {
+        // 表情は機械可読の契約。タイポを黙って normal へ握り潰さず、ここで落とす
+        if (!isExpression(value)) {
+          throw new ScriptParseError(
+            `[${section.lineId}] 未知の表情 "${value}" です(許可値: ${EXPRESSIONS.join(" | ")})`,
+            lineNumber
+          );
+        }
+        expression = value;
       } else {
         hints[key] = value;
       }
@@ -231,6 +253,7 @@ function parseSection(section: RawSection): ParsedScriptLine {
     text,
   };
   if (speaker !== undefined) result.speaker = speaker;
+  if (expression !== undefined) result.expression = expression;
   if (pauseAfterSec !== undefined) result.pauseAfterSec = pauseAfterSec;
   if (speedScale !== undefined) result.speedScale = speedScale;
   if (Object.keys(hints).length > 0) result.hints = hints;

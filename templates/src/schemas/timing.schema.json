@@ -69,6 +69,15 @@
         },
         "noSubtitle": {
           "type": "boolean"
+        },
+        "expression": {
+          "description": "この行を話す話者の立ち絵表情(台本注釈 `- expression:` 由来)。省略時は normal 相当。表情素材の無いチャンネルでは無視される",
+          "enum": [
+            "normal",
+            "smile",
+            "surprise",
+            "trouble"
+          ]
         }
       }
     },

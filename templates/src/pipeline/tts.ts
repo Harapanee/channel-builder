@@ -939,6 +939,8 @@ export async function runTts(
       ...(r.speaker ? { speaker: r.speaker } : {}),
       ...(displayRaw ? { displayText: displayRaw } : {}),
       ...(noSubtitle ? { noSubtitle: true } : {}),
+      // 立ち絵の表情(- expression:)。注釈の無い行は書き出さず、描画側が既定表情へ落とす
+      ...(r.line.expression ? { expression: r.line.expression } : {}),
       startSec,
       endSec,
       phrases,

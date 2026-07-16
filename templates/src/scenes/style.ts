@@ -78,6 +78,38 @@ export const STROKE = {
 export const SUBTITLE_SAFE_BOTTOM_PCT = 0.82;
 
 /**
+ * 話者別の字幕スタイル(2話者以上の掛け合いチャンネルのみ)。
+ * キーは channel/voice.json の speakers のキー(= timing.json の行の speaker)と
+ * 一致させること。accent は字幕の文字色に使う。
+ * このエクスポートが無いチャンネルでは字幕は従来色のまま(防御的読み込み)。
+ *
+ * export const SPEAKER_STYLE: Record<string, { accent: string; label: string }> = {
+ *   <話者キー>: { accent: "#7EC96E", label: "<表示名>" },
+ * };
+ */
+
+/**
+ * 立ち絵レイヤー設定(左右下に立ち絵+口パク。掛け合いチャンネルのみ)。
+ * **このエクスポートが無い既定のチャンネルでは立ち絵レイヤーは何も描画しない。**
+ * 立ち絵を使うチャンネルだけ、次の形で宣言する(型は SpeakerStands.tsx が持つ):
+ *
+ * import type { SpeakerStandConfig } from "./shared/SpeakerStands";
+ * export const SPEAKER_STANDS: Record<string, SpeakerStandConfig> = {
+ *   <話者キー>: {
+ *     side: "left",
+ *     // library.json の assetId 接頭辞。"<prefix>-open" / "<prefix>-closed" の2枚を引く
+ *     assetPrefix: "stand-<話者>-normal",
+ *     // 表情差分を持つチャンネルのみ。**実際に素材がある表情だけ**を宣言する。
+ *     // 省略時は全行が既定表情で描かれる(= 表情差分なしの挙動)。
+ *     // 台本注釈 `- expression: normal|smile|surprise|trouble` → timing.json の行
+ *     // expression → ここで assetId 接頭辞へ解決される。宣言の無い表情・
+ *     // library.json 未登録の表情は assetPrefix(既定表情)へ安全に落ちる。
+ *     expressionPrefixes: { smile: "stand-<話者>-smile" },
+ *   },
+ * };
+ */
+
+/**
  * 画面フレーム設定(全チャンネル共通の Episode.tsx が参照するチャンネル可変の見た目)。
  * 既定は従来のDoodle系挙動(帯なし・角丸字幕・紙背景)。
  * スライドショー型など別様式のチャンネルはここを書き換える
