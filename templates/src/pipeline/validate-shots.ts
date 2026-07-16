@@ -420,6 +420,39 @@ export function validateEpisode(
     validateVisualDiversity(shots, library, visualRules, projectRoot, report);
   }
 
+  // ---- Rule 10: コンポーネント別の必須props + 絵コンテ残骸の検出 ----------
+  // ep004(動物転生)で「絵コンテのプレースホルダpropsのまま完成扱い」になり、
+  // ComparisonSplitが全17件 0|0 表示・Outroがチャンネル名欠落のまま
+  // レンダーまで素通りした事故の再発防止(2026-07-15 channel-refine由来)。
+  const REQUIRED_PROPS: Record<string, string[]> = {
+    ComparisonSplit: ["left", "right", "mode"],
+  };
+  for (const shot of shots.shots) {
+    const comp = shot.scene.component;
+    const baseName = comp.replace(/^custom:/, "");
+    const props = (shot.scene.props ?? {}) as Record<string, unknown>;
+    for (const key of REQUIRED_PROPS[baseName] ?? []) {
+      if (!(key in props)) {
+        report.add(
+          `[${shot.shotId}] ${comp} に必須prop "${key}" がありません(絵コンテのプレースホルダpropsのまま実装されていない疑い)`
+        );
+      }
+    }
+    if ("placeholderAssets" in props) {
+      report.add(
+        `[${shot.shotId}] props に絵コンテ残骸 "placeholderAssets" が残っています(scene-implementer が未実装)`
+      );
+    }
+    if (baseName === "Outro") {
+      const channelName = props.channelName;
+      if (typeof channelName !== "string" || channelName.length === 0) {
+        report.add(
+          `[${shot.shotId}] Outro に props.channelName がありません(既定文字列「チャンネル名」が本番に出ます)`
+        );
+      }
+    }
+  }
+
   // ---- Rule 5: lineIds が timing.json に存在し、重複割り当てがない -------
   const timingLineIds = new Set(timing.lines.map((l) => l.lineId));
   const assignedLineIds = new Map<string, string>(); // lineId -> owner shotId

@@ -481,7 +481,9 @@ export const Episode: React.FC<EpisodeProps> = ({
                 >
                   <Audio
                     src={staticFile(`assets/audio/se/${s.cue}`)}
-                    volume={dbToVolume(s.gainDb)}
+                    // SEはgainDb未指定だと0dB=フル音量でナレーションより目立つため、
+                    // 既定を-9dBに下げる(明示指定があればそちらを使う)
+                    volume={dbToVolume(s.gainDb ?? -9)}
                   />
                 </Sequence>)
               ))}

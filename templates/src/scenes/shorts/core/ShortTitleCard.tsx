@@ -116,7 +116,8 @@ export const ShortTitleCard: React.FC<ShortTitleCardProps> = ({
         <div
           style={{
             position: "absolute",
-            bottom: height * 0.05,
+            // Shorts下部UI(下端12%前後)に隠れないよう、セーフエリア内に置く
+            bottom: height * 0.18,
             width: "100%",
             textAlign: "center",
             fontFamily: font,

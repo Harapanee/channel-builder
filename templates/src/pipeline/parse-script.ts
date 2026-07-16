@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
  * - HTMLコメント — 1行で完結するコメント(`^\s*<!--.*-->\s*$` にマッチする行)
  *   はどこにあっても無視する(引用ブロックの区切りとしても扱わない)。
  *   複数行にまたがるHTMLコメントは対象外で、従来どおりフォーマットエラーになる。
+ * - 水平線(`---` / `***` / `___`)— 節の区切りとして無視する(引用ブロックは区切る)。
  *
  * 不正形式はエラーにする:
  * - 行ID(`Lxx`)の重複
@@ -63,6 +64,8 @@ const HTML_COMMENT_RE = /^\s*<!--.*-->\s*$/;
  * (「最初の見出し以前の行は無視する」規則と対称。§5.4)。
  */
 const METADATA_HEADING_RE = /^#{1,6}\s+/;
+/** 水平線。節の区切りとして無視する(引用ブロックを終端させる) */
+const THEMATIC_BREAK_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const NUMERIC_KEYS = new Set(["pause_after_sec", "speed_scale"]);
 
 type RawSection = {
@@ -133,6 +136,10 @@ function parseSection(section: RawSection): ParsedScriptLine {
     }
     if (text.trim() === "") {
       currentBlock = null; // 空行はブロックの区切り
+      continue;
+    }
+    if (THEMATIC_BREAK_RE.test(text)) {
+      currentBlock = null; // 水平線は節の区切り
       continue;
     }
 

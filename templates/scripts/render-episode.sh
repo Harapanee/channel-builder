@@ -55,12 +55,14 @@ if [ -d "$SCENES" ] && [ "${SKIP_INFINITY_CHECK:-0}" != "1" ]; then
 fi
 
 # 期待尺(narration実長)をtimingから取得
-EXPECT=$(node -e "console.log(require('./$EP/timing.json').totalDurationSec)")
+# FORCE_COLOR環境下ではconsole.logの数値にANSIカラーが混入し
+# --concurrency等が "\e[33m6\e[39m" になってremotionが落ちるため、色を明示的に殺す
+EXPECT=$(FORCE_COLOR=0 NO_COLOR=1 node -e "console.log(require('./$EP/timing.json').totalDurationSec)" | sed $'s/\x1b\\[[0-9;]*m//g')
 
 # 空きメモリ(free+inactive)からワーカー数を決める: 1ワーカー≈0.6GB、4〜10にクランプ
 AVAIL_GB=$(vm_stat | awk '/Pages free/{f=$3} /Pages inactive/{i=$3} END{gsub(/\./,"",f); gsub(/\./,"",i); print (f+i)*16384/1073741824}')
 CORES=$(sysctl -n hw.ncpu)
-CONC=$(node -e "const a=Math.floor($AVAIL_GB/0.6); console.log(Math.max(4, Math.min(10, Math.min($CORES-2, a))))")
+CONC=$(FORCE_COLOR=0 NO_COLOR=1 node -e "const a=Math.floor($AVAIL_GB/0.6); console.log(Math.max(4, Math.min(10, Math.min($CORES-2, a))))" | sed $'s/\x1b\\[[0-9;]*m//g')
 echo "=== render: $EP -> out/$OUT.mp4 (expect ${EXPECT}s, concurrency $CONC, avail ${AVAIL_GB%.*}GB) ==="
 
 for attempt in 1 2 3 4; do

@@ -203,7 +203,9 @@ export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
     }
 
     // mode === "bars"
-    const maxBarH = height * 0.5;
+    // ラベルは棒の下(baseY以深)に置くと字幕帯(SUBTITLE_SAFE_BOTTOM_PCT)と
+    // 重なるため、数字と同じく棒の上に「数字→ラベル」の縦積みで置く。
+    const maxBarH = height * 0.44;
     const barW = width * 0.16;
     const barH = maxBarH * (side.value / maxValue) * progress;
     const baseY = height * 0.8;
@@ -228,20 +230,13 @@ export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
             left: centerX,
             top: barTopY - height * 0.02,
             transform: "translate(-50%, -100%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
             textAlign: "center",
           }}
         >
           {numberEl}
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            left: centerX,
-            top: baseY + height * 0.02,
-            transform: "translateX(-50%)",
-            textAlign: "center",
-          }}
-        >
           {labelEl}
         </div>
       </div>
