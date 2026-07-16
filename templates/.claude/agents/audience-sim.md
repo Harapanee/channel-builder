@@ -2,7 +2,7 @@
 name: audience-sim
 description: 疑似初見レビュー(助言のみ、合否権なし)。台本とショット意図を時系列順に読み、初見視聴者の知識・期待の変化を追跡する。bible.mdやstoryboard.mdの制作意図は渡されない前提。
 tools: Read, Write
-model: opus
+model: sonnet
 ---
 
 <!-- {{AUDIENCE_PERSONA}} は channel-builder が bible §2(視聴者)の内容から埋めるプレースホルダである。
