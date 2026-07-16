@@ -424,15 +424,29 @@ export function validateEpisode(
   // ep004(動物転生)で「絵コンテのプレースホルダpropsのまま完成扱い」になり、
   // ComparisonSplitが全17件 0|0 表示・Outroがチャンネル名欠落のまま
   // レンダーまで素通りした事故の再発防止(2026-07-15 channel-refine由来)。
+  // 共通の必須propsに加え、チャンネル固有の必須propsは channel/required-props.json
+  // (任意。例: {"Outro": ["channelName"]})で拡張できる — Outroの既定値が
+  // プレースホルダかどうか等、コンポーネントの実装契約はチャンネルごとに異なるため。
   const REQUIRED_PROPS: Record<string, string[]> = {
     ComparisonSplit: ["left", "right", "mode"],
   };
+  try {
+    const channelRequired = loadJson<Record<string, string[]>>(
+      path.join(projectRoot, "channel", "required-props.json")
+    );
+    for (const [comp, keys] of Object.entries(channelRequired)) {
+      REQUIRED_PROPS[comp] = [...(REQUIRED_PROPS[comp] ?? []), ...keys];
+    }
+  } catch {
+    /* ファイルが無ければ共通分のみ */
+  }
   for (const shot of shots.shots) {
     const comp = shot.scene.component;
     const baseName = comp.replace(/^custom:/, "");
     const props = (shot.scene.props ?? {}) as Record<string, unknown>;
     for (const key of REQUIRED_PROPS[baseName] ?? []) {
-      if (!(key in props)) {
+      const v = props[key];
+      if (!(key in props) || (typeof v === "string" && v.length === 0)) {
         report.add(
           `[${shot.shotId}] ${comp} に必須prop "${key}" がありません(絵コンテのプレースホルダpropsのまま実装されていない疑い)`
         );
@@ -442,14 +456,6 @@ export function validateEpisode(
       report.add(
         `[${shot.shotId}] props に絵コンテ残骸 "placeholderAssets" が残っています(scene-implementer が未実装)`
       );
-    }
-    if (baseName === "Outro") {
-      const channelName = props.channelName;
-      if (typeof channelName !== "string" || channelName.length === 0) {
-        report.add(
-          `[${shot.shotId}] Outro に props.channelName がありません(既定文字列「チャンネル名」が本番に出ます)`
-        );
-      }
     }
   }
 
