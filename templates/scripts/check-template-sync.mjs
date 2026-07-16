@@ -41,7 +41,6 @@ const IDENTICAL = [
   "src/pipeline/thumb-metrics.ts",
   "src/schemas/thumb-metrics.schema.json",
   "docs/thumbnail-principles.md",
-  "docs/retention-principles.md",
   "src/remotion/Root.tsx",
   "src/remotion/Episode.tsx",
   "src/remotion/QASmokeRoot.tsx",
@@ -63,7 +62,6 @@ const IDENTICAL = [
   "scripts/hooks/validate-json.mjs",
   ".claude/settings.json",
   ".claude/agents/reading-checker.md",
-  ".claude/agents/script-reviewer.md",
   ".claude/agents/theme-scout.md",
   ".claude/skills/theme-scout/SKILL.md",
   ".claude/skills/system-refine/SKILL.md",
@@ -127,6 +125,10 @@ const VARIANT = [
   // サムネの構造型・言語規則は bible §13 のチャンネル教義に従属する(Thumbnail.tsx と同じ理由)。
   // 参照チャンネル分析に基づくレイアウト型等のチャンネル適合版を許容する
   ".claude/agents/publisher.md",
+  // 約束(サムネ・タイトル)の回収位置は bible §4 の構成教義に従属する(2026-07-16:
+  // 転生系chは「0〜30秒回収」不適用で冒頭から一生を時系列進行。テンプレ版は中立の参照実装)
+  ".claude/agents/script-reviewer.md",
+  "docs/retention-principles.md",
   "CLAUDE.md",
   ".channel-system.json",
   "channel/bible-template.md",
