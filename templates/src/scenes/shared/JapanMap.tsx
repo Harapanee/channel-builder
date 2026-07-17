@@ -34,7 +34,7 @@ import {
  * インラインで描く。理由は報告参照(座標系一致・ズーム精度・字幕回避のため)。
  */
 
-export type MarkerKind = "circle" | "cross" | "flag";
+export type MarkerKind = "circle" | "cross" | "flag" | "dot";
 
 /** 地点指定: gazetteer の id か、キャンバス%座標(xPct/yPct)のいずれか。 */
 export type PlaceSpec = {
@@ -50,6 +50,13 @@ export type PlaceSpec = {
   color?: PaletteColor;
   /** マーカー種別。既定 "circle"(赤の手描き円)。 */
   marker?: MarkerKind;
+  /**
+   * マーカー半径(viewBox 0..1000 単位)。circle/dot のみ有効。
+   * 省略時は circle=40(既定の「1か所を丸で囲む」強調サイズ)、dot=10。
+   * 多数の地点を同時に置く用途(散布)では、島の面積に対して過大にならない
+   * よう明示的に小さい値を渡すこと(既定のまま多数配置すると重なって塊に見える)。
+   */
+  radius?: number;
   /** 出現フレーム(ショット内相対)。既定 0。 */
   appearFrame?: number;
 };
@@ -183,8 +190,13 @@ export const JapanMap: React.FC<JapanMapProps> = ({
     if (my < -height * 0.1 || my > height * 1.1) return;
 
     const kind = pl.marker ?? "circle";
-    // マーカーの画面半径(円は viewBox 40 単位がズームで拡大)。
-    const markerScreenR = kind === "circle" ? 40 * s * z : 26 * s * Math.max(1, z * 0.5);
+    // マーカーの画面半径(円/点は viewBox 単位がズームで拡大)。
+    const markerScreenR =
+      kind === "circle"
+        ? (pl.radius ?? 40) * s * z
+        : kind === "dot"
+          ? (pl.radius ?? 10) * s * z
+          : 26 * s * Math.max(1, z * 0.5);
     const gap = markerScreenR + labelHalfH + 12;
 
     let cy = my - gap; // まず上に置く
@@ -308,7 +320,7 @@ export const JapanMap: React.FC<JapanMapProps> = ({
             const seed = seedFrom("jm-mark", i, pl.id ?? "", px, py);
 
             if (kind === "circle") {
-              const r = 40;
+              const r = pl.radius ?? 40;
               const p = drawOn(frame, appear, 16);
               return (
                 <path
@@ -321,6 +333,23 @@ export const JapanMap: React.FC<JapanMapProps> = ({
                   strokeLinecap="round"
                   strokeDasharray={100}
                   strokeDashoffset={100 * (1 - p)}
+                />
+              );
+            }
+            if (kind === "dot") {
+              // 多数地点の散布用: 縁取りの手描き円ではなく、塗りの小さな点で
+              // 「一つ一つが識別できる個」を保つ(縁取り円を多数詰めると
+              // 縁の太さ自体が面積を食い塊化するため、塗り点に分離した)。
+              const r = pl.radius ?? 10;
+              const { scale, opacity } = popIn(frame, fps, { delayFrames: appear });
+              return (
+                <circle
+                  key={`m-${i}`}
+                  cx={px}
+                  cy={py}
+                  r={r * scale}
+                  fill={col}
+                  opacity={opacity}
                 />
               );
             }

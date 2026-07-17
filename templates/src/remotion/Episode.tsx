@@ -517,12 +517,16 @@ export const Episode: React.FC<EpisodeProps> = ({
         {/* シーン層: isolation:isolate で独立したスタック文脈に閉じ込める。
             シーン側が内部で zIndex を使っても、この層より前面(=字幕・黒帯)には出られない */}
         <AbsoluteFill style={{ zIndex: LAYER.scenes, isolation: "isolate" }}>
-          {shots.shots.map((shot) => {
+          {shots.shots.map((shot, i) => {
+            // 秒→フレームの丸めを start/end 独立に行うと連続ショット間に
+            // 1フレームの穴が空き、ルート背景(紙)が露出して白フラッシュになる。
+            // 各ショットの終端は「次ショットの開始フレーム」に必ず接続する。
             const from = Math.round(shot.startSec * fps);
-            const durationInFrames = Math.max(
-              1,
-              Math.round((shot.endSec - shot.startSec) * fps)
-            );
+            const next = shots.shots[i + 1];
+            const endF = next
+              ? Math.round(next.startSec * fps)
+              : Math.round(shot.endSec * fps);
+            const durationInFrames = Math.max(1, endF - from);
             return (
               <Sequence
                 key={shot.shotId}
