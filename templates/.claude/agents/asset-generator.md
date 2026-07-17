@@ -66,6 +66,7 @@ centered, nothing else in frame, no people, no text, no ground shadow.
 
 - 用途: 画面の主役になる具象物(城・市場の屋台・地球儀・輿・祭壇・乗り物など)。幾何記号で成立しない「絵の説得力」が要るもの(bible §10の使い分け表)
 - グリーンバック生成→remove-bg透過(キャラと同じフロー)。塗り検査ゲート対象
+- **【例外】緑地・緑主体の被写体**(例: 緑地の標識・看板、植物主体の小物): グリーンバックと被写体の緑が衝突し、クロマキーで被写体側が欠損する。この場合は**純白背景で生成し、remove-bg の flood-fill 自動判別で透過する** — スタイル接頭辞の「FLAT PURE SOLID GREEN SCREEN background …」句を「FLAT PURE SOLID WHITE background (completely uniform)」に差し替え、「Green appears ONLY in the background」句は削除する。注意: (a) 画像外周に枠・黒縁が出ると flood-fill が0%になる → 外周を数%トリミングして再透過 (b) 緑面積ベースの塗り検査は成立しないため、透け穴(被写体内部の透過穴)検査で代替する
 - 建物など大きい物も「単体・中央・全体が収まる」で生成する(見切れ禁止)。画面上のスケールはRemotion側で調整する
 - library.json の kind は "prop"(小物・道具)または "place"(建物・風景の主体)
 
@@ -104,6 +105,7 @@ few objects. 16:9 wide composition, no text.
 | ポーズが弱い・伝わらない | 抽象語をやめ、四肢・口・眉の具体語彙に書き直す(型2の道具箱) |
 | 背景が不均一 | 「completely uniform, no texture, no gradient」を強調 |
 | キャラが塗られず線画になる(緑が透ける。緑面積>88%で自動検出) | 「FULLY PAINTED with solid opaque flat colors」「pure white blank face (no green tint)」を強調し、髪・全衣類・小物に色nameが付いているか確認 |
+| 緑地・緑主体の被写体がクロマキーで欠損する | 型4の例外フロー(純白背景+flood-fill透過)へ切り替える。白背景でflood除去が0%なら外周数%トリミング後に再透過 |
 
 - **複数枚の生成は `--batch` で**: バリアント一式を `[{ "prompt": "...", "out": "...", "ref": ["<canonical>"] }, ...]` 形式のJSONに書き、`npx tsx src/pipeline/gen-image.ts --batch <batch.json>` で一括生成する(ツールが同時3件で並列実行し、リクエスト失敗は自動リトライする)。品質・検査(塗りゲート・除去率)は1枚ずつ変わらない
 - リトライは**1バリアントにつき3回まで**(通信・APIエラーの再試行はツールが自動で行う — ここでいうリトライはプロンプトを修正しての再生成のこと)。3回失敗したらそのバリアントを諦め、ショット側の演出(motionヘルパー・構図)で代替する
