@@ -126,6 +126,13 @@ export const GAZETTEER: Record<string, Gazette> = {
   choshu: { x: 268, y: 626, label: "長州" }, // 本州西端
   fushimi: { x: 500, y: 570, label: "伏見" }, // 京の南
   kirishima: { x: 258, y: 764, label: "霧島" }, // 薩摩の北東
+  // ---- ep004 追加(C1: 実データから追加。フリーハンド発明はしない) ----
+  // 熊本市 lon 130.7417 / lat 32.8031。この viewBox には lonLatToXY 相当の
+  // ヘルパーが無いため、既存の九州カリブレーション済み3点
+  // (nagasaki lon129.8747/lat32.7503→(208,738), kagoshima lon130.5571/lat31.5602→(238,802),
+  //  kirishima lon130.8567/lat31.9337→(258,764)) から実lon/latによるアフィン変換を
+  // 最小二乗的に解いて逆算した座標(x≈258.0 / y≈702.6)。目視の発明ではなく実データ由来。
+  kumamoto: { x: 258, y: 703, label: "熊本" },
 };
 
 export type PlaceId = keyof typeof GAZETTEER;

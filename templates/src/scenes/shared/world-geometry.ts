@@ -129,6 +129,16 @@ export const GAZETTEER: Record<string, WorldPlace> = {
   // ---- ep011 追加(国境を越える経路の主張に使う。座標は lonLatToXY で算出) ----
   "leiden": { x: 512.5, y: 102.6, label: "オランダ" }, // lonLatToXY(4.4970, 52.1601)
   "firenze": { x: 531.3, y: 135.9, label: "フィレンツェ" }, // lonLatToXY(11.2558, 43.7696)
+  // ---- ep004 追加(C2: lonLatToXY で算出。フリーハンド発明はしない) ----
+  // アメリカ本土48州の地理的中心(レバノン, カンザス州付近)。1点で「アメリカ」を指す。
+  "usa": { x: 226.2, y: 151.6, label: "アメリカ" }, // lonLatToXY(-98.5795, 39.8282)
+  // オタワ(カナダの首都)。走る人採用国としての代表点。
+  "canada": { x: 289.7, y: 129.3, label: "カナダ" }, // lonLatToXY(-75.6972, 45.4215)
+  // キャンベラ(オーストラリアの首都)。
+  "australia": { x: 914.3, y: 449.7, label: "オーストラリア" }, // lonLatToXY(149.1300, -35.2809)
+  // プラハ(ヨーロッパの地理的中心に近い代表点)。s123 は「広さ」の主張であり
+  // pin:false(面)で使う前提のため、1国の首都ではなく大陸中央寄りの点を選んだ。
+  "europe": { x: 540.1, y: 110.9, label: "ヨーロッパ" }, // lonLatToXY(14.4378, 50.0755)
 };
 
 export function lookupWorldPlace(id: string): WorldPlace | null {
