@@ -49,8 +49,8 @@ type FrameStyle = {
   letterboxPct: number;
   /** 帯の色(letterboxPct > 0 のときのみ使用) */
   letterboxColor?: string;
-  /** 横型字幕の様式: "rounded"=角丸ボックス(従来) / "band"=下帯内の帯文字 */
-  subtitleVariant: "rounded" | "band";
+  /** 横型字幕の様式: "rounded"=角丸ボックス(従来) / "band"=下帯内の帯文字 / "plain"=箱なし裸文字 */
+  subtitleVariant: "rounded" | "band" | "plain";
   /** 横型字幕のフォントスタック(未指定はチャンネルの手描きフォント) */
   subtitleFontFamily?: string;
   /** 横型字幕の文字色(band様式のとき。未指定は #F2EFE6) */
@@ -308,6 +308,39 @@ const SubtitleLayer: React.FC<{ timing: TimingFile }> = ({ timing }) => {
             maxWidth: "88%",
             textAlign: "center",
             letterSpacing: "0.03em",
+          }}
+        >
+          {active.displayText ?? active.text}
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
+  if (FRAME.subtitleVariant === "plain") {
+    // 箱なし裸文字様式(DESIGN.md「字幕帯」): 縁取り・帯は使わず、
+    // 準黒背景の暗さで読ませる。48px / 700 / text-primary + 薄い黒シャドウのみ。
+    return (
+      <AbsoluteFill
+        style={{
+          justifyContent: "flex-end",
+          alignItems: "center",
+          paddingBottom: 64,
+          zIndex: LAYER.subtitle,
+        }}
+      >
+        <div
+          style={{
+            color: speakerAccent ?? FRAME.subtitleColor ?? "#F2EFE8",
+            fontSize: 48,
+            fontWeight: 700,
+            lineHeight: 1.4,
+            fontFamily:
+              FRAME.subtitleFontFamily ?? `${fontFamily}, ${DOODLE_FONT_STACK}`,
+            maxWidth: "86%",
+            textAlign: "center",
+            letterSpacing: "0.04em",
+            textShadow:
+              "0 2px 10px rgba(0, 0, 0, 0.65), 0 0 2px rgba(0, 0, 0, 0.8)",
           }}
         >
           {active.displayText ?? active.text}

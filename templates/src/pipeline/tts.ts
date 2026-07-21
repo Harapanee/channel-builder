@@ -99,6 +99,10 @@ type SpeakerConfig = {
 
 type VoiceConfig = {
   provider: string;
+  /** fishaudio専用: モデルID(例 "s2.1-pro-free")。HTTPヘッダ model で渡す */
+  model?: string;
+  /** fishaudio専用: ボイスのreference_id */
+  referenceId?: string;
   /** 2話者掛け合い形式の話者マップ。無ければ旧形式(トップレベルの単一話者)で動く */
   speakers?: Record<string, SpeakerConfig>;
   /** speakers 形式で行注釈 `- speaker:` が無い行に使う既定話者キー */
@@ -335,6 +339,127 @@ async function synthesize(query: AudioQuery, speakerId: number): Promise<Buffer>
     );
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+// ---- Fish Audio HTTP クライアント ----------------------------------------
+//
+// fishaudio は VOICEVOX と異なりモーラ長・読み仮名(kana)を返さない。
+// そのためこのプロバイダでは:
+//  - 行長は生成WAVの実測(ffprobe)のみを真とする(算出値=実測値として自己検証を素通し)
+//  - フレーズ字幕は buildPhraseTimings の文字数比フォールバックに常時委ねる
+//  - readings.md は読みを出せない(試聴での誤読確認が必須である旨を明記する)
+
+const FISH_AUDIO_BASE_URL =
+  process.env.FISH_AUDIO_URL ?? "https://api.fish.audio";
+const FISH_RETRY_MAX = 3;
+const FISH_RETRY_BASE_MS = 1500;
+
+function loadFishApiKey(projectRoot: string): string {
+  if (process.env.FISH_AUDIO_API_KEY) return process.env.FISH_AUDIO_API_KEY;
+  const envPath = path.join(projectRoot, ".env");
+  if (existsSync(envPath)) {
+    const line = readFileSync(envPath, "utf-8")
+      .split("\n")
+      .find((l) => l.startsWith("FISH_AUDIO_API_KEY="));
+    if (line) return line.slice("FISH_AUDIO_API_KEY=".length).trim();
+  }
+  throw new TtsError(
+    ".env に FISH_AUDIO_API_KEY がありません(fishaudioプロバイダの合成に必須)"
+  );
+}
+
+/** Fish Audio /v1/tts。一過性障害(ネットワーク・5xx・429)のみリトライする。 */
+async function synthesizeFish(
+  text: string,
+  voice: VoiceConfig,
+  apiKey: string
+): Promise<Buffer> {
+  if (!voice.referenceId) {
+    throw new TtsError("voice.json に referenceId がありません(fishaudio必須)");
+  }
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+  if (voice.model) headers["model"] = voice.model;
+  const body = JSON.stringify({
+    text,
+    reference_id: voice.referenceId,
+    format: "wav",
+  });
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= FISH_RETRY_MAX; attempt++) {
+    if (attempt > 0) {
+      const waitMs = FISH_RETRY_BASE_MS * 2 ** (attempt - 1);
+      console.error(
+        `Fish Audio /v1/tts を再試行します ${attempt}/${FISH_RETRY_MAX}(${waitMs}ms待機)`
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    try {
+      const res = await fetch(`${FISH_AUDIO_BASE_URL}/v1/tts`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+      const errText = await res.text();
+      if (res.status < 500 && res.status !== 429) {
+        throw new TtsError(
+          `Fish Audio /v1/tts が失敗しました: HTTP ${res.status} ${errText}`
+        );
+      }
+      lastErr = new TtsError(
+        `Fish Audio /v1/tts が失敗しました: HTTP ${res.status} ${errText}`
+      );
+    } catch (err) {
+      if (err instanceof TtsError && !/HTTP (5\d\d|429)/.test(err.message)) {
+        throw err; // 4xx は即時失敗
+      }
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new TtsError(String(lastErr));
+}
+
+/**
+ * fishaudioの生成音声を 24kHz/mono/16bit WAV へ正規化し、必要なら
+ * atempo で話速を適用する(atempo の有効域 0.5〜2.0 を検査)。
+ */
+function transcodeFishWav(
+  rawBuffer: Buffer,
+  outPath: string,
+  speedScale: number
+): void {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "tts-fish-"));
+  try {
+    const rawPath = path.join(tmpDir, "raw.audio");
+    writeFileSync(rawPath, rawBuffer);
+    const args = ["-y", "-i", rawPath];
+    if (speedScale !== 1) {
+      if (speedScale < 0.5 || speedScale > 2.0) {
+        throw new TtsError(
+          `speedScale=${speedScale} は fishaudio(atempo)の有効域 0.5〜2.0 の外です`
+        );
+      }
+      args.push("-af", `atempo=${speedScale}`);
+    }
+    args.push(
+      "-ar",
+      String(SAMPLE_RATE),
+      "-ac",
+      "1",
+      "-sample_fmt",
+      "s16",
+      "-c:a",
+      "pcm_s16le",
+      outPath
+    );
+    runFfmpeg(args);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 // ---- ffmpeg/ffprobe ------------------------------------------------------
@@ -658,8 +783,23 @@ type LineResult = {
  * これを呼ぶことで、両モードのフォーマットを1箇所で同一に保つ。
  */
 function renderReadingsReport(
-  items: { line: ParsedScriptLine; kana: string; speaker?: string }[]
+  items: { line: ParsedScriptLine; kana: string; speaker?: string }[],
+  opts?: { fishaudio?: boolean }
 ): string {
+  if (opts?.fishaudio) {
+    // fishaudio は実読み(kana)を返さないため、機械的な読み突合はできない。
+    // reading-checker はこのレポートでは「誤読リスクの高い語の指摘」までを行い、
+    // 最終確認は人間の試聴に委ねる。
+    const body = items
+      .map((r) => `- **${r.line.lineId}** ${r.line.text}`)
+      .join("\n");
+    return (
+      `# 読み仮名レポート(fishaudio)\n\n` +
+      `**注意: fishaudioは実読みを返さないため、読み仮名は取得できない。**\n` +
+      `誤読リスクの高い語(難読漢字・音訓交ぜ語・固有名詞)を台本表記から検査し、\n` +
+      `疑わしい行は narration/<lineId>.wav を試聴して確認すること。\n\n${body}\n`
+    );
+  }
   const readingsBody = items
     .map((r) => {
       const kana = (r.kana ?? "")
@@ -729,10 +869,75 @@ export async function runTts(
 
   const results: LineResult[] = new Array(parsed.lines.length);
 
+  const fishApiKey =
+    voice.provider === "fishaudio" ? loadFishApiKey(projectRoot) : undefined;
+
   const synthesizeLine = async (
     line: ParsedScriptLine,
     index: number
   ): Promise<void> => {
+    // ---- fishaudio 経路(モーラ情報なし・実測長のみを真とする) ----
+    if (voice.provider === "fishaudio") {
+      const speedScale = (voice.speedScale ?? 1) * (line.speedScale ?? 1);
+      const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
+      const hash = createHash("sha256")
+        .update(
+          JSON.stringify([
+            "fishaudio",
+            line.text,
+            voice.model ?? "",
+            voice.referenceId ?? "",
+            speedScale,
+          ])
+        )
+        .digest("hex");
+
+      const cached = lineCache[line.lineId];
+      if (cached && cached.hash === hash && existsSync(wavPathForLine)) {
+        newCache[line.lineId] = cached;
+        cacheHits++;
+        results[index] = {
+          line,
+          wavPath: wavPathForLine,
+          kana: cached.kana,
+          speedScale: cached.speedScale,
+          calculatedDurationSec: cached.calculatedDurationSec,
+          actualDurationSec: cached.actualDurationSec,
+          groupBoundariesRaw: cached.groupBoundariesRaw,
+          usedFallback: cached.usedFallback,
+        };
+        return;
+      }
+
+      const raw = await synthesizeFish(line.text, voice, fishApiKey!);
+      transcodeFishWav(raw, wavPathForLine, speedScale);
+      const actualDurationSec = ffprobeDurationSec(wavPathForLine);
+
+      results[index] = {
+        line,
+        wavPath: wavPathForLine,
+        kana: "",
+        speedScale,
+        calculatedDurationSec: actualDurationSec, // 実測のみを真とする
+        actualDurationSec,
+        groupBoundariesRaw: [], // 空 → buildPhraseTimings が文字数比フォールバックへ
+        usedFallback: true,
+      };
+      newCache[line.lineId] = {
+        hash,
+        kana: "",
+        speedScale,
+        calculatedDurationSec: actualDurationSec,
+        actualDurationSec,
+        groupBoundariesRaw: [],
+        usedFallback: true,
+      };
+      console.log(
+        `[${line.lineId}] OK(fishaudio) 実測=${actualDurationSec.toFixed(4)}s phraseMode=fallback`
+      );
+      return;
+    }
+
     const sp = resolveSpeaker(voice, line);
     const speedScale = effectiveSpeedScale(sp, line);
     const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
@@ -856,7 +1061,10 @@ export async function runTts(
   // reading-checkerエージェントがこれを検査し、誤読(者→シャ、実の→ミノ等)を
   // 台本表記の修正(ひらがなに開く・言い換え)として差し戻す。
   const readingsPath = path.join(narrationDir, "readings.md");
-  writeFileSync(readingsPath, renderReadingsReport(results));
+  writeFileSync(
+    readingsPath,
+    renderReadingsReport(results, { fishaudio: voice.provider === "fishaudio" })
+  );
   console.log(`readings: ${readingsPath}(全${results.length}行)`);
 
   // ---- 行間ポーズを挟んで結合 ---------------------------------------------
@@ -999,6 +1207,18 @@ export async function runReadingsOnly(
   }
 
   mkdirSync(narrationDir, { recursive: true });
+
+  // fishaudio は audio_query 相当のAPIを持たず読みを取得できないため、
+  // 合成なしで台本表記ベースのレポートだけを書き出して終了する。
+  if (voice.provider === "fishaudio") {
+    const items = parsed.lines.map((line) => ({ line, kana: "" }));
+    const readingsPath = path.join(narrationDir, "readings.md");
+    writeFileSync(readingsPath, renderReadingsReport(items, { fishaudio: true }));
+    console.log(
+      `readings-only(fishaudio): ${readingsPath}(全${items.length}行、読みは取得不可・表記ベース検査用)`
+    );
+    return;
+  }
 
   // 行キャッシュ(読み取り専用)。フルモードと同一のヒット条件(ハッシュ一致かつ
   // 既存WAVあり)を満たす行は保存済みkanaを再利用し、それ以外は audio_query を
