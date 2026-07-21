@@ -32,6 +32,8 @@ const IDENTICAL = [
   "src/pipeline/lint-script.ts",
   "src/pipeline/qa.ts",
   "src/pipeline/qa-smoke.ts",
+  "src/pipeline/precheck.ts",
+  "src/pipeline/render-stills.ts",
   "src/pipeline/repair-render.ts",
   "src/pipeline/gen-image.ts",
   "src/pipeline/codex-image.ts",

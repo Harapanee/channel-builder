@@ -71,6 +71,8 @@ claude
 - 台本審査(script-reviewer)はREVISE最大2周、決着しない論点だけあなたにエスカレーション
 - **誤読は合成前に高速プリチェック**(`--readings-only`、audio_queryのみ・数十秒)で潰し、本合成は1回だけ。絵コンテ(storyboard)は台本合格直後からTTSと並行開始
 - **フルレンダーの前に必ずスモークQA**(`qa-smoke.ts`): 全ショット2フレームのサンプリングでランタイムエラー・静止・黒を3〜10分で検出。NGゼロになるまでレンダーを焼かない(往復60〜80分の浪費防止)
+- **レンダー前検査は precheck 一括+未変更スキップ**(`precheck.ts`): 4ゲート(tsc/validate/Infinity/qa-smoke)を一括実行し入力ハッシュを記録。フェーズ再開・レビュー後の再確認で入力が未変更なら数秒でSKIP(同一ジョブ内でqa-smokeが7回焼き直された実測への対策)
+- **レビューの視覚検証は静止画の部分レンダー**(`render-stills.ts`): 指定ショットの中央フレームを1回のバンドルで一括書き出し。レビュー目的のフルプレビューレンダー(80秒動画で12分・通常尺で30分超)を禁止し、フレーム十数枚で代替
 - **修正が特定ショットだけなら部分修復**(`repair-render.ts`): 該当ショットのみ再レンダーして既存mp4へ継ぎ接ぎ(1ショット2〜3分)
 - **レンダーは夜間にまとめられる**(`/render-queue`): 日中は `render-queue.sh add` で積むだけにし、寝る前に `/render-queue` で順次消化(CPU占有で日中の作業が止まらない)
 - **二重レンダー排除**: preview後に変更が無ければ `promote-preview.sh` がpreviewをfinalへ無劣化昇格(機械検査つき)。レンダーの完了検知は `wait-render.sh`(状態ファイル方式、長間隔ポーリング不要)
@@ -131,7 +133,7 @@ claude
 | `channel/voice.json` | ナレーターの声 | ❌ 原則変更禁止 |
 | `.claude/agents/*.md` | エージェント11体の技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
 | `.claude/skills/*` | video-create / theme-scout / render-queue / channel-refine / system-refine | ❌ /system-refine 経由 |
-| `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
+| `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / precheck / render-stills / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
 
@@ -177,7 +179,9 @@ fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(
 /factory-update                  # テンプレ最新OSを既存Factoryへ取り込み
 node scripts/check-template-sync.mjs   # テンプレ健全性チェック
 npm run tts episodes/<ep> -- --readings-only   # 誤読プリチェック(合成なし・数十秒)
+npx tsx src/pipeline/precheck.ts episodes/<ep>   # レンダー前検査4ゲート一括(未変更なら数秒SKIP)
 npx tsx src/pipeline/qa-smoke.ts episodes/<ep>   # スモークQA(レンダー前・3〜10分でNG検出)
+npx tsx src/pipeline/render-stills.ts episodes/<ep> --shots <id,..>  # レビュー用静止画の一括レンダー
 scripts/render-episode.sh episodes/<ep> [final]  # レンダー(Infinityゲート+QA+状態書き出し)
 npx tsx src/pipeline/repair-render.ts episodes/<ep> <shotId> [--out preview]  # 部分再レンダー+継ぎ接ぎ(2〜3分)
 scripts/render-queue.sh add episodes/<ep> [out]  # 夜間キューへ積む(list/run/clearもあり)
