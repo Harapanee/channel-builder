@@ -761,6 +761,32 @@ export function buildPhraseTimings(
   });
 }
 
+// ---- 読み補正(VOICEVOXのTTS入力のみ) -------------------------------------
+
+/**
+ * VOICEVOX(OpenJTalk)の確定的な誤読を、合成に渡すテキスト側で先に直す。
+ * 字幕・timing.json の text は常に台本原文のままで、ここでの置換は
+ * audio_query へ渡す文字列にしか影響しない(fishaudio経路には適用しない)。
+ *
+ * 「〜はね、」問題: 助詞「は」+終助詞「ね」の直後に句読点が続くと、
+ * OpenJTalkが名詞「ハネ(羽根/跳ね)」として1語に解釈し ha 読みになる
+ * (実測 2026-07-20 zunda-trend。読点が無い「これはね」単独は正しく wa 読み)。
+ * 「わね」に開くと確実に wa 読みになるため、この形だけを置換する。
+ * 本物の「羽根」を仮名で「はね、」と書くと誤爆するが、その場合は台本側で
+ * 漢字「羽根」を使うこと。
+ */
+const TTS_READING_SUBSTITUTIONS: { pattern: RegExp; replace: string }[] = [
+  { pattern: /はね(?=[、。!?！?…]|$)/g, replace: "わね" },
+];
+
+export function ttsReadingText(text: string): string {
+  let out = text;
+  for (const { pattern, replace } of TTS_READING_SUBSTITUTIONS) {
+    out = out.replace(pattern, replace);
+  }
+  return out;
+}
+
 // ---- メインフロー ---------------------------------------------------------
 
 type LineResult = {
@@ -940,13 +966,15 @@ export async function runTts(
 
     const sp = resolveSpeaker(voice, line);
     const speedScale = effectiveSpeedScale(sp, line);
+    const ttsText = ttsReadingText(line.text);
     const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
     // 解決済み話者のパラメータでハッシュする(話者変更で古いWAVが再利用されない)。
-    // 旧形式では voice.* と同値になるため既存キャッシュはそのまま生きる
+    // 旧形式では voice.* と同値になるため既存キャッシュはそのまま生きる。
+    // ttsText でハッシュするため、読み補正の対象行だけがキャッシュ落ちして再合成される
     const hash = createHash("sha256")
       .update(
         JSON.stringify([
-          line.text,
+          ttsText,
           speedScale,
           sp.speakerId,
           sp.pitchScale,
@@ -974,7 +1002,7 @@ export async function runTts(
       return;
     }
 
-    const aq = await fetchAudioQuery(line.text, sp.speakerId);
+    const aq = await fetchAudioQuery(ttsText, sp.speakerId);
     // 解決済み話者の値で上書きする(行注釈 speed_scale は話者speedScaleに乗算済み)
     aq.speedScale = speedScale;
     aq.pitchScale = sp.pitchScale;
@@ -1247,11 +1275,12 @@ export async function runReadingsOnly(
   ): Promise<void> => {
     const sp = resolveSpeaker(voice, line);
     const speedScale = effectiveSpeedScale(sp, line);
+    const ttsText = ttsReadingText(line.text);
     const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
     const hash = createHash("sha256")
       .update(
         JSON.stringify([
-          line.text,
+          ttsText,
           speedScale,
           sp.speakerId,
           sp.pitchScale,
@@ -1268,7 +1297,7 @@ export async function runReadingsOnly(
     }
 
     // synthesis は呼ばない。kana は audio_query の戻り値から得る。
-    const aq = await fetchAudioQuery(line.text, sp.speakerId);
+    const aq = await fetchAudioQuery(ttsText, sp.speakerId);
     items[index] = { line, kana: aq.kana ?? "", speaker: sp.key };
   };
 

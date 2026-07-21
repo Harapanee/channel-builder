@@ -12,6 +12,7 @@ import { resolveComponent } from "../scenes/registry";
 import { PlaceholderBase } from "../scenes/core/PlaceholderBase";
 import { AssetProvider } from "../scenes/asset-context";
 import { SpeakerStandsLayer } from "../scenes/shared/SpeakerStands";
+import { SetBackdrop } from "../scenes/shared/SetBackdrop";
 import { DOODLE_FONT_STACK, useDoodleFont } from "../scenes/use-doodle-font";
 import { PALETTE } from "../scenes/style";
 import * as channelStyle from "../scenes/style";
@@ -159,10 +160,14 @@ const ShotRenderer: React.FC<{ shot: Shot; debug?: boolean }> = ({
   debug,
 }) => {
   const Component = resolveComponent(shot.scene.component);
+  // ショット実尺(秒)。AssetImg 等の kenBurns 既定尺(固定値)より短い/長いショットで
+  // ズーム速度がずれないよう、各カスタム演出が任意で受け取れる共通propとして配線する
+  // (未対応のコンポーネントは単に無視する=既存の型を壊さない)。
+  const shotDurationSec = Math.max(0, shot.endSec - shot.startSec);
   return (
     <AbsoluteFill>
       {Component ? (
-        <Component {...shot.scene.props} />
+        <Component {...shot.scene.props} shotDurationSec={shotDurationSec} />
       ) : (
         <PlaceholderBase
           label={`Unresolved: ${shot.scene.component}`}
@@ -547,6 +552,9 @@ export const Episode: React.FC<EpisodeProps> = ({
             loop
           />
         ) : null}
+        {/* 常設セット背景(style.ts に SET_BACKDROP を持つチャンネルのみ・横型のみ):
+            全シーンの最背面に敷く。未設定チャンネルでは何も描画しない */}
+        {!isVertical ? <SetBackdrop /> : null}
         {/* シーン層: isolation:isolate で独立したスタック文脈に閉じ込める。
             シーン側が内部で zIndex を使っても、この層より前面(=字幕・黒帯)には出られない */}
         <AbsoluteFill style={{ zIndex: LAYER.scenes, isolation: "isolate" }}>

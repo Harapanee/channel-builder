@@ -1,6 +1,7 @@
 import React from "react";
 import {
   AbsoluteFill,
+  Img,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
@@ -9,6 +10,7 @@ import { popIn as popInHelper, seedFrom } from "../../../motion";
 import { roughLinePath } from "../../doodle-svg";
 import { PALETTE } from "../../style";
 import { DOODLE_FONT_STACK, useDoodleFont } from "../../use-doodle-font";
+import { useOptionalAsset } from "../../asset-context";
 
 /**
  * ショート用タイトル/締めカード(縦型 1080x1920 前提)。
@@ -21,6 +23,12 @@ export type ShortTitleCardProps = {
   variant: "opening" | "ending";
   /** ending 用のクレジット表記(channel/voice.json の creditNotice) */
   creditNotice?: string;
+  /**
+   * 地に敷く背景素材の assetId(library.json 登録済み)。
+   * bible §8「背景無地の禁止」— 指定すると純白の地の代わりに背景素材+白スクリムを敷く。
+   * 未指定時は従来どおり純白(既存ショートの見え方を変えない)。
+   */
+  backdropAssetId?: string;
 };
 
 export const ShortTitleCard: React.FC<ShortTitleCardProps> = ({
@@ -28,6 +36,7 @@ export const ShortTitleCard: React.FC<ShortTitleCardProps> = ({
   subtitle,
   variant,
   creditNotice,
+  backdropAssetId,
 }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
@@ -48,6 +57,7 @@ export const ShortTitleCard: React.FC<ShortTitleCardProps> = ({
   const underlineSeed = seedFrom("short-title-underline", title);
   const ulW = width * 0.55;
   const underline = roughLinePath(0, 14, ulW, 14, underlineSeed, 6, 9);
+  const backdropSrc = useOptionalAsset(backdropAssetId);
 
   return (
     <AbsoluteFill
@@ -57,6 +67,28 @@ export const ShortTitleCard: React.FC<ShortTitleCardProps> = ({
         alignItems: "center",
       }}
     >
+      {backdropSrc ? (
+        <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+          <Img
+            src={backdropSrc}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(255,255,255,0.2)",
+            }}
+          />
+        </div>
+      ) : null}
       <div
         style={{
           display: "flex",

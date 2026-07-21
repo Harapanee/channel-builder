@@ -114,6 +114,34 @@ export function slideIn(
   return { x, y, opacity };
 }
 
+// ---- wipeIn: clip-pathによる方向指定ワイプ出現 ---------------------------
+export type WipeDirection = "left" | "right" | "up" | "down";
+export type WipeInParams = {
+  direction?: WipeDirection;
+  delayFrames?: number;
+  durationFrames?: number;
+};
+export type WipeInResult = { clipPath: string; opacity: number };
+
+export function wipeIn(
+  frame: number,
+  fps: number,
+  params: WipeInParams = {}
+): WipeInResult {
+  const { direction = "left", delayFrames = 0, durationFrames = 16 } = params;
+  const t = interpolate(frame - delayFrames, [0, durationFrames], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.out(Easing.cubic),
+  });
+  const pct = t * 100;
+  let clipPath = `inset(0 ${100 - pct}% 0 0)`;
+  if (direction === "right") clipPath = `inset(0 0 0 ${100 - pct}%)`;
+  else if (direction === "up") clipPath = `inset(${100 - pct}% 0 0 0)`;
+  else if (direction === "down") clipPath = `inset(0 0 ${100 - pct}% 0)`;
+  return { clipPath, opacity: t > 0 ? 1 : 0 };
+}
+
 // ---- shake: 強度・減衰つき振動 ------------------------------------------
 export type ShakeParams = {
   seed: number;
@@ -303,6 +331,25 @@ export function boiling(
   const r = steppedNoise(seed ^ 0xa5a5, frame, fps, hz);
   const s = steppedNoise(seed ^ 0x5a5a, frame, fps, hz);
   return { rotate: r * rotAmpDeg, scale: 1 + (s * scaleAmpPct) / 100 };
+}
+
+// ---- kenBurns: 静止素材の緩やかなズーム ----------------------------------
+export type KenBurnsParams = { durationSec: number; from?: number; to?: number };
+export type KenBurnsResult = { scale: number };
+
+export function kenBurns(
+  frame: number,
+  fps: number,
+  { durationSec, from = 1.0, to = 1.05 }: KenBurnsParams
+): KenBurnsResult {
+  // durationSec<=0(未配線・ショット尺取得失敗などの縮退)は t=1 固定に倒す。
+  // frame / (durationSec * fps) は durationSec<=0 だと Infinity/NaN/負値になり、
+  // 後続の interpolate 系に渡ると実行時クラッシュしうるため、ここで完全にガードする。
+  if (!(durationSec > 0)) {
+    return { scale: to };
+  }
+  const t = Math.min(1, Math.max(0, frame / (durationSec * fps)));
+  return { scale: from + (to - from) * t };
 }
 
 // ---- crowdMultiply: N体の出現タイミングと配置オフセット -----------------

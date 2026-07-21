@@ -55,6 +55,9 @@ const IDENTICAL = [
   // 立ち絵+口パク+表情レイヤー(Episode.tsx が無条件に import する。
   // 描画するかはチャンネルの style.ts が SPEAKER_STANDS を持つかで決まる)
   "src/scenes/shared/SpeakerStands.tsx",
+  // 常設セット背景(Episode.tsx が無条件に import する。
+  // 描画するかはチャンネルの style.ts が SET_BACKDROP を持つかで決まる)
+  "src/scenes/shared/SetBackdrop.tsx",
   "src/scenes/shared/JapanMap.tsx",
   "src/scenes/shared/WorldMap.tsx",
   "src/scenes/shared/world-geometry.ts",
