@@ -44,6 +44,7 @@ import {
   rmSync,
   writeFileSync,
   readFileSync,
+  readdirSync,
 } from "node:fs";
 import { bundle } from "@remotion/bundler";
 import {
@@ -120,6 +121,56 @@ function shortError(e: unknown): string {
     .slice(0, 240);
 }
 
+/**
+ * 演出テキストの絶対下限px。チャンネルの style.ts が DIAGRAM_TEXT.minPx を
+ * 定義している場合のみ検査を有効化する(未定義のチャンネルはこの検査をスキップ)。
+ * import せずソースの正規表現で読むのは、DIAGRAM_TEXT を持たないチャンネルでも
+ * このファイル(IDENTICAL区分)がそのままコンパイルできるようにするため。
+ */
+function diagramFontMinPx(): number | undefined {
+  const stylePath = path.join("src", "scenes", "style.ts");
+  if (!existsSync(stylePath)) return undefined;
+  const src = readFileSync(stylePath, "utf-8");
+  const block = src.match(/DIAGRAM_TEXT\s*=\s*{[\s\S]*?}/);
+  const m = block?.[0].match(/minPx:\s*(\d+)/);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * エピソード専用演出(src/scenes/episodes/<epId>/*.tsx)の静的文字サイズ検査。
+ * `fontSize: <数値>` の生リテラルと fitFontSizePx(...) の整数引数が
+ * minPx 未満なら違反として返す(レンダー不要なのでスモーク前に走らせ、
+ * 1件でもあればフルレンダー前にBLOCKする)。ep005(zunda-trend)で20〜26pxの
+ * 図解文字が検査なしで本番に達した再発防止。
+ */
+function checkDiagramFontSizes(episodeId: string, minPx: number): string[] {
+  const scenesDir = path.join("src", "scenes", "episodes", episodeId);
+  if (!existsSync(scenesDir)) return [];
+  const violations: string[] = [];
+  for (const name of readdirSync(scenesDir)) {
+    if (!name.endsWith(".tsx")) continue;
+    const src = readFileSync(path.join(scenesDir, name), "utf-8");
+    const lines = src.split("\n");
+    lines.forEach((line, i) => {
+      const font = line.match(/fontSize:\s*(\d+)/);
+      if (font && Number(font[1]) < minPx) {
+        violations.push(`${name}:${i + 1} fontSize ${font[1]}px < ${minPx}px`);
+      }
+      const fit = line.match(/fitFontSizePx\(([^)]*)/);
+      if (fit) {
+        for (const m of fit[1].matchAll(/(?<![.\d])(\d+)(?![.\d])/g)) {
+          if (Number(m[1]) < minPx) {
+            violations.push(
+              `${name}:${i + 1} fitFontSizePx の整数引数 ${m[1]} < ${minPx}(desired/minPx とも下限以上にする)`
+            );
+          }
+        }
+      }
+    });
+  }
+  return violations;
+}
+
 async function main() {
   const { episodeDir, fast, concurrency } = parseArgs(process.argv.slice(2));
   if (!episodeDir) {
@@ -134,6 +185,17 @@ async function main() {
     process.exit(1);
   }
   const shotsFile = JSON.parse(readFileSync(shotsPath, "utf-8")) as ShotsFile;
+
+  const minDiagramPx = diagramFontMinPx();
+  if (minDiagramPx !== undefined) {
+    const fontViolations = checkDiagramFontSizes(shotsFile.episodeId, minDiagramPx);
+    if (fontViolations.length > 0) {
+      console.error(`NG: 演出テキストの文字サイズ違反 ${fontViolations.length} 件(下限 ${minDiagramPx}px / style.ts DIAGRAM_TEXT.minPx)`);
+      for (const v of fontViolations) console.error(`  - ${v}`);
+      process.exit(1);
+    }
+  }
+
   const fps = shotsFile.fps;
   const shots = shotsFile.shots;
   const maxFrame =

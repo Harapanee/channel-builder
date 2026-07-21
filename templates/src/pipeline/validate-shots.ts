@@ -142,6 +142,15 @@ interface VisualRulesConfig {
    * 明示的なフレーミング指定がなければ BLOCK(Rule 9)。
    */
   minCoverAspectRatio?: number;
+  maxConsecutiveAssetFreeShots?: number;
+  assetFreeExemptComponents?: string[];
+  maxBubbleShots?: number;
+  /**
+   * 見出し札(scene.props.caption)を持つショットの比率上限。
+   * 札は章の開始ショットのみに絞る(DESIGN.md Caption Discipline)ための
+   * 機械検査(2026-07-19 channel-refine由来)。
+   */
+  maxCaptionShotRatio?: number;
 }
 
 /** PNG/JPEGのヘッダから寸法を同期取得する(失敗時 null)。 */
@@ -267,6 +276,56 @@ function validateVisualDiversity(
     if (aiRatio > rules.maxAiRatio) {
       report.add(
         `[visual] AI生成画像がユニーク${uniqueCount}枚中 ${aiCount}枚(${(aiRatio * 100).toFixed(0)}%)です(上限${rules.maxAiRatio * 100}%。PD/CC調達・ライブラリ再利用を主体にする。channel/visual-rules.json)`
+      );
+    }
+  }
+
+  // Rule 10: assets空ショットの連続上限(抽象図形のみ画面の連発を禁止)
+  if (rules.maxConsecutiveAssetFreeShots !== undefined) {
+    const exempt = new Set(rules.assetFreeExemptComponents ?? []);
+    let run: string[] = [];
+    const flush = () => {
+      if (run.length > rules.maxConsecutiveAssetFreeShots!) {
+        report.add(
+          `[visual] [${run[0]}〜${run[run.length - 1]}] assets空ショットが${run.length}連続しています(上限${rules.maxConsecutiveAssetFreeShots}連続。素材かAI画像を差し込む。channel/visual-rules.json)`
+        );
+      }
+      run = [];
+    };
+    for (const shot of shots.shots) {
+      if (shot.assets.length === 0 && !exempt.has(shot.scene.component)) {
+        run.push(shot.shotId);
+      } else {
+        flush();
+      }
+    }
+    flush();
+  }
+
+  // Rule 11: 吹き出しショット上限(発話は字幕が正・吹き出しは強調専用)
+  if (rules.maxBubbleShots !== undefined) {
+    const bubbleShots = shots.shots.filter((s) => {
+      const turns = (s.scene.props as Record<string, unknown> | undefined)?.turns;
+      return Array.isArray(turns) && turns.length > 0;
+    });
+    if (bubbleShots.length > rules.maxBubbleShots) {
+      report.add(
+        `[visual] 吹き出し(props.turns)ショットが${bubbleShots.length}本あります(上限${rules.maxBubbleShots}本: ${bubbleShots.map((s) => s.shotId).join(", ")}。発話は字幕に任せる。channel/visual-rules.json)`
+      );
+    }
+  }
+
+  // Rule 12: 見出し札(caption)の比率上限(札は章タイトルのみ・毎ショット要約禁止)
+  if (rules.maxCaptionShotRatio !== undefined && shots.shots.length > 0) {
+    const captionShots = shots.shots.filter((s) => {
+      const caption = (s.scene.props as Record<string, unknown> | undefined)
+        ?.caption;
+      return typeof caption === "string" && caption.length > 0;
+    });
+    const ratio = captionShots.length / shots.shots.length;
+    if (ratio > rules.maxCaptionShotRatio) {
+      report.add(
+        `[visual] 見出し札(props.caption)ショットが${captionShots.length}/${shots.shots.length}本(${(ratio * 100).toFixed(0)}%)です(上限${(rules.maxCaptionShotRatio * 100).toFixed(0)}%: ${captionShots.map((s) => s.shotId).join(", ")}。札は章タイトルのみ(DESIGN.md Caption Discipline)。channel/visual-rules.json)`
       );
     }
   }

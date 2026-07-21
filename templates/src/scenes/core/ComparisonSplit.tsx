@@ -49,8 +49,29 @@ function roughRectPath(
   return `M ${x0} ${y0} L ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3} Z`;
 }
 
-function formatNum(n: number): string {
-  return Math.round(n).toLocaleString("en-US");
+/** target(最終値)の小数桁数だけ表示に保持する。中身は count-up アニメーションで
+ * 常に動いている(shownValue = value * progress)ため、瞬間値そのものの
+ * Number.isInteger 判定に頼ると 65 のような整数ターゲットでも "32.5" のような
+ * 途中経過の半端な小数が出てしまう。target の桁数(0 = 整数)に固定して丸めることで、
+ * 整数ターゲットは従来通り整数のみで動き、小数ターゲット(例 38.7)は
+ * 常に同じ桁数の小数(38.7 が 39 に化けない)で表示される。 */
+function decimalsOf(target: number): number {
+  if (Number.isInteger(target)) return 0;
+  const s = target.toString();
+  const i = s.indexOf(".");
+  return i === -1 ? 0 : s.length - i - 1;
+}
+
+function formatNum(n: number, targetDecimals: number): string {
+  if (targetDecimals === 0) {
+    return Math.round(n).toLocaleString("en-US");
+  }
+  const factor = 10 ** targetDecimals;
+  const rounded = Math.round(n * factor) / factor;
+  return rounded.toLocaleString("en-US", {
+    minimumFractionDigits: targetDecimals,
+    maximumFractionDigits: targetDecimals,
+  });
 }
 
 const EMPTY_SIDE: ComparisonSide = { label: "", value: 0 };
@@ -95,6 +116,7 @@ export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
     isLeft: boolean
   ) => {
     const shownValue = side.value * progress;
+    const targetDecimals = decimalsOf(side.value);
     const centerX = isLeft ? width * 0.25 : width * 0.75;
     const seed = seedFrom("cmp", side.label, isLeft);
 
@@ -110,7 +132,7 @@ export const ComparisonSplit: React.FC<ComparisonSplitProps> = ({
           whiteSpace: "nowrap",
         }}
       >
-        {formatNum(shownValue)}
+        {formatNum(shownValue, targetDecimals)}
       </div>
     );
     const labelEl = (

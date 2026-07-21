@@ -70,3 +70,13 @@ export function useOptionalAsset(
   }
   return lookup(map, assetId);
 }
+
+/**
+ * 「登録されていれば使う、なければ静かに描画しない」素材向け(常設セット等、
+ * チャンネル立ち上げ時点で未生成が正常状態のもの)。タイポ検出が要る通常素材は
+ * useAsset / useOptionalAsset を使うこと。
+ */
+export function useAssetIfRegistered(assetId: string): string | undefined {
+  const map = requireMap(`useAssetIfRegistered("${assetId}")`);
+  return map.get(assetId);
+}
