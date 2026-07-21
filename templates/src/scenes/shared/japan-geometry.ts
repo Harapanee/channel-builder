@@ -133,6 +133,20 @@ export const GAZETTEER: Record<string, Gazette> = {
   //  kirishima lon130.8567/lat31.9337→(258,764)) から実lon/latによるアフィン変換を
   // 最小二乗的に解いて逆算した座標(x≈258.0 / y≈702.6)。目視の発明ではなく実データ由来。
   kumamoto: { x: 258, y: 703, label: "熊本" },
+  // ---- ep001 追加(scene-implementer: 実lon/latによるアフィン逆算。フリーハンド禁止) ----
+  // 関東近傍に既存カリブレーション点が無いため、Honshu上の3実点(江戸=東京, 京都, 越後=新潟)
+  // の実lon/lat と既存viewBox座標から affine (x=a*lon+b*lat+c / y=d*lon+e*lat+f) を解いた:
+  //   edo:    lon139.6917/lat35.6895 -> (652,548)
+  //   kyoto:  lon135.7681/lat35.0116 -> (498,562)
+  //   echigo: lon139.0364/lat37.9026 -> (618,462)
+  //   => a=39.869, b=-3.5606, c=-4790.292 / d=2.9933, e=-37.977, f=1485.239
+  //   (3点で検算: 逆算後の edo/kyoto/echigo はいずれも既存座標と一致)
+  // 銚子市 lon140.827/lat35.734 → x≈697.1, y≈549.7(整数丸め)。
+  // 参考: ISLANDS.honshu の海岸線頂点 [712,528]「関東 東(房総の張り出し)」に近接し、
+  // 銚子(犬吠埼)が房総半島東端の突出部にあることと整合する。
+  choshi: { x: 697, y: 550, label: "銚子" },
+  // 野田市 lon139.874/lat35.955 → x≈658.3, y≈538.5(整数丸め)。江戸のすぐ北。
+  noda: { x: 658, y: 538, label: "野田" },
 };
 
 export type PlaceId = keyof typeof GAZETTEER;
