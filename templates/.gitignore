@@ -13,6 +13,7 @@ episodes/*/narration/
 shorts/*/out/
 shorts/*/narration/
 *.mp4
+renders/
 
 # render queue (job JSONs / log / pid — runtime state; root only, not .claude/skills/render-queue/)
 /render-queue/

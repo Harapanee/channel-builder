@@ -21,6 +21,32 @@ case "$EP" in
 esac
 STATUS="$EP/out/.render-status-$OUT.json"
 
+# --- HyperFrames分岐: composition.html があればHF経路(Remotionへ進まない) ---
+EPDIR="$EP"
+OUTDIR="$EPDIR/out"
+if [ -f "$EPDIR/composition.html" ]; then
+  mkdir -p "$OUTDIR"
+  rm -f "$STATUS"
+  cp "$EPDIR/composition.html" index.html || { printf '{"ok":false,"reason":"copy_composition_failed","qaExit":1}\n' > "$STATUS"; exit 1; }
+  if ! npx --yes hyperframes@0.7.68 check --timeout 60000 > "$OUTDIR/check-$OUT.log" 2>&1; then
+    printf '{"ok":false,"reason":"check_failed","qaExit":1}\n' > "$STATUS"; exit 1
+  fi
+  ok=0
+  for i in 1 2 3; do
+    if npx --yes hyperframes@0.7.68 render > "$OUTDIR/render-$OUT-try$i.log" 2>&1; then ok=1; break; fi
+    echo "render try $i failed, retrying..." >&2; sleep 5
+  done
+  if [ "$ok" -ne 1 ]; then printf '{"ok":false,"reason":"render_failed","qaExit":1}\n' > "$STATUS"; exit 1; fi
+  latest=$(ls -t renders/*.mp4 2>/dev/null | head -1)
+  if [ -z "$latest" ]; then printf '{"ok":false,"reason":"no_output","qaExit":1}\n' > "$STATUS"; exit 1; fi
+  cp "$latest" "$OUTDIR/$OUT.mp4"
+  dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUTDIR/$OUT.mp4" 2>/dev/null || echo 0)
+  printf '{"out":"%s","ok":true,"durationSec":%s,"qaExit":0}\n' "$OUTDIR/$OUT.mp4" "${dur%.*}" > "$STATUS"
+  echo "OK(HF): $OUTDIR/$OUT.mp4 (${dur}s)"
+  exit 0
+fi
+# --- 以下、従来のRemotion経路(無変更) ---
+
 mkdir -p "$EP/out"
 rm -f "$STATUS"
 

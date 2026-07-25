@@ -23,4 +23,4 @@ description: 溜まったレンダリングジョブを夜間にまとめて消�
 
 - **二重起動**: すでにランナーが動いている状態で `run` しても、新しいランナーは立てず既存ランナーに委ねる(積んだジョブは既存ランナーが順次拾う)。addだけして終了すればよい
 - `scripts/render-queue.sh clear` でキューを空にできる
-- キューに積む前に必ずスモークQA(`npx tsx src/pipeline/qa-smoke.ts episodes/<epId>`)を全緑にしておくこと(NGのままキューに積むと夜間レンダーが無駄になる。/video-create 工程9a参照)
+- キューに積む前に必ず検査を全緑にしておくこと(HF ep: `npm run check` / Remotion ep: `npx tsx src/pipeline/qa-smoke.ts episodes/<epId>`)。NGのままキューに積むと夜間レンダーが無駄になる(/video-create 工程9参照)
