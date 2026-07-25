@@ -18,7 +18,7 @@ description: 完成済みエピソードの要素からショート動画(縦型
 - 引数: `<epId> [formatId]`
   - epId 省略時: `episodes/*/episode.json` の status が implemented / qa_passed / reviewed / render_ready / final のものを一覧提示して選択(AskUserQuestion)
   - formatId 省略時: `channel/short-formats/*.json` が1つならそれを使う。複数なら選択。**0件なら /short-builder を案内して停止**
-- VOICEVOX起動確認: `curl -s http://127.0.0.1:50021/version`
+- TTSプロバイダ確認(channel/voice.json の provider を見る): VOICEVOX系は `curl -s http://127.0.0.1:50021/version` で起動確認、fishaudio系は `.env` の `FISH_AUDIO_API_KEY` の存在を確認
 - shortId 採番: `shorts/` 直下の既存 `shNNN-*` の最大NNN+1(なければ001)。slugは題材の英小文字(例 sh001-mola-top3)。`shorts/<shortId>/` を作成
 - **素材棚卸し**: `assets/library.json` から sourceEpisode 関連(subject一致・approvedBy: "human")の素材を列挙する(short-director への入力)
 

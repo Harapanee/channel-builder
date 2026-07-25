@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 import { DoodleCharacter } from "./core/DoodleCharacter";
 import { DoodleMap } from "./core/DoodleMap";
 import { SpeechBubble } from "./core/SpeechBubble";
-import { DangerCircle } from "./core/DangerCircle";
 import { ComparisonSplit } from "./core/ComparisonSplit";
 import { TitleCard } from "./core/TitleCard";
 import { RankCard } from "./shorts/core/RankCard";
@@ -28,7 +27,9 @@ export const sceneRegistry: Record<string, ComponentType<any>> = {
   DoodleCharacter,
   DoodleMap,
   SpeechBubble,
-  DangerCircle,
+  // DangerCircle は単体シーンとしての登録を廃止(2026-07-25)。
+  // 「円が出現するだけの強調演出」を shots.json から構造的に不可能にするため。
+  // core/DangerCircle.tsx 自体は合成シーン内部の部品として import して使ってよい。
   ComparisonSplit,
   TitleCard,
   // ショート用共有コンポーネント(縦型。src/scenes/shorts/core/)

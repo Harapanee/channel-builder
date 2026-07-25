@@ -331,6 +331,52 @@ function validateVisualDiversity(
   }
 }
 
+/**
+ * Rule 2b: 場面演出のゼロ持ち越し検査。
+ *
+ * src/scenes/registry.ts のソースを静的解析し、`./episodes/<dir>/` または
+ * `./shorts/<dir>/` から import されたコンポーネント名 → 由来ディレクトリ名の
+ * 対応表を作る。ショットの scene.component(`custom:` プレフィックスは除去)が
+ * この表に載っており、由来が検証対象のエピソード/ショート自身のディレクトリ名と
+ * 異なる場合はエラー(過去エピソードの場面演出の持ち越し)。
+ * core/ shared/ など非エピソード配下由来のコンポーネントは対象外(常に許可)。
+ */
+export function validateZeroCarryover(
+  shots: ShotsFile,
+  episodeDir: string,
+  projectRoot: string,
+  report: ValidationReport
+): void {
+  const registryPath = path.join(projectRoot, "src", "scenes", "registry.ts");
+  if (!existsSync(registryPath)) return;
+  const src = readFileSync(registryPath, "utf-8");
+
+  const origin = new Map<string, string>();
+  const importRe =
+    /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']\.\/(episodes|shorts)\/([^/"']+)\//gs;
+  for (const m of src.matchAll(importRe)) {
+    // shorts/core・shared 等の共有部品置き場はエピソード固有ではない
+    if (m[3] === "core" || m[3] === "shared") continue;
+    const names = m[1]
+      .split(",")
+      .map((s) => s.trim().split(/\s+as\s+/).pop()?.trim())
+      .filter((s): s is string => Boolean(s));
+    for (const name of names) origin.set(name, m[3]);
+  }
+  if (origin.size === 0) return;
+
+  const selfDir = path.basename(episodeDir.replace(/[\\/]+$/, ""));
+  for (const shot of shots.shots) {
+    const name = shot.scene.component.replace(/^custom:/, "");
+    const from = origin.get(name);
+    if (from && from !== selfDir) {
+      report.add(
+        `[${shot.shotId}] scene.component "${shot.scene.component}" は ${from} 由来の場面演出です。過去エピソードの場面演出の持ち越しは禁止(bible §8 ゼロ持ち越し)。本エピソード用に新規実装するか、core/ の語彙で表現してください`
+      );
+    }
+  }
+}
+
 export function validateEpisode(
   episodeDir: string,
   projectRoot: string
@@ -396,6 +442,12 @@ export function validateEpisode(
       );
     }
   }
+
+  // ---- Rule 2b: 場面演出のゼロ持ち越し(bible §8)を機械保証 --------------
+  // registry.ts の import 元を静的解析し、episodes/<epId>/ 配下に解決される
+  // コンポーネントは「当該エピソード自身のもの」しか参照できない。
+  // core/ shared/ 等の非エピソード配下は語彙・署名として常に許可。
+  validateZeroCarryover(shots, episodeDir, projectRoot, report);
 
   // ---- Rule 3: assets は library.json に存在し、ファイルが実在する ------
   const libraryIndex = new Map(library.assets.map((a) => [a.assetId, a]));
