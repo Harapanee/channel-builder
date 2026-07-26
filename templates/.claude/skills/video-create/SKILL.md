@@ -5,7 +5,7 @@ description: このチャンネルの新規エピソード動画を制作する�
 
 # /video-create — エピソード制作パイプライン
 
-仕様書§7に基づく。**開始前に必ず `channel/bible.md` 全文と `.channel-system.json` を読むこと。**
+**開始前に必ず `channel/bible.md` 全文と `.channel-system.json` を読むこと。**
 各ステップ完了時に `episodes/<epId>/episode.json` の `status` を更新する(中断・再開の基盤)。
 
 **運用原則(モデル非依存)**: メインセッションの役割は監査・ゲート管理・ユーザー対話である。

@@ -25,7 +25,7 @@ model: opus
 
 # 設計手順
 
-1. **storyboard.md**(Phase A。仕様書§7.4の必須4セクション: 中心の問いと開閉時刻 / 視聴者状態の入口出口 / シーン一覧(setup・turn・landing)/ ショット表)
+1. **storyboard.md**(Phase A。必須4セクション: 中心の問いと開閉時刻 / 視聴者状態の入口出口 / シーン一覧(setup・turn・landing)/ ショット表)
    - ショットのroleは schema の enum(hook/show/explain/contrast/foreshadow/withhold/reveal/payoff/gag/reframe)から選ぶ。show/explainだけの動画は失格
    - Reveal/Withhold・パターン破壊・モチーフ再登場・ピーク予算(bible §7)を最低1つずつ意図的に設計する
    - 意味→映像のマッピング(bible §8に定義されたもの)を守る
@@ -38,7 +38,7 @@ model: opus
 2. **再利用優先**: 既存コアコンポーネント → 既存カスタム(props差替)→ 新規カスタム、の順で検討。新規カスタムは本当に必要なショットだけに絞り、レポートで理由を述べる。**bible §8の視覚多様性の定量規則を自己計測して遵守する**(同一コンポーネント連続≤2・文字カード≤20%・章内3様式以上)。**チャンネルに `channel/visual-rules.json` がある場合は、同一画像の使用回数上限・ユニーク画像密度・AI生成比率も `npm run validate` がBLOCKするため、shots確定前に自分で集計して守る**。**縦横比1.3未満の縦長画像は focus(主対象位置)か fit:"contain" を必ず明示する**(minCoverAspectRatio設定時はvalidateがBLOCK。肖像=顔位置にfocus、図面・書物・地図=containか意味の立つ帯へのfocus)
    - コア部品を単体で発注する場合、そのショットが**単体で意味が立つか**を自問する(DangerCircleだけ・素材なしDoodleCharacterだけ等は、意図が伝わる合成コンポーネントを不足リストへ)
 3. **演出が素材を決める(逆にしない)**: 手持ち素材に演出を合わせて妥協しない。演出上ほしい素材が library.json に無い場合は、storyboard.md に **「不足素材リスト」セクション**(subject / variant / 用途ショット / 演出上の必要理由)を書き出す。メインセッションがasset-generator+人間キュレーションで充足した後、shots.json を確定する。ただし不足リストは吟味すること — motionヘルパーや構図で表現できる差分は素材にしない(新規素材の予算は**動画1分あたり5枚程度**まで。例: 5分動画なら25枚前後。予算内なら演出の要求を優先し、遠慮なくリストに載せる)
-4. **shots.json**(Phase B): ショット表を仕様書§5.6契約へ変換。lineIds重複禁止・時間被覆・素材はlibrary.json登録済みのみ(不足素材の充足後に確定)・SEはassets/audio/se/の実ファイル名。`npm run validate episodes/<epId>` が通るまで修正する
+4. **shots.json**(Phase B): ショット表を shots.json 契約(src/schemas/shots.schema.json)へ変換。lineIds重複禁止・時間被覆・素材はlibrary.json登録済みのみ(不足素材の充足後に確定)・SEはassets/audio/se/の実ファイル名。`npm run validate episodes/<epId>` が通るまで修正する
    - **地図ショットの主張**(bibleジャンル文法): 各地図ショットのintentに地理的主張(位置/経路/距離/広さのどれか)を明記し、propsがそれを表現していることを自己検査する。主張を書けないショットは地図にしない。地理形状は実データ由来の共有ジオメトリのみ(フリーハンド発明禁止)
    - **図解部品は実差があるときだけ**(bible映像節): 大小比較は実差(目安1.5倍以上)のある事実にのみ使う。抽象概念の対比は絵で
 5. **SE設計**(bible音の設計): 山場にSE、無音を作ってから鳴らす。**定量予算を自己計測する**: sfx総数≤尺(秒)÷8・同一SE≤総数の20%・各SEの機能(強調・衝撃・転換・回収)を一言で言えるものだけ残す
