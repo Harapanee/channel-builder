@@ -5,6 +5,10 @@
   "type": "module",
   "description": "Channel Video Factory scaffold (Stage 1) — Remotion + TypeScript video production pipeline.",
   "scripts": {
+    "dev": "npx --yes hyperframes@0.7.68 preview",
+    "check:visual": "tsx src/pipeline/check-composition.ts",
+    "check": "npm run check:visual && npx --yes hyperframes@0.7.68 check --timeout 60000 --caption-zone \"x0=0;y0=.82;x1=1;y1=1;severity=error\"",
+    "render": "npx --yes hyperframes@0.7.68 render",
     "studio": "remotion studio src/remotion/Root.tsx",
     "render:test": "remotion render src/remotion/Root.tsx Episode episodes/ep000-test/out/preview.mp4",
     "render:test:short": "remotion render src/remotion/Root.tsx Short shorts/sh000-test/out/preview.mp4",
@@ -32,6 +36,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
+    "playwright-core": "^1.62.0",
     "tsx": "^4.23.0",
     "typescript": "^5.7.2"
   }

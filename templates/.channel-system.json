@@ -6,6 +6,7 @@
   "stage": 1,
   "status": "building",
   "systemVersion": "0.1.0",
+  "renderEngine": "hyperframes",
   "approvedEpisodes": [],
   "metrics": []
 }
