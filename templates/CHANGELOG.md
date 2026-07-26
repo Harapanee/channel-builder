@@ -11,13 +11,21 @@
 
 まだ変更はない。Pilot 承認までは systemVersion 0.1.0 / status: building。 -->
 
-## 2026-07-26 — 配布ミラーの孤児ファイル引き上げとテスト配線
+## 2026-07-26 — 配布ミラーの孤児ファイル精査とテスト配線
 
-- 配布ミラーにのみ存在した実装+テスト8本を正本へ引き上げ、`npm test`(`tsx --test`)を新設した
-- 正本の実装と噛み合わないテストは陳腐化として削除した(削除: `src/pipeline/visual-rules.test.ts` — 理由: `validate-shots.ts` から `findOverlongAssetFreeRuns` / `findShotsUsingProp` をimportするが、正本の同ファイルのexportは `validateZeroCarryover` / `validateEpisode` の2つのみで該当関数が存在しない/ 削除: `src/scenes/core/format-number.test.ts` — 理由: 「負数と指数表記にも対応する」テストが `formatAnimatedNumber(-1.25, -2.5)` に `"-1.3"` を期待するが、実装は `Math.round` を使っており `Math.round(-12.5) === -12`(JSの仕様上0.5は+∞方向に丸められ、負数側では絶対値が小さい方に丸まる)ため実際の戻り値は `"-1.2"`。実装(`format-number.ts`)は現状維持のうえテストのみ削除。同ファイルの他2テスト(整数丸め・小数桁維持)は通っていたが、この判定は正本実装への追随を優先しファイル単位で削除する規則に合わせた。負数丸めの仕様は今回の引き上げ対象外の論点として残す)
-- style-pack `regional-map` / `stage-layout` は全7ch(動物転生/人物転生/世界史の裏路地/zunda-trend/zunda-datagaku/mijika-nippon/kinshoko)で `src/scenes/shared/` に同名実装が「なし」だったため引き上げず破棄した
-- `channel/visual-rules.example.json` を正本へ引き上げた
-- `package.json` の `scripts.test` は `tsx --test src/**/*.test.ts`(無引用)だとnpmが起動するsh経由のglob展開が1階層しか辿らず `src/scenes/core/*.test.ts` のような2階層下のテストを取りこぼすため、`tsx --test "src/**/*.test.ts"`(引用符付き)に調整した。引用符で囲むとNode組み込みテストランナー自身がglobを再帰展開し、全テストファイルを検出できることを確認済み
+- `npm test`(`tsx --test`)を新設し、テンプレートで初めて単体テストが走るようにした
+- 配布ミラー(`6c4d0f2` 2026-07-20 で凍結)にのみ存在した孤児13ファイルを精査し、引き上げたのは2本のみ:
+  - `src/motion/index.test.ts` — 正本の `src/motion/index.ts`(`kenBurns` / `wipeIn`)を検査する有効なテスト
+  - `channel/visual-rules.example.json` — 後継を持たない設定雛形
+- 引き上げなかったもの(正本 `1d67616` 2026-07-21 で後継に置き換わっている、または参照ゼロ):
+  - `src/pipeline/visual-source-lint.ts` + テスト — 後継は `qa-smoke.ts` の style.ts 駆動の図解文字下限検査
+  - `src/pipeline/component-contracts.ts` + テスト — 後継は `validate-shots.ts` Rule 10 のprops形状検査
+  - `src/scenes/core/format-number.ts` + テスト — テンプレにも全8chにも参照ゼロの死んだコード
+  - `src/pipeline/visual-rules.test.ts` — import先の関数が正本の `validate-shots.ts` に存在しない
+- style-pack `regional-map` / `stage-layout` は全7ch(動物転生/人物転生/世界史の裏路地/zunda-trend/zunda-datagaku/mijika-nippon/kinshoko)で未使用のため引き上げず破棄した
+- `package.json` の `scripts.test` は `tsx --test src/**/*.test.ts`(無引用)だとnpmが起動するsh経由のglob展開が1階層しか辿らず2階層下のテストを取りこぼすため、`tsx --test "src/**/*.test.ts"`(引用符付き)に調整した。引用符で囲むとNode組み込みテストランナー自身がglobを再帰展開し、全テストファイルを検出できることを確認済み
+
+> **修正履歴(fix round 1, 同日中):** 当初は上記精査前に孤児8ファイルを一括で正本へ引き上げてコミットしていたが、配布ミラーが `6c4d0f2`(2026-07-20)で凍結済みで正本 `1d67616`(2026-07-21)が後継実装で置き換え済みだったことが判明したため、引き上げ対象を2本のみに縮小して修正した。詳細は `task-1-report.md` の「fix round 1」節を参照。
 
 ## 2026-07-13 system-refine: サムネのAI生成1枚絵方式(image契約)+publisher中立化(全チャンネル適用)
 - 変更: Thumbnail.tsx参照実装にimageバリアント(旧contract後方互換)/ publisher.mdの旧構造焼き込みを除去しbible §13へ委譲 / asset-generator型5(サムネ場面)/ bible-template §13雛形とvideo-create SKILL更新
