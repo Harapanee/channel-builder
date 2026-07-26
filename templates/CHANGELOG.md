@@ -11,6 +11,15 @@
 
 まだ変更はない。Pilot 承認までは systemVersion 0.1.0 / status: building。 -->
 
+## 2026-07-26 — HyperFrames主流化(新規チャンネルの既定エンジンをHFへ)
+
+- 本編の制作をHyperFrames前提にした。新規チャンネルは `renderEngine: "hyperframes"` で立ち上がる
+- ショート(9:16)とサムネイルはRemotion継続。`Episode.tsx` を共有しているためRemotion資産は削除していない
+- `shots.json` 廃止で外れた視覚多様性の機械検査を、評価済みDOMを読む `check-composition.ts` として再建した
+  - BLOCK 5件(密度 / 同一素材上限 / 連続空clip / AI比率 / 尺)・ADVISE 4件(実効演出数 / ゼロ持ち越し / 様式clip比率 / 縦長素材)
+  - `maxUsesPerImage` は kind 別に上限を分けられる(数値形は後方互換)
+- 既存6chはRemotionのまま。移行は各チャンネルの `/factory-update` 判断に委ねる
+
 ## 2026-07-26 — 配布ミラーの孤児ファイル精査とテスト配線
 
 - `npm test`(`tsx --test`)を新設し、テンプレートで初めて単体テストが走るようにした
