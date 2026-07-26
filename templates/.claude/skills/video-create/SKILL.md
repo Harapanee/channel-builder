@@ -8,6 +8,8 @@ description: このチャンネルの新規エピソード動画を制作する�
 **開始前に必ず `channel/bible.md` 全文と `.channel-system.json` を読むこと。**
 各ステップ完了時に `episodes/<epId>/episode.json` の `status` を更新する(中断・再開の基盤)。
 
+**工程5以降はHyperFrames経路**(HTML+CSS+GSAP)。Remotion時代の既存エピソードを工程5以降で再修正する場合のみ旧Remotion工程を用いる(手順は git 履歴の旧 SKILL.md を参照)。工程0〜4(調査・台本・審査・TTS)と工程11(公開パッケージ・サムネ)はRemotion/HF共通。ショート(9:16)は引き続きRemotionで作る。
+
 **運用原則(モデル非依存)**: メインセッションの役割は監査・ゲート管理・ユーザー対話である。
 台本(script-director)・絵コンテとショット(visual-director)・調査と検証(fact-checker)・
 シーン実装(scene-implementer)・レビュー(compliance-reviewer / audience-sim)はすべて
@@ -20,10 +22,16 @@ description: このチャンネルの新規エピソード動画を制作する�
 ヘッドレス実行(Factory UI等の `claude -p`)ではターン終了=プロセス終了であり、
 待っていたエージェントごと強制停止されてパイプライン全体が途中死する。
 
-**監査のusage規律**: メインセッションの監査は、機械検査の出力(lint / validate / tsc / qa-smoke)と
-サブエージェントの構造化報告に基づいて判断する。成果物ファイル(script.md・storyboard.md・シーンコード等)の
-全文Readは報告に疑義がある場合に限り、その場合も該当箇所の抜粋Read(offset/limit指定)を優先する。
-監査のための同一ファイル再Readを繰り返さない(履歴の肥大はusageとレート制限に直結する)。
+**コンテキスト規律(usage削減の中核)**: 履歴の肥大はusageとレート制限に直結する。
+
+1. **委譲はパス渡し**: サブエージェントへの委譲プロンプトにファイル内容を貼らない。
+   ファイルパス+読むべき節の指定で渡し、サブエージェント自身に読ませる。
+   例外は本スキルが「逐語転記」を明示する箇所のみ(research.md「約束」節、backlog候補メモ)。
+2. **報告は30行以内**: サブエージェントの最終報告は構造化サマリ(結論・合否・数値・成果物パス)
+   30行以内とし、成果物の全文・長い引用を報告へ含めない。詳細は成果物ファイルに書く。
+3. **メインは全文Readしない**: メインセッションの監査は、機械検査の出力(`lint:script` / HF `npm run check` / validate 等)と
+   サブエージェントの構造化報告に基づいて判断する。報告に疑義がある場合も全文Readせず、
+   該当箇所の抜粋Read(offset/limit指定)のみ。同一ファイルの再Readを繰り返さない。
 
 ## 0-a. 題材の決定(引数なしで呼ばれた場合)
 
@@ -59,8 +67,8 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 2. lint緑後、**必ず並列で起動する**(直列起動は禁止。レート制限発生時のみ直列にフォールバック可):(並列とは**同一ターン内で複数のAgent tool_useを同時発行し、双方の結果を待って監査する**ことを指す — 冒頭原則どおりバックグラウンド起動は禁止)
    - **fact-checker**(新規起動): script.md の「新規主張リスト」の検証(research.md 突合+リスト分のみWeb確認)
    - **script-reviewer**(新規起動・**合否権あり**): 文脈・品質の審査。判定は PASS / ADVISE / BLOCK の三値。lint結果の緑の出力を入力として渡す
-3. **BLOCK** の指摘のみ script-director に差し戻して修正(最大2周。解決しない論点はユーザーへエスカレーション)。**ADVISE** は差し戻さず、メインセッションが軽微修正を script.md に直接適用するか、見送る理由を判断して先へ進む(適用した場合は lint を再実行して緑を確認)。fact-checker が「契約違反(リスト漏れ)」を指摘した場合はBLOCK相当として script-director へ差し戻す(周回に数える)。**BLOCK修正後は手順1のlintから再実行し、緑を確認してから再審査を起動する(機械項目の再導入を防ぐ)。**
-4. **2周目以降の再審査は差分限定で起動する**: script-director の修正報告(修正した行IDと変更概要)を委譲プロンプトに含め、fact-checker へは「修正で追加・変更された主張のみ」、script-reviewer へは「修正行とその前後の文脈のみ+前回BLOCKの解消確認」を審査範囲として明示する(全文の再審査をさせない)。ただし行の追加・削除・順序変更など**構成が変わった場合は全文再審査**に戻す。
+3. **BLOCK** の指摘のみ script-director に差し戻して修正(最大2周。解決しない論点はユーザーへエスカレーション)。**ADVISE** は差し戻さず、メインセッションが軽微修正を script.md に直接適用するか、見送る理由を判断して先へ進む(適用した場合は lint を再実行して緑を確認。**ADVISEの適用有無で再審査は起動しない** — 再審査の対象はBLOCKと契約違反のみ)。fact-checker が「契約違反(リスト漏れ)」を指摘した場合はBLOCK相当として script-director へ差し戻す(周回に数える)。**BLOCK修正後は手順1のlintから再実行し、緑を確認してから再審査を起動する(機械項目の再導入を防ぐ)。**
+4. **2周目以降の再審査は差分限定で起動する**: script-director の修正報告(修正した行IDと変更概要)を委譲プロンプトに含め、fact-checker へは「修正で追加・変更された主張のみ」、script-reviewer へは「修正行とその前後の文脈のみ+前回BLOCKの解消確認」を審査範囲として明示する(全文の再審査をさせない)。行IDは改訂で振り直さない(行ID安定規則: 挿入は枝番 `L84a` 形式、削除は欠番のまま残す — script-director 側の規則)ため、行の追加・削除だけでは全文再審査へ戻さない。全文再審査へ戻すのは、章の順序入替・章の統合分割など**骨格が変わった場合のみ**。
 
 両方が通ってから工程4へ進む。**台本段階の修正コストは映像化後の1/10以下** — BLOCKでは妥協しない。
 
@@ -71,14 +79,13 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 - PASSまで**工程7(素材)以降**へ進まない
 - → status: "voiced"
 
-## 5-6. ストーリーボード + ショットプラン → `storyboard.md` / `shots.json`
+## 5-6. ストーリーボード(HF版・clip表) → `storyboard.md`
 
-**visual-directorエージェントへ委譲**(設計手順・多様性の定量規則・検証はエージェント定義に内蔵)。
-**二相で起動できる**: Phase A(storyboard.md)は script.md だけで設計できる(開閉時刻は概算と明記させる。visual-director定義に内蔵)→ **台本審査PASS直後、必ず工程4のTTSと並行で開始する**(直列にしない。レート制限発生時のみ直列フォールバック可)。並行の実行形も同じ(同一ターン内で複数tool_useを同時発行して両方を待つ)(概算時刻と実タイミングの差はretime-shotsが吸収)。Phase B(shots.json)は timing.json(実タイミング)確定後に行う。
-**流れは「演出が先、素材が後」**: visual-directorは手持ち素材に縛られず演出を設計し、
-不足素材リストを storyboard.md に出す → 工程7で充足 → shots.json 確定。
-**10分超は章並列**: 全体設計(Phase 1)→章グループ並列(Phase 2)→統合(Phase 3)。Phase 1の分担は**グループ間のショット数が±20%以内**になるよう均す(壁時計は最遅グループに律速される)。共有コンポーネントは1グループが実装オーナー、他はprops契約参照。
-メインセッションは 多様性の自己計測表・role分布・不足素材リストの妥当性・validate合格を監査する。
+**visual-directorエージェントへ委譲**(設計手順・多様性の定量規則はエージェント定義に内蔵)。成果物は `storyboard.md`(HF版・必須4セクション+**clip表**: clipId / 開始秒 / 尺 / lineIds / role / 演出記述 / 使用素材 / SE)**のみ**(shots.jsonは廃止)。
+**二相で起動できる**: Phase A(clip表の概算時刻版)は script.md だけで設計できる(開始秒・尺は概算と明記させる。visual-director定義に内蔵)→ **台本審査PASS直後、必ず工程4のTTSと並行で開始する**(直列にしない。レート制限発生時のみ直列フォールバック可)。並行の実行形も同じ(同一ターン内で複数tool_useを同時発行して両方を待つ)。Phase B(clip表の実時刻化)は timing.json(実タイミング)確定後に行い、概算時刻を timing.json の実測行時刻へ置き換える。
+**流れは「演出が先、素材が後」**: visual-directorは手持ち素材に縛られず演出を設計し(演出記述はWeb技術語彙で自由に。creative原則はエージェント定義に内蔵)、不足素材リストを storyboard.md に出す → 工程7で充足 → clip表の使用素材を確定。
+**10分超は章並列**: 全体設計(Phase 1)→章グループ並列(Phase 2)→統合(Phase 3)。Phase 1の分担は**グループ間のclip数が±20%以内**になるよう均す(壁時計は最遅グループに律速される)。共有様式・スパイン演出は1グループが実装オーナー、他は同じ見え方を再現。
+メインセッションは 多様性の自己計測表・role分布・不足素材リストの妥当性・**clip表とtiming.jsonの行被覆(欠落行ゼロ)の自己申告**を監査する。
 → status: "storyboarded"
 
 ## 7. 素材取得
@@ -94,49 +101,50 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 
 全新規素材を library.json に登録(kind/subject/variant/file/source/license/approvedBy)。
 
-## 8. シーン実装
+## 8. シーン実装 → `composition.html`
 
-**scene-implementerエージェントへ委譲**(コアprops/カスタム新設の使い分け・三層規則・技術規則はエージェント定義に内蔵。メインセッションが演出コードを書かない — シーン実装は演出の質を最終決定する工程であり、エージェント定義のモデル固定が品質のモデル非依存を担保する)。
+**scene-implementerエージェントへ委譲**(HF規約5点・三層規則・技術規則・音声/字幕配線はエージェント定義に内蔵。実装前に `hyperframes-core` / `hyperframes-animation` スキルを読ませる。メインセッションが演出コードを書かない — シーン実装は演出の質を最終決定する工程であり、エージェント定義のモデル固定が品質のモデル非依存を担保する)。成果物は `episodes/<epId>/composition.html`(storyboard.md のclip表を実装し、`assets/hf/<slug>-style.css` を link)。
 
-- **10分超は章グループ並列で起動してよい**(visual-directorと同じ分担。共有コンポーネントは実装オーナー1グループ、他はprops契約参照)
+- **10分超は章グループ並列で起動してよい**(visual-directorと同じ分担。共有様式・スパイン演出は実装オーナー1グループ、他は同じ見え方を再現)
 - メインセッションの監査観点:
-  - typecheck / validate の合格報告(出力つき)
-  - **ゼロ持ち越し**: shots.json の `custom:` 参照が全て `src/scenes/episodes/<epId>/` 新設であること(registry.tsのimport元パスで確認。過去エピソード由来の場面演出が1件でも混入していたら差し戻し)
-  - 新設コンポーネントが storyboard.md の演出意図と数・内容で整合すること
-  - **テンプレ量産でないこと**: 単一factory関数の文言差替え変種群は1演出と数える。実効演出数が定量規則を満たさなければ差し戻し
+  - **`npm run check` 緑の報告(出力つき)**(HF: lint+runtime+layout+motion+contrast)
+  - **ゼロ持ち越し**: 過去ep composition.html からの場面演出の流用が0件であること(過去エピソード由来の場面演出が1件でも混入していたら差し戻し)
+  - composition.html の実装が storyboard.md の clip表と数・内容で整合すること
+  - **テンプレ量産でないこと**: 単一factory/ヘルパーの文言差替え変種群は1演出と数える。実効演出数が定量規則を満たさなければ差し戻し
 - → status: "implemented"
 
-## 8.5 Studio早期確認(レンダリング前・推奨)
+## 8.5 プレビュー早期確認(レンダリング前・推奨)
 
-実装完了後、**レンダリングを焼く前に** Remotion Studio でユーザーが確認できる:
+実装完了後、**レンダリングを焼く前に** HyperFrames プレビューでユーザーが確認できる:
 
 ```
-npx remotion studio src/remotion/Root.tsx --props='{"episodeDir":"episodes/<epId>"}' --port 3400
+npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localhost:<port> を開く
 ```
 
-ブラウザ(http://localhost:3400)でスクラブ・再生し、レイアウト・演出の問題をレンダー1周(30〜50分)を消費せずに発見する。音声ミックスの最終確認・QAはレンダー後のmp4で行う(Studioは視覚の早期ゲート)。ユーザーがすぐ確認できない場合はスキップして次工程(検査)へ進んでよい。
+ブラウザ(hyperframes preview が表示するポート)でスクラブ・再生し、レイアウト・演出の問題をレンダー1周(30〜50分)を消費せずに発見する。音声ミックスの最終確認・QAはレンダー後のmp4で行う(プレビューは視覚の早期ゲート)。ユーザーがすぐ確認できない場合はスキップして次工程(検査)へ進んでよい。
 
 ## 9. レンダー前検査(日中・機械ゲートの前倒し)
 
-夜間レンダーを一発で通すため、render-episode.sh 内の機械ゲートを日中に前倒しで実行する
-(夜のスクリプト内でも同じゲートが二重に走る=安全側):
+夜間レンダーを一発で通すため、機械ゲートを日中に前倒しで実行する:
 
 ```
-npx tsx src/pipeline/precheck.ts episodes/<epId>
+npm run check   # check:visual(視覚多様性)→ HF lint+runtime+layout+motion+contrast
 ```
 
-4ゲート(tsc / validate / Infinityゲート / qa-smoke)を一括実行し、入力ハッシュ(src・assets・shots/timing)と結果を `review/precheck-state.json` に記録する。**入力が前回全緑時から未変更なら数秒でSKIPする** — フェーズ再開時・レビュー後の再確認で同じ検査を焼き直さない(個別ゲートを手で再実行しない。強制再実行は `--force`)。
+`check:visual` は評価済みDOMを読み、ユニーク画像密度・同一素材上限・連続する素材なしclip・AI比率・尺をBLOCK判定し、実効演出数(テンプレ量産)・ゼロ持ち越し・様式clip比率・縦長素材のフレーミングをADVISEで報告する。設定は `channel/visual-rules.json`(無いチャンネルはSKIP)。
 
-- qa-smoke の NG は修正して再実行(**修正ループは最大3周。3周で残るNGはユーザーへエスカレーション**)
+composition.html の実行時エラー・レイアウト事故・モーション/コントラスト不足を、レンダー1周を消費せずに検出する。
 
-全て緑になったら → status: "prechecked"(既に "prechecked" 以降で precheck がSKIPを返したら、この工程は完了扱いでそのまま先へ進む)
+- **check の NG は修正して再実行(修正ループは最大3周。3周で残るNGはユーザーへエスカレーション)**
+
+全て緑になったら → status: "prechecked"
 
 ## 10. LLMレビュー(2系統、いずれも新規コンテキストのエージェント)
 
 いずれも mp4 非依存(レンダー前で成立する):
 
-- **compliance-reviewer**: bible.md + review-checklist.md + script/storyboard/shots を渡す。PASS/FAIL。FAILは修正して再レビュー(修正したら工程9の検査から再確認 — precheckが未変更ゲートをSKIPする。**FAIL→再レビューは最大2周** — 2周で解決しなければユーザーへエスカレーション)。視覚検証のフレームは `render-stills.ts`(部分レンダー・エージェント定義に内蔵)で取得する — **レビューのためにフルレンダー(render-episode.sh preview 含む)を起動しない**(80秒動画で12分、通常尺で30分超の浪費を実測。フレーム十数枚で足りる)
-- **audience-sim**: **bible.mdとstoryboard.mdは渡さない**。script.mdの行とshots.jsonのintentを時系列順に開示して疑似初見反応を得る。助言として扱う
+- **compliance-reviewer**: bible.md + review-checklist.md + script/storyboard/composition を渡す。PASS/FAIL。FAILは修正して再レビュー(修正したら工程9の検査から再確認。**FAIL→再レビューは最大2周** — 2周で解決しなければユーザーへエスカレーション)。視覚検証のフレームは `hyperframes-cli` スキルの snapshot 系(指定時刻のフレーム抽出・エージェント定義に内蔵)で取得する — **レビューのためにフルレンダーを起動しない**(80秒動画で12分、通常尺で30分超の浪費を実測。フレーム十数枚で足りる)
+- **audience-sim**: **bible.mdとstoryboard.mdは渡さない**。script.mdの行とstoryboard.md clip表のrole・演出記述(intent相当)を時系列順に開示して疑似初見反応を得る。助言として扱う(Remotion時代の既存エピソードの再修正時はshots.jsonのintent)
 - → status: "reviewed"
 
 ## 11. 公開パッケージ(タイトル・サムネ・概要欄 — finalレンダー前に作る)
@@ -150,24 +158,22 @@ npx tsx src/pipeline/render-thumbs.ts episodes/<epId>
 ```
 
 タイトルはbible(公開パッケージ節)の規定に従う — 固定型ならそのまま確定、3案方式ならユーザーが1案選定。**サムネは選定不要 — 3枚とも朝のアップロード時にYouTube Studio「テストと比較」へ投入**しABテストする(bibleの公開パッケージ節)。
-publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像ブリーフ」から `publish/thumb-image-{1..3}.png` を生成する(型5・正典`--ref`・16:9)。生成完了後に上のrender-thumbsを実行する。
+publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像ブリーフ」から `publish/thumb-oneshot-{1..3}.png` を生成する(型5・正典`--ref`・16:9)。生成完了後に上のrender-thumbsを実行する。
 → status: "packaged"
 
 ## 12. 人間レビュー(一括)→ 承認 → 夜間レンダーキューへ
 
 動画・サムネ・タイトル・概要欄を**まとめて**確認してもらう。**レンダーはここでは実行しない**(夜にサーバーが焼く):
 
-1. `npx remotion studio src/remotion/Root.tsx --props='{"episodeDir":"episodes/<epId>"}' --port 3400` を起動し、動画本編を確認してもらう
+1. `npm run dev`(HyperFramesプレビュー・必ずbackground起動)を立ち上げ、表示された http://localhost:<port> で動画本編を確認してもらう
 2. サムネ3枚・タイトル・概要欄(publish/)をあわせて提示する
 3. フィードバックは「単発修正」と「システム還元(/channel-refine)」に分類して対応。修正したら工程9(検査)から再確認して再提示
 4. 承認を求める — ヘッドレス実行(Factory UI)では規約どおり `kind:"render-check"` のゲートを発行して停止する。対話セッションでは AskUserQuestion で承認を得る
 
 **承認後の完了処理(このジョブの終点。レンダーはしない):**
 
-- episode.json の status を "render_ready" へ更新
-- `.channel-system.json` の `metrics` にエントリ追加(wallClockHours / imageGenCount を実測で記入。**renderMinutes は null** — 夜のレンダー完了時にサーバーが追記する)
-- **消し込み**: `channel/backlog.md` に該当行があれば状態を「済(<epId>)」へ更新
-- git commit(内容は承認時点で確定するため)
+- `npm run finalize episodes/<epId> -- --hours <実測時間> --images <画像生成数>` を実行する
+  (status更新・metrics追記・backlog消し込み・git commit を一括実行。手作業で個別に行わない)
 - キュー登録の確認: Factory UI 経由(ヘッドレス)ならゲート承認時にサーバーが自動登録済み。**対話セッションの場合のみ** `curl -s -X POST http://127.0.0.1:4700/api/render-queue/enqueue -H 'Content-Type: application/json' -d '{"dir":"<チャンネルフォルダ名>","epId":"<epId>"}'` で登録する(サーバー未起動で失敗したら、Factory UI のエピソード詳細から「夜間レンダーキューへ」を押すようユーザーへ案内)
 - ここで `<done>` を出して終了する。**status "final" は夜のレンダー成功時にサーバーが書く**(このジョブでは書かない)
 

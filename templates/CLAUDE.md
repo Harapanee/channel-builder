@@ -25,6 +25,13 @@
 
 # Key commands
 
+- `npm run dev` — HyperFramesプレビュー(本編。必ずbackgroundで起動)
+- `npm run check` — 視覚多様性検査 + HF check(本編。レンダー前の機械ゲート)
+- `npm run render` — HyperFramesレンダー(本編)
+- `npm run check:visual -- episodes/<epId>` — 視覚多様性検査のみ
+- `npm test` — 単体テスト(tsx --test)
+- `npm run studio` — Remotion Studio(**ショート・サムネ専用**)
+- `npm run render:test:short` — ショートのテストレンダー(**Remotion**)
 - `npm run tts episodes/<epId>` — 台本→音声+timing.json(自己検証・ラウドネス正規化つき。最終行に pause_after_sec を明示するとその秒数の無音尾が付く=アウトロ尺の確保用)
 - `npm run tts episodes/<epId> -- --readings-only` — 誤読プリチェック(audio_queryのみ・数十秒。合成前にreading-checkerへ)
 - `npm run validate episodes/<epId>` — shots.json契約検証(shotId一意性・bgmTracks含む)
@@ -43,7 +50,6 @@
 - `npm run validate:short-format channel/short-formats/<formatId>.json` — ショートフォーマット契約検証
 - `npm run validate:metadata episodes/<epId>` — publish/metadata.json(YouTube公開メタデータ契約)検証(YPP対策のAI開示・制作工程明記・公開予約を含む)。factory-uiのアップロードが読む
 - `npm run validate:ledger` — 全話台帳(channel/episode-ledger.json)の契約検証
-- `npm run render:test:short` — 縦型スモークレンダー(shorts/sh000-test)
 - `scripts/render-episode.sh shorts/<shortId> [out名]` — ショートレンダー(shorts/はShortコンポジション自動選択)
 - `scripts/wait-render.sh episodes/<epId> [out名]` — レンダー完了待ち(nohup本体+これをバックグラウンドBashで=完了即時通知)
 - `scripts/promote-preview.sh episodes/<epId>` — 委任モードでpreview→final昇格(入力の更新なしを機械検査)
