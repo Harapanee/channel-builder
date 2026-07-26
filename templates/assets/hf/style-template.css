@@ -1,0 +1,58 @@
+/*
+ * style-template.css — チャンネル共通様式(HyperFrames)の器。
+ *
+ * scaffold 後、チャンネルの bible §8「映像スタイル」に従って
+ * <slug>-style.css へ改名し、変数と各クラスを実値で埋めること。
+ * クラスの用途・使用規則は同ディレクトリの README.md(クラス台帳)が唯一の正。
+ *
+ * 基準キャンバス: 1920x1080(HFコンポジションの固定サイズ)。値は px で書く。
+ */
+
+/* 本文書体。同梱TTFがある場合は composition.html 側で
+   ルート基準パスの @font-face を宣言し、ここでは local() のみ書く。 */
+@font-face {
+  font-family: "ChannelFont";
+  src: local("Hiragino Sans");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  --ch-paper: #f5efe0;
+  --ch-ink: #1b1a17;
+  --ch-accent: #37416b;
+  --ch-warn: #c6382c;
+  --ch-hope: #e7b23a;
+  --ch-font: "ChannelFont", "Hiragino Sans", "Yu Gothic", sans-serif;
+}
+
+/* 1シーン=1 clipラッパー(HF規約)。並列siblingのclipは重なる */
+.clip { position: absolute; inset: 0; overflow: hidden; }
+
+/* 地(チャンネル基調) */
+.paper-bg { position: absolute; inset: 0; background: var(--ch-paper); z-index: 0; }
+
+/* 全画面素材 */
+.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+
+/* 立ち絵・切り抜き素材 */
+.char { position: absolute; will-change: transform; z-index: 3; }
+
+/* 字幕(セーフゾーン 85〜93%。シーン内テキストは y<82% に収める) */
+.subtitle {
+  position: absolute; left: 0; right: 0; top: 85%;
+  text-align: center; font-family: var(--ch-font); font-size: 46px;
+  color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9); z-index: 50;
+}
+
+/* 図解テキスト(28px下限の恒久規則の起点) */
+.diagram-text { font-size: 36px; line-height: 1.3; color: var(--ch-ink); }
+
+/* 章カード・クレジット(様式clip。visual-rules.json の styleClasses と対応させる) */
+.chapter-card { position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; font-family: var(--ch-font); z-index: 20; }
+.credit-line { position: absolute; left: 0; right: 0; bottom: 8%; text-align: center;
+  font-family: var(--ch-font); font-size: 32px; color: var(--ch-ink); z-index: 20; }
+.title-card { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-family: var(--ch-font); z-index: 20; }

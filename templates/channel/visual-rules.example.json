@@ -1,22 +1,13 @@
 {
+  "sceneClipSelector": ".clip.scene",
+  "styleClasses": ["chapter-card", "credit-line", "title-card"],
   "minDurationSec": 300,
-  "maxUsesPerImage": 3,
   "minUniqueImagesPerMin": 4,
+  "maxUsesPerImage": 3,
   "maxAiRatio": 0.5,
-  "minCoverAspectRatio": 1.3,
   "maxConsecutiveAssetFreeShots": 2,
   "assetFreeExemptComponents": ["TitleCard", "Outro"],
-  "propUsageLimits": [
-    {
-      "prop": "turns",
-      "label": "吹き出し",
-      "maxShots": 8
-    },
-    {
-      "prop": "caption",
-      "label": "見出し札",
-      "maxRatio": 0.2
-    }
-  ],
-  "minSceneTextPx": 28
+  "maxBubbleShots": 8,
+  "minCoverAspectRatio": 1.3,
+  "maxCaptionShotRatio": 0.2
 }
