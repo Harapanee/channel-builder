@@ -59,7 +59,7 @@ claude
 → 二重審査【fact-checker=事実 + script-reviewer=構造・笑い・テンポ(合否権)】
 → 音声合成+タイミング(自己検証つき) → 絵コンテ+ショット設計(visual-director)
 → 不足素材リスト → 素材生成(asset-generator)【あなた: キュレーション】
-→ シーン実装 → スモークQA(レンダー前・3〜10分)
+→ シーン実装(`composition.html`) → npm run check(レンダー前検査)
 → レンダリング(今すぐ or 夜間キュー)【あなた: どちらか選ぶ】 → 機械検査(QA 7項目)
 → AIレビュー2系統(準拠=合否 / 疑似初見=助言)
 → 【あなた: 視聴・最終判定】 → final確定
@@ -136,6 +136,14 @@ claude
 | `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / precheck / render-stills / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
+| `hyperframes.json` | HyperFramesプロジェクト設定(本編のレンダー経路) | ❌ scaffold時に生成(通常は編集不要) |
+| `index.html` | **作業中エピソードの `composition.html` のコピー**。HFのエントリはプロジェクトルートの `index.html` なので、`npm run dev` / `npm run check` / `npm run render` の対象を切り替えるときはここへコピーし直す | 作業対象epを切り替えるたびにコピーし直す(直接の作文対象ではない) |
+| `assets/hf/<slug>-style.css` | チャンネル共通様式CSS。scene-implementer にとって唯一の様式参照 | ❌ /channel-refine 経由(bible §8の実値を反映) |
+| `assets/hf/README.md` | 上記のクラス台帳(用途と使用規則の正) | ❌ /channel-refine 経由 |
+| `channel/visual-rules.json` | 視覚多様性検査の設定(無ければ検査はSKIP)。雛形は `visual-rules.example.json` | チャンネル判断で調整可 |
+| `src/pipeline/composition-dom.ts` | composition.html を headless Chrome で評価しclip/画像を収集 | ❌ /system-refine 経由 |
+| `src/pipeline/visual-rules-hf.ts` | 収集結果に規則を当てる純関数(BLOCK 5件・ADVISE 4件) | ❌ /system-refine 経由 |
+| `src/pipeline/check-composition.ts` | 視覚多様性検査のCLI(`npm run check:visual`) | ❌ /system-refine 経由 |
 
 ### エージェント一覧(制作の実働部隊)
 
@@ -177,6 +185,13 @@ fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(
 /channel-refine <フィードバック>  # このチャンネルの恒久改善
 /system-refine                   # 工場OS改善+テンプレ同期
 /factory-update                  # テンプレ最新OSを既存Factoryへ取り込み
+npm run dev                      # HyperFramesプレビュー(本編。必ずbackgroundで起動)
+npm run check                    # 視覚多様性検査 + HF check(本編。レンダー前の機械ゲート)
+npm run render                   # HyperFramesレンダー(本編)
+npm run check:visual -- episodes/<epId>   # 視覚多様性検査のみ
+npm test                         # 単体テスト(tsx --test)
+npm run studio                   # Remotion Studio(ショート・サムネ専用)
+npm run render:test:short        # ショートのテストレンダー(Remotion)
 node scripts/check-template-sync.mjs   # テンプレ健全性チェック
 npm run tts episodes/<ep> -- --readings-only   # 誤読プリチェック(合成なし・数十秒)
 npx tsx src/pipeline/precheck.ts episodes/<ep>   # レンダー前検査4ゲート一括(未変更なら数秒SKIP)

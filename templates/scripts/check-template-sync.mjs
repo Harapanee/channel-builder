@@ -5,6 +5,7 @@
  * SRC(このリポジトリ)とテンプレートの乖離を機械検証する:
  *  - IDENTICAL: 完全一致必須のファイル(パイプライン・コンポーネント基盤等)
  *  - VARIANT:   テンプレ側が意図的に汎用化されたファイル(存在+禁止文字列なしを検査)
+ *  - HF_IDENTICAL: HyperFrames経路のファイル。renderEngine が "hyperframes" のチャンネルでのみ完全一致必須
  *  - テンプレ全域でチャンネル固有文字列(禁止語)が混入していないこと
  *
  * 実行: node scripts/check-template-sync.mjs   (差異があれば exit 1)
@@ -89,6 +90,7 @@ const IDENTICAL = [
   "src/pipeline/validate-short-format.ts",
   "src/pipeline/validate-metadata.ts",
   "src/pipeline/validate-ledger.ts",
+  "src/pipeline/finalize-episode.ts",
   "src/schemas/metadata.schema.json",
   "src/schemas/episode-ledger.schema.json",
   "src/schemas/thumb-test.schema.json",
@@ -100,6 +102,21 @@ const IDENTICAL = [
   "shorts/sh000-test/short.json",
   "shorts/sh000-test/shots.json",
   "shorts/sh000-test/timing.json",
+];
+
+// HyperFrames経路のファイル(本編)。renderEngine が "hyperframes" のチャンネルでのみ
+// 完全一致必須。Remotionのままのチャンネルでは存在しなくてよい
+// (移行は各チャンネルの /factory-update の判断に委ねる)。
+// テンプレ側には必ず存在しなければならない(scaffold元なので欠落は常にNG)。
+const HF_IDENTICAL = [
+  "hyperframes.json",
+  // ※ Task 10 で還元した src/pipeline/finalize-episode.ts はエンジン非依存の汎用ツールなので
+  //    この配列ではなく既存の IDENTICAL 配列へ追加すること(`"src/pipeline/validate-ledger.ts",` の直後)
+  "src/pipeline/composition-dom.ts",
+  "src/pipeline/composition-dom.test.ts",
+  "src/pipeline/visual-rules-hf.ts",
+  "src/pipeline/visual-rules-hf.test.ts",
+  "src/pipeline/check-composition.ts",
 ];
 
 // コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。
@@ -119,6 +136,10 @@ const CORE_IDENTICAL = [
 const VARIANT_TEMPLATE_ONLY = [
   "channel/bible-template.md", // 展開後は channel/bible.md
   "channel/voice-template.json", // 展開後は channel/voice.json
+  // HF未移行chには存在しないため、テンプレ側にのみ存在すればよい扱いにする
+  "assets/hf/style-template.css", // 展開後は assets/hf/<slug>-style.css
+  "channel/visual-rules.example.json", // 展開後は channel/visual-rules.json
+  "assets/hf/README.md",
 ];
 
 // 意図的な汎用化版(存在+禁止語なしのみ検査)
@@ -153,6 +174,12 @@ const VARIANT = [
   ".claude/agents/short-director.md",
   "src/scenes/registry.ts",
   "src/scenes/style.ts",
+  // HF共通様式。scaffold時に <slug>-style.css へ改名し bible §8 の実値で埋める
+  "assets/hf/style-template.css",
+  // 上記のクラス台帳(用途と使用規則の正)。展開後も同名で残り、チャンネル固有の台帳へ書き換わる
+  "assets/hf/README.md",
+  // 視覚多様性の設定はチャンネル単位(PD主体/AI主体で適正値が異なる)
+  "channel/visual-rules.example.json",
   // 固定アウトロ(既定のチャンネル名・クレジット文字列のみ汎用化した変種)
   "src/scenes/shared/Outro.tsx",
   "assets/library.json",
@@ -197,6 +224,28 @@ for (const f of IDENTICAL) {
     fail(`IDENTICAL未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
   else if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8"))
     fail(`IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
+}
+
+// レンダーエンジン(既定 remotion)。HF_IDENTICAL の要否を決める
+let renderEngine = "remotion";
+try {
+  renderEngine =
+    JSON.parse(fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8"))
+      .renderEngine || "remotion";
+} catch {}
+
+for (const f of HF_IDENTICAL) {
+  const a = path.join(SRC, f);
+  const b = path.join(TPL, f);
+  if (!fs.existsSync(b)) {
+    fail(`HF_IDENTICAL欠落(テンプレ側): ${f}`);
+    continue;
+  }
+  if (renderEngine !== "hyperframes") continue; // Remotionチャンネルでは検査しない
+  if (!fs.existsSync(a))
+    fail(`HF_IDENTICAL未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
+  else if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8"))
+    fail(`HF_IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
 }
 
 let coreOverrides = [];
@@ -289,7 +338,7 @@ checkBuilderRepoPushed();
 
 if (failures === 0) {
   console.log(
-    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
+    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / HF ${HF_IDENTICAL.length}(engine=${renderEngine}) / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
   );
 } else {
   console.error(`\n${failures}件の乖離。同期後に再実行すること。`);

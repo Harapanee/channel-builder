@@ -22,6 +22,7 @@ Stage 1〜2(織田信長・ナポレオンの2本)で安定した部分だけを
 | `CLAUDE.md` | プロジェクト憲法(source of truth と必須規則) | プレースホルダ(`{{CHANNEL_NAME}}`) |
 | `.channel-system.json` | システム状態(status/version/metrics)。channel-builder のモード判定の起点 | プレースホルダ(`{{CHANNEL_ID}}`/`{{CHANNEL_NAME}}`)。初期 status:"building"/stage:1/version:0.1.0 |
 | `CHANGELOG.md` | /channel-refine の変更履歴(初期は空テンプレート) | なし |
+| `index.html` | HFのエントリ。**作業中エピソードの `composition.html` をここへコピーして使う**(`npm run dev` / `check` / `render` はこれを見る。`check:visual` の引数なし解決もこの規約に依存する) | 展開時 |
 
 ### channel/(教義・契約・レビュー観点)
 
