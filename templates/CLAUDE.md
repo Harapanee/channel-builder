@@ -30,19 +30,19 @@
 - `npm run render` — HyperFramesレンダー(本編)
 - `npm run check:visual -- episodes/<epId>` — 視覚多様性検査のみ
 - `npm test` — 単体テスト(tsx --test)
-- `npm run studio` — Remotion Studio(**ショート・サムネ専用**)
+- `npm run studio` — Remotion Studio(ショート・サムネ専用)
 - `npm run render:test:short` — ショートのテストレンダー(**Remotion**)
 - `npm run tts episodes/<epId>` — 台本→音声+timing.json(自己検証・ラウドネス正規化つき。最終行に pause_after_sec を明示するとその秒数の無音尾が付く=アウトロ尺の確保用)
 - `npm run tts episodes/<epId> -- --readings-only` — 誤読プリチェック(audio_queryのみ・数十秒。合成前にreading-checkerへ)
-- `npm run validate episodes/<epId>` — shots.json契約検証(shotId一意性・bgmTracks含む)
+- `npm run validate episodes/<epId>` — shots.json契約検証(shotId一意性・bgmTracks含む)【Remotion経路(ep008以前・shorts)専用。HF ep は shots.json を持たず `npm run check` で検査する】
 - `npx tsx src/pipeline/gen-image.ts ...` — AI画像生成(**直接叩かずasset-generatorエージェント経由**。codex CLI主経路+evolinkフォールバック、`--provider codex|evolink`で強制可)
 - `npx tsx src/pipeline/remove-bg.ts <in> <out>` — 背景除去(緑=クロマキー/白=flood-fill自動判別)
-- `npx tsx src/pipeline/qa.ts episodes/<epId>` — Mechanical QA(7項目)
-- `npx tsx src/pipeline/precheck.ts episodes/<epId>` — レンダー前検査4ゲート(tsc/validate/Infinity/qa-smoke)の一括実行+入力ハッシュ記録(**入力未変更なら数秒でSKIP** — 工程9・再確認はこれを使い個別ゲートを手で焼き直さない。強制再実行は `--force`)
-- `npx tsx src/pipeline/qa-smoke.ts episodes/<epId>` — レンダー前スモークQA(全ショット2フレームサンプリングでランタイムエラー・静止・黒を3〜10分検出。**NGゼロまでフルレンダー禁止**。通常はprecheck経由で走る)
-- `npx tsx src/pipeline/render-stills.ts episodes/<epId> --shots <id,..> [--at 秒,..]` — 指定ショット中央フレームの静止画一括レンダー(レビューの視覚検証用。**レビュー目的のフルレンダーは禁止** — こちらで代替)
-- `npx tsx src/pipeline/repair-render.ts episodes/<epId> <shotId> [--out preview]` — 部分再レンダー+継ぎ接ぎ(1ショット修正を2〜3分に。局所修正はフル再レンダーよりこちらが原則)
-- `npx tsx src/pipeline/retime-shots.ts episodes/<epId>` — 台本改訂後のショット追従
+- 【Remotion経路(ep008以前・shorts)専用】 `npx tsx src/pipeline/qa.ts episodes/<epId>` — Mechanical QA(7項目)
+- 【Remotion経路(ep008以前・shorts)専用】 `npx tsx src/pipeline/precheck.ts episodes/<epId>` — レンダー前検査4ゲート(tsc/validate/Infinity/qa-smoke)の一括実行+入力ハッシュ記録(**入力未変更なら数秒でSKIP**。強制再実行は `--force`)。**HF ep は工程9で `npm run check` を使う**
+- 【Remotion経路(ep008以前・shorts)専用】 `npx tsx src/pipeline/qa-smoke.ts episodes/<epId>` — レンダー前スモークQA(全ショット2フレームサンプリングでランタイムエラー・静止・黒を3〜10分検出。**NGゼロまでフルレンダー禁止**。通常はprecheck経由で走る)
+- 【Remotion経路(ep008以前・shorts)専用】 `npx tsx src/pipeline/render-stills.ts episodes/<epId> --shots <id,..> [--at 秒,..]` — 指定ショット中央フレームの静止画一括レンダー(レビューの視覚検証用。**レビュー目的のフルレンダーは禁止** — こちらで代替)。**HF ep は hyperframes-cli の snapshot 系で取得する**
+- 【Remotion経路(ep008以前・shorts)専用】 `npx tsx src/pipeline/repair-render.ts episodes/<epId> <shotId> [--out preview]` — 部分再レンダー+継ぎ接ぎ(1ショット修正を2〜3分に。局所修正はフル再レンダーよりこちらが原則)
+- 【Remotion経路(ep008以前・shorts)専用】 `npx tsx src/pipeline/retime-shots.ts episodes/<epId>` — 台本改訂後のショット追従
 - `npx tsx src/pipeline/render-thumbs.ts episodes/<epId>` — サムネ3枚+計測(thumb-metrics.json)+モバイルプレビュー(CLIのremotion still直叩き禁止。720p未満はexit 1)
 - `scripts/render-episode.sh episodes/<epId> [out名]` — レンダリング(Infinityゲート・QA・状態書き出し内蔵。remotion render直叩きより優先)
 - `npm run tts shorts/<shortId>` — ショート台本→音声+timing.json(本編と同じTTSパイプライン)

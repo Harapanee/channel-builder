@@ -27,7 +27,7 @@ model: sonnet
    - ナレーションは `narration/narration.wav` を `<audio>` で `data-start="0"`(プロジェクトルート基準の相対パス)
    - BGM/SEは `assets/audio/` の**実ファイル**を、clip表のSEキューどおり `<audio>` 要素で配置(src はプロジェクトルート基準の相対パス)
 5. **字幕**: `timing.json` の各行の開始・終了から `.subtitle` 要素群を生成して埋め込む(手書きでタイミングを写経せず、Nodeワンライナー/小スクリプトで timing.json から生成してよい)
-6. `npm run check` が**全緑になるまで修正する**(視覚多様性検査 `check:visual` → HFの lint+runtime+layout+motion+contrast の順に走る。`check:visual` の BLOCK は必ず解消し、ADVISE は内容を読んで対処要否を判断する)
+6. `cp episodes/<epId>/composition.html index.html`(HFのエントリはルートの index.html。作業中epを指すよう必ず更新してから検査する)→ `npm run check` が**全緑になるまで修正する**(視覚多様性検査 `check:visual` → HFの lint+runtime+layout+motion+contrast の順に走る。`check:visual` の BLOCK は必ず解消し、ADVISE は内容を読んで対処要否を判断する)
 
 # HF規約(必ず守る。CLAUDE.md Mandatory rules 先頭行が正)
 
@@ -48,7 +48,7 @@ model: sonnet
 
 # 禁止演出
 
-- 禁止演出は bible §8 が正(①円だけの強調はregistry除去+validate Rule 2bで機械遮断済み)
+- 禁止演出は bible §8 が正。HF経路ではゼロ持ち越しは `check:visual` の規則7がADVISE(警告のみ)で報告するのみで、機械遮断はされない — 実装者とレビュアーが責任を持つ
 
 # 技術規則(レイアウト事故・様式崩れの予防)
 

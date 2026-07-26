@@ -110,8 +110,6 @@ const IDENTICAL = [
 // テンプレ側には必ず存在しなければならない(scaffold元なので欠落は常にNG)。
 const HF_IDENTICAL = [
   "hyperframes.json",
-  // ※ Task 10 で還元した src/pipeline/finalize-episode.ts はエンジン非依存の汎用ツールなので
-  //    この配列ではなく既存の IDENTICAL 配列へ追加すること(`"src/pipeline/validate-ledger.ts",` の直後)
   "src/pipeline/composition-dom.ts",
   "src/pipeline/composition-dom.test.ts",
   "src/pipeline/visual-rules-hf.ts",

@@ -38,8 +38,8 @@ const AI_SOURCES = new Set(["ai_image", "ai"]);
 /** 素材に数えない(様式資産)パスの接頭辞 */
 const NON_ASSET_PREFIXES = ["assets/hf/", "assets/fonts/"];
 
-/** 素材として数える画像srcか */
-function isCountedAsset(src: string): boolean {
+/** 素材として数える画像srcか(CLIヘッダの表示数もこれで揃える。M2) */
+export function isCountedAsset(src: string): boolean {
   if (!src.startsWith("assets/")) return false;
   return !NON_ASSET_PREFIXES.some((p) => src.startsWith(p));
 }

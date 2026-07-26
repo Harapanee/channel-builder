@@ -14,6 +14,7 @@ import { collectCompositionDom } from "./composition-dom";
 import {
   evaluateAdviseRules,
   evaluateBlockRules,
+  isCountedAsset,
   sceneClipsOf,
   type Finding,
   type LibraryEntry,
@@ -24,6 +25,18 @@ const projectRoot = process.cwd();
 
 /** 過去epのシグネチャを集める対象数(ブラウザ起動コストを抑えるため直近3本) */
 const PAST_EPISODE_LIMIT = 3;
+
+/** optionalで未指定だと恒久的に無検査になる規則。CLIヘッダで明示する(I3) */
+const OPTIONAL_RULE_KEYS: Array<keyof VisualRules> = [
+  "minUniqueImagesPerMin",
+  "maxUsesPerImage",
+  "maxAiRatio",
+  "maxConsecutiveAssetFreeShots",
+];
+
+function unsetRuleNames(rules: VisualRules): string[] {
+  return OPTIONAL_RULE_KEYS.filter((k) => rules[k] === undefined);
+}
 
 function fail(message: string): never {
   console.error(`ERROR: ${message}`);
@@ -126,10 +139,14 @@ async function main(): Promise<void> {
 
   const dom = await collectCompositionDom(path.join(episodeDir, "composition.html"), projectRoot);
   const scenes = sceneClipsOf(dom, rules);
-  const unique = new Set(scenes.flatMap((c) => c.images.map((i) => i.src)));
+  const unique = new Set(scenes.flatMap((c) => c.images.map((i) => i.src)).filter(isCountedAsset));
   console.log(
     `検査対象: ${epId} — 尺 ${dom.durationSec.toFixed(2)}秒 / 全clip ${dom.clips.length} / シーンclip ${scenes.length} / ユニーク画像 ${unique.size}`
   );
+  const unsetRules = unsetRuleNames(rules);
+  if (unsetRules.length > 0) {
+    console.log(`未設定のため不検査: ${unsetRules.join(", ")}`);
+  }
 
   const past = await collectPastSignatures(episodeDir, rules);
   const blocks = evaluateBlockRules(dom, loadLibrary(), rules);

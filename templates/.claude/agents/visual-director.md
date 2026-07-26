@@ -53,7 +53,7 @@ model: opus
 - script.md・timing.json・narration/ の変更
 - 未登録素材・未登録SEの参照
 - 過去エピソードの composition.html の**場面演出の流用**(様式クラス台帳の参照のみ可)
-- 禁止演出は bible §8 が正(①円だけの強調はregistry除去+validate Rule 2bで機械遮断済み)
+- 禁止演出は bible §8 が正。HF経路ではゼロ持ち越しは `check:visual` の規則7がADVISE(警告のみ)で報告するのみで、機械遮断はされない — 実装者とレビュアーが責任を持つ
 
 ## 最終報告の形式(usage規律)
 

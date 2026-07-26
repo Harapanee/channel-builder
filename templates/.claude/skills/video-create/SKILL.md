@@ -118,6 +118,7 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 実装完了後、**レンダリングを焼く前に** HyperFrames プレビューでユーザーが確認できる:
 
 ```
+cp episodes/<epId>/composition.html index.html   # HFのエントリはルートのindex.html。作業中epを指すよう必ず更新する
 npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localhost:<port> を開く
 ```
 
@@ -128,6 +129,7 @@ npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localho
 夜間レンダーを一発で通すため、機械ゲートを日中に前倒しで実行する:
 
 ```
+cp episodes/<epId>/composition.html index.html   # HFのエントリはルートのindex.html。作業中epを指すよう必ず更新する
 npm run check   # check:visual(視覚多様性)→ HF lint+runtime+layout+motion+contrast
 ```
 
