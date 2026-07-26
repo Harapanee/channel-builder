@@ -12,6 +12,7 @@
     "parse-script": "tsx src/pipeline/parse-script.ts",
     "tts": "tsx src/pipeline/tts.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "qa": "tsx src/pipeline/qa.ts",
     "validate:short-format": "tsx src/pipeline/validate-short-format.ts",
     "validate:metadata": "tsx src/pipeline/validate-metadata.ts",
