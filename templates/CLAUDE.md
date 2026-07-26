@@ -78,6 +78,5 @@ fact-checker / script-director / **script-reviewer(台本合否)** / reading-che
 
 # チャンネル署名(全動画共通)
 
-- 冒頭はトラック転生オープニング(you-modern+TruckIsekai、bible §4)
-- 地名の初出はJapanMapで位置を示す(bible §8)
-- サムネの構造はbible §13の規定に従う(方式=AI生成1枚絵/既存素材の部品構成はチャンネルごとに選択)
+<!-- 展開後にこのチャンネルの固定演出を書く。例: 冒頭の定型オープニング、
+     章カードの様式、固定アウトロとクレジット。bible §4 と §8 に従うこと。 -->
