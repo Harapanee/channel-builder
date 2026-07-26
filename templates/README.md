@@ -136,8 +136,8 @@ claude
 | `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / precheck / render-stills / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs) | ❌ /system-refine 経由 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
-| `hyperframes.json` | HyperFramesプロジェクト設定(本編のレンダー経路) | ❌ scaffold時に生成(通常は編集不要) |
-| `index.html` | **作業中エピソードの `composition.html` のコピー**。HFのエントリはプロジェクトルートの `index.html` なので、`npm run dev` / `npm run check` / `npm run render` の対象を切り替えるときはここへコピーし直す | 作業対象epを切り替えるたびにコピーし直す(直接の作文対象ではない) |
+| `hyperframes.json` | HyperFramesプロジェクト設定(本編のレンダー経路) | ❌ /system-refine 経由 |
+| `index.html` | **作業中エピソードの `composition.html` のコピー**。HFのエントリはプロジェクトルートの `index.html` なので、`npm run dev` / `npm run check` / `npm run render` の対象を切り替えるときはここへコピーし直す | ❌ 直接編集しない(コピー先。作業対象epを切り替えるたびに `composition.html` を上書き) |
 | `assets/hf/<slug>-style.css` | チャンネル共通様式CSS。scene-implementer にとって唯一の様式参照 | ❌ /channel-refine 経由(bible §8の実値を反映) |
 | `assets/hf/README.md` | 上記のクラス台帳(用途と使用規則の正) | ❌ /channel-refine 経由 |
 | `channel/visual-rules.json` | 視覚多様性検査の設定(無ければ検査はSKIP)。雛形は `visual-rules.example.json` | チャンネル判断で調整可 |

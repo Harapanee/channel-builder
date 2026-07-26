@@ -140,6 +140,9 @@ const VARIANT_TEMPLATE_ONLY = [
   "assets/hf/style-template.css", // 展開後は assets/hf/<slug>-style.css
   "channel/visual-rules.example.json", // 展開後は channel/visual-rules.json
   "assets/hf/README.md",
+  // 検査対象の src/motion/index.ts が IDENTICAL(全chバイト一致)なので、
+  // テンプレで1回テストすれば全chぶんの担保になる。チャンネル側への配布は不要
+  "src/motion/index.test.ts",
 ];
 
 // 意図的な汎用化版(存在+禁止語なしのみ検査)
@@ -180,6 +183,9 @@ const VARIANT = [
   "assets/hf/README.md",
   // 視覚多様性の設定はチャンネル単位(PD主体/AI主体で適正値が異なる)
   "channel/visual-rules.example.json",
+  // 検査対象の src/motion/index.ts が IDENTICAL(全chバイト一致)なので、
+  // テンプレで1回テストすれば全chぶんの担保になる。チャンネル側への配布は不要
+  "src/motion/index.test.ts",
   // 固定アウトロ(既定のチャンネル名・クレジット文字列のみ汎用化した変種)
   "src/scenes/shared/Outro.tsx",
   "assets/library.json",
