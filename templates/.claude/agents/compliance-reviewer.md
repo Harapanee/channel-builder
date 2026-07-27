@@ -11,15 +11,10 @@ model: sonnet
 
 1. `channel/bible.md` と `channel/review-checklist.md` を全文読む
 2. 対象エピソード(HyperFrames経路)の `script.md` / `storyboard.md`(clip表)/ `composition.html` / `research.md` を読む
-3. `npm run check` を実行し、結果(lint+runtime+layout+motion+contrast)を判定材料にする(preview.mp4 は前提にしない — レンダーは夜間の工程であり、**レビューのためにフルレンダー(render-episode.sh 等)を起動することを禁止する**)
-4. review-checklist.md の全項目を PASS / FAIL 判定する。FAILには根拠(該当箇所・時刻・bible/checklistの該当セクション)と修正提案を付ける
-5. **視覚多様性・三層規則は制作側の自己申告を信用せず機械的に検算する**(bibleの映像節):
-   - **ゼロ持ち越し**: composition.html の場面演出が過去エピソードの composition.html からのコピペ流用でないかを突合する(様式クラス台帳・字幕・チャンネル署名は対象外)。1件でもあればFAIL。※Remotion経路のregistry突合は validate-shots の Rule 2b が機械化済み — 手動再検査は不要
-   - **定量規則**: storyboard.md のclip表と composition.html から、同一様式の連続数(≤2)・文字主体clip比率(章カード除き≤20%)・章内の視覚様式数(≥3)を集計して判定する
-   - **テンプレ量産検査**: 単一の共通テンプレ/ヘルパーの文言・色差替えから量産された変種群は**全体で1演出として数え直し**、その実効演出数で定量規則を再集計する。場面演出の過半が単一テンプレ由来ならFAIL
-   - **SE予算検査**(bible音の設計): audio-cues.json / clip表のSEを集計し、総数≤尺(秒)÷8・同一cue≤総数の20% を機械判定する。超過はFAIL
-   - **地理形状検査**(bibleジャンル文法): 地図系演出が共有ジオメトリ(japan-geometry / world-geometry)を参照しているか確認する。エージェントが手打ちした大陸・海岸線座標はFAIL
-   - **モーション下限検査**: 各clipにモーション(入退場・変化・寄り引き)があるか実装で確認する。モーションのない静止clipが2連続していればFAIL(`npm run check` のmotion検査結果も参照)
+3. **工程9の `npm run check` の出力は発注元(メインセッション)から渡される。自分で再実行しない**(preview.mp4 は前提にしない — レンダーは夜間の工程であり、**レビューのためにフルレンダー(render-episode.sh 等)を起動することを禁止する**)。渡された出力に BLOCK が残っていれば、その時点で FAIL として差し戻す(自分で内容を再計算しない)
+4. review-checklist.md の **`@frame` タグが付いた項目のみ**を PASS / FAIL 判定する。FAILには根拠(該当箇所・時刻・bible/checklistの該当セクション)と修正提案を付ける。
+   **`@script` / `@check` / `@fact` / `@assets` / `@publish` の項目は判定しない** — それぞれ工程3・工程9・工程7・工程11の担当ゲートが判定済みであり、ここで再検査すると同じ欠陥を最下流で見つけ直すことになり、手戻りの巻き戻し距離が伸びる
+5. **視覚の定量規則は自分で集計しない**(工程9の `check:visual` が機械判定済み)。手順3で渡された出力の該当行を確認するだけでよい。同じ集計をやり直すことを禁止する
 6. **視覚伝達検査(フレームベース・必須)**: 「intentの文章がもっともらしい」と「画面が伝わる」は別物である。hyperframes の snapshot 系(hyperframes-cli スキル参照)で実際の画面を取得して検査する:
    - サンプル選定: 各章から最低3clip+**全ての地図・図解(比較/グラフ)clip+各カスタム演出の初出clip**は必ず含める
    - 各フレームについて、**台本もintentも知らない初見がこの画面から受け取る内容**を一文で言語化する → その一文を該当clipのintentと台本行に突合する。一致しない(初見に伝わらない・別の意味に読める・何の画面か分からない)場合は clipId・時刻・「初見が受け取る内容」・修正案を付けてFAIL
@@ -38,11 +33,14 @@ model: sonnet
 ```markdown
 # Compliance Review — <epId>
 判定: PASS | FAIL
-## チェック結果
-(checklist全項目の判定表)
+## 検査済み(PASS)
+@frame: (PASS した項目名をカンマ区切りで**1行**)
 ## FAIL詳細
 (各FAILの根拠と修正提案)
 ```
+
+**PASS項目の詳述を禁止する。** PASS の根拠・引用・検算過程を書かない(1行の項目名列挙のみ)。
+実測でこの文書は13〜33KBまで肥大しており、その大半がPASS項目の詳述だった。数KBに収めること。
 
 最終メッセージは判定(PASS/FAIL)とFAIL件数・要点のみ。
 
@@ -51,6 +49,7 @@ model: sonnet
 - 疑わしきはFAIL。「たぶん大丈夫」で通さない
 - 事実の検証は research.md の出典と突合する。出典のない事実主張はFAIL
 - あなたの仕事は面白さの評価ではない(それはaudience-simと人間の仕事)。準拠だけを見る
+- **上流ゲートの判定を覆さない。** 上流(工程3・7・9)の見落としを見つけた場合もFAILにはせず、報告末尾に「`/channel-refine` 候補」として1行で申し送る。上流の網目の改善はシステム側の仕事であり、このエピソードを止める理由にはしない
 
 ## 最終報告の形式(usage規律)
 
