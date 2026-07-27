@@ -51,12 +51,13 @@ bible.md と併読すること。各項目は PASS / FAIL と根拠(該当箇所
 - [ ] `@frame` 画風が統一されている(オフホワイト/黒線/藍・赤・黄/陰影なし)
 - [ ] `@assets` キャラ素材に緑透け・塗り省略がない(gen-image/remove-bgの塗り検査を通過している)
 - [ ] `@frame` ショットの役割が show / explain に偏っていない(gag/reveal/payoff等が存在する)
-- [ ] `@check` 視覚多様性の定量規則: 同一コンポーネントが3ショット以上連続していない/各章に3種以上の視覚様式(**HF経路のみ `@check`。Remotion経路は未機械化のため `@frame` に付け替えること**)
+- [ ] `@frame` 視覚多様性の定量規則: 同一コンポーネントが3ショット以上連続していない/各章に3種以上の視覚様式(HF `visual-rules-hf.ts` / Remotion `validate-shots.ts` のいずれも未実装のため、両経路とも `@frame`。機械化は将来の課題)
 - [ ] `@check` 文字主体ショットが2割以下(章カード除く)
-- [ ] `@check` 同一画像の使用回数・ユニーク画像密度・AI生成比率が `channel/visual-rules.json` のしきい値内(HF: check:visual / Remotion: validate Rule 6-8)
-- [ ] `@check` 縦長画像(minCoverAspectRatio未満)のショットにfocus/fitが明示されている(HF: check:visual / Remotion: validate Rule 9)
-- [ ] `@check` 場面演出のゼロ持ち越し(bible三層規則。HF: check:visual / Remotion: validate Rule 2b)
-- [ ] `@check` 場面演出がテンプレ量産でない: 単一factory関数の文言差替え変種群は全体で1演出と数える(**HF経路のみ `@check`。Remotion経路は未機械化のため `@frame` に付け替えること**)
+- [ ] `@check` `channel/visual-rules.json` を持つチャンネルでは: 同一画像の使用回数・ユニーク画像密度・AI生成比率が同ファイルのしきい値内(HF: check:visual / Remotion: validate Rule 6-8)
+- [ ] `@check` 縦長画像(minCoverAspectRatio未満)のショットにfocus/fitが明示されている(HF: check:visual の tall-image-framing / Remotion: validate Rule 9)
+- [ ] `@frame` 縦長画像のショットで、サンプルフレームを見て主対象(特に顔)が切れていない(focus/fitが明示されていても構図が外れることがあるため、機械検査とは別に目視で確認する)
+- [ ] `@check` 場面演出のゼロ持ち越し: 過去エピソード由来の場面演出参照が1件でもあればFAIL(bible三層規則。HF: check:visual の zero-carryover / Remotion: validate Rule 2b)
+- [ ] `@check` 場面演出がテンプレ量産でない: 単一factory関数の文言差替え変種群は全体で1演出と数える。実効演出数で定量規則を満たし、場面演出参照の過半が単一テンプレ由来でない(HF: check:visual の template-mass-production。**Remotion経路は未実装のため `@frame` に付け替えること**)
 - [ ] `@frame` 地図・地理形状が実データ由来の共有ジオメトリ(japan-geometry / world-geometry)である(フリーハンドの大陸・海岸線はFAIL)
 - [ ] `@frame` 各地図ショットの表示内容(ハイライト・ルート・ズーム)が台本の行の地理的主張と一致する(主張のない「とりあえず地図」はFAIL)
 - [ ] `@frame` 大小比較の図解に実差がある(等値の図形対比・抽象概念の無差図解はFAIL — 概念対比は絵で)
@@ -69,7 +70,7 @@ bible.md と併読すること。各項目は PASS / FAIL と根拠(該当箇所
 ## 音(bible §11)
 
 - [ ] `@frame` 主要なボケ・衝撃にSEが付いている
-- [ ] `@frame` SEの定量予算(bible音の設計): 総数≤尺(秒)÷8・同一SE≤総数の20%。各SEに機能がある
+- [ ] `@frame` SEの定量予算(bible音の設計): 総数≤尺(秒)÷8・同一SE≤総数の20%(shots.json / audio-cues.json から集計)。各SEに機能がある
 - [ ] `@frame` SE/BGMがナレーションを妨げていない
 - [ ] `@frame` SEが library.json / LICENSES.md 登録済みのものである
 
