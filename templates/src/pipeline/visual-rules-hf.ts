@@ -28,6 +28,8 @@ export type VisualRules = {
   maxUsesPerImage?: number | { default: number; byKind?: Record<string, number | null> };
   maxAiRatio?: number;
   maxConsecutiveAssetFreeShots?: number;
+  /** 素材なしでも正当なclipのクラス(タイトル札・章カード等)。連続の集計をここで切る */
+  assetFreeExemptClasses?: string[];
   minCoverAspectRatio?: number;
   maxCaptionShotRatio?: number;
 };
@@ -135,29 +137,30 @@ export function evaluateBlockRules(
     });
   }
 
-  // 規則3: 素材なしシーンclipの連続
+  // 規則3: 素材なしシーンclipの連続。
+  // 免除クラスを持つclipは「素材あり」と同等に連続を切る
+  // (Remotion側 validate-shots.ts Rule 10 の flush() と同じ意味論)。
   if (rules.maxConsecutiveAssetFreeShots !== undefined) {
-    let run = 0;
-    let maxRun = 0;
-    let worstEnd = -1;
-    scenes.forEach((c, idx) => {
-      if (c.images.filter((i) => isCountedAsset(i.src)).length === 0) {
-        run++;
-        if (run > maxRun) {
-          maxRun = run;
-          worstEnd = idx;
-        }
-      } else {
-        run = 0;
-      }
-    });
-    if (maxRun > rules.maxConsecutiveAssetFreeShots) {
-      const from = scenes[worstEnd - maxRun + 1]?.id ?? "?";
-      const to = scenes[worstEnd]?.id ?? "?";
+    const exempt = rules.assetFreeExemptClasses ?? [];
+    let run: ClipInfo[] = [];
+    let worst: ClipInfo[] = [];
+    const flush = () => {
+      if (run.length > worst.length) worst = run;
+      run = [];
+    };
+    for (const c of scenes) {
+      const assetFree = c.images.filter((i) => isCountedAsset(i.src)).length === 0;
+      if (assetFree && !hasAnyClass(c, exempt)) run.push(c);
+      else flush();
+    }
+    flush();
+    if (worst.length > rules.maxConsecutiveAssetFreeShots) {
+      const from = worst[0].id ?? "?";
+      const to = worst[worst.length - 1].id ?? "?";
       findings.push({
         level: "BLOCK",
         rule: "consecutive-asset-free",
-        message: `素材なしのシーンclipが ${maxRun}連続 しています(${from}〜${to}。上限 ${rules.maxConsecutiveAssetFreeShots}連続)`,
+        message: `素材なしのシーンclipが ${worst.length}連続 しています(${from}〜${to}。上限 ${rules.maxConsecutiveAssetFreeShots}連続)`,
       });
     }
   }

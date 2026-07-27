@@ -1,6 +1,8 @@
 {
+  "_comment": "HF本編は check-composition.ts が、ショートは validate-shots.ts が読む。sceneClipSelector / styleClasses / assetFreeExemptClasses はHF専用。assetFreeExemptComponents / maxBubbleShots はRemotion(ショート)専用。maxUsesPerImage は数値形のみ両対応(オブジェクト形にするとRemotion側で静かに無効化される)",
   "sceneClipSelector": ".clip.scene",
   "styleClasses": ["chapter-card", "credit-line", "title-card"],
+  "assetFreeExemptClasses": ["title-card", "credit-line"],
   "minDurationSec": 300,
   "minUniqueImagesPerMin": 4,
   "maxUsesPerImage": 3,

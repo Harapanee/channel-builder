@@ -320,3 +320,43 @@ test("規則6/7: 除外の結果0件になっても例外を出さない", () =>
   assert.equal(f.filter((x) => x.rule === "template-mass-production").length, 0);
   assert.equal(f.filter((x) => x.rule === "zero-carryover").length, 0);
 });
+
+test("規則3: 免除クラスを持つclipは素材なし連続をリセットする", () => {
+  const dom: CompositionDom = {
+    durationSec: 600,
+    clips: [
+      clip("c1", ["clip", "scene"], []),
+      clip("c2", ["clip", "scene"], []),
+      clip("t1", ["clip", "scene"], [], "s", ["title-card"]),
+      clip("c3", ["clip", "scene"], []),
+      clip("c4", ["clip", "scene"], []),
+    ],
+  };
+  const withExempt = evaluateBlockRules(dom, LIB, {
+    ...RULES,
+    assetFreeExemptClasses: ["title-card"],
+  }).filter((f) => f.rule === "consecutive-asset-free");
+  assert.equal(withExempt.length, 0, "免除clipで連続が切れていない");
+
+  const withoutExempt = evaluateBlockRules(dom, LIB, RULES).filter(
+    (f) => f.rule === "consecutive-asset-free"
+  );
+  assert.equal(withoutExempt.length, 1);
+  assert.match(withoutExempt[0].message, /5連続/);
+});
+
+test("規則3: 免除クラス未設定なら従来どおりの範囲を報告する", () => {
+  const dom: CompositionDom = {
+    durationSec: 600,
+    clips: [
+      clip("c1", ["clip", "scene"], ["assets/places/reef.png"]),
+      clip("c2", ["clip", "scene"], []),
+      clip("c3", ["clip", "scene"], []),
+      clip("c4", ["clip", "scene"], []),
+    ],
+  };
+  const f = evaluateBlockRules(dom, LIB, RULES).filter((x) => x.rule === "consecutive-asset-free");
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /3連続/);
+  assert.match(f[0].message, /c2〜c4/);
+});
