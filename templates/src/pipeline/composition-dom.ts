@@ -178,8 +178,12 @@ export async function collectCompositionDom(
               continue;
             }
             var s = getComputedStyle(el);
+            // NOTE: webkitMaskImage は意図的に収集しない。Chrome(このツールが動く
+            // headless-shellも含む)は getComputedStyle().maskImage と .webkitMaskImage に
+            // 同一の解決済みURLを返すため、両方を集めると同じ素材が2回計上され、
+            // 規則2(maxUsesPerImage)の実使用回数が実際の2倍に水増しされる(実測済み)。
             var urls = cssUrls(s.backgroundImage)
-              .concat(cssUrls(s.maskImage), cssUrls(s.webkitMaskImage), cssUrls(s.borderImageSource));
+              .concat(cssUrls(s.maskImage), cssUrls(s.borderImageSource));
             for (var u of urls) {
               out.push({ src: toRel(u), naturalW: 0, naturalH: 0, objectFit: "", objectPosition: "" });
             }

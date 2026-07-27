@@ -155,8 +155,8 @@ export function evaluateBlockRules(
     }
     flush();
     if (worst.length > rules.maxConsecutiveAssetFreeShots) {
-      const from = worst[0].id ?? "?";
-      const to = worst[worst.length - 1].id ?? "?";
+      const from = worst[0]?.id ?? "?";
+      const to = worst[worst.length - 1]?.id ?? "?";
       findings.push({
         level: "BLOCK",
         rule: "consecutive-asset-free",
@@ -217,7 +217,7 @@ export function evaluateAdviseRules(
       findings.push({
         level: "ADVISE",
         rule: "template-mass-production",
-        message: `場面clip ${original.length}個に対し実効演出数 ${bySig.size}。最大のシグネチャ群が ${biggest[1].length}個(${Math.round(share * 100)}%)を占めます: ${biggest[1].slice(0, 8).join(", ")}`,
+        message: `様式clipを除いたシーンclip ${original.length}個に対し実効演出数 ${bySig.size}。最大のシグネチャ群が ${biggest[1].length}個(${Math.round(share * 100)}%)を占めます: ${biggest[1].slice(0, 8).join(", ")}`,
       });
     }
   }
@@ -230,7 +230,7 @@ export function evaluateAdviseRules(
     findings.push({
       level: "ADVISE",
       rule: "zero-carryover",
-      message: `過去エピソードと同一構造のシーンclipが ${carried.length}件 あります: ${carried.slice(0, 10).join(", ")}`,
+      message: `過去エピソードと同一構造かつ同一モーションのシーンclipが ${carried.length}件 あります: ${carried.slice(0, 10).join(", ")}`,
     });
   }
 

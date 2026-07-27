@@ -25,6 +25,8 @@ function makeProject(): { root: string; comp: string } {
       .bg{width:100%;height:100%;object-fit:cover}
       .css-bg{position:absolute;inset:0;background-image:url(assets/places/reef.png)}
       .outside-bg{position:absolute;inset:0;background-image:url(file:///hf-test-outside-root/x.png)}
+      .mask-only{position:absolute;inset:0;background-color:#000;-webkit-mask-image:url(assets/places/reef.png);mask-image:url(assets/places/reef.png)}
+      .border-only{position:absolute;inset:0;border-style:solid;border-width:10px;border-image-source:url(assets/places/reef.png);border-image-slice:1}
     </style></head><body>
     <div id="root" data-composition-id="t" data-start="0" data-duration="12" data-width="1920" data-height="1080">
       <div class="clip scene" id="c1" data-start="0" data-duration="6" data-track-index="1"></div>
@@ -41,6 +43,12 @@ function makeProject(): { root: string; comp: string } {
       <div class="clip scene" id="c6" data-start="6" data-duration="6" data-track-index="1">
         <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
         <div class="outside-bg"></div>
+      </div>
+      <div class="clip scene" id="c7" data-start="6" data-duration="6" data-track-index="1">
+        <div class="mask-only"></div>
+      </div>
+      <div class="clip scene" id="c8" data-start="6" data-duration="6" data-track-index="1">
+        <div class="border-only"></div>
       </div>
       <div class="subtitle clip" id="s1" data-start="0" data-duration="6" data-track-index="40">字幕</div>
     </div>
@@ -61,7 +69,7 @@ test("JSで挿入されたimgを評価済みDOMから収集できる", async () 
   const dom = await collectCompositionDom(comp, root);
 
   assert.equal(dom.durationSec, 12);
-  assert.equal(dom.clips.length, 7);
+  assert.equal(dom.clips.length, 9);
 
   const c1 = dom.clips.find((c) => c.id === "c1");
   assert.ok(c1);
@@ -136,6 +144,30 @@ test("data: URI とプロジェクト外の絶対URLは素材として数えな�
 
   const all = dom.clips.flatMap((c) => c.images.map((i) => i.src));
   assert.ok(all.every((s) => s.startsWith("assets/")), `ルート相対でない src がある: ${all.join(", ")}`);
+});
+
+// 回帰テスト(Important-1): Chrome は getComputedStyle().maskImage と
+// .webkitMaskImage に同一の値を返すため、両方を収集すると同じ素材が2回計上される。
+// 規則2(maxUsesPerImage)の実使用回数が実際の2倍に水増しされ、上限3回設定で
+// 実使用2回でもBLOCKする不正確なゲートを生んでいた欠陥の再発防止。
+test("mask-image を1つ持つclipから素材がちょうど1件収集される(重複計上の回帰)", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+  const c7 = dom.clips.find((c) => c.id === "c7")!;
+  assert.equal(
+    c7.images.length,
+    1,
+    `mask-image由来の素材が重複計上されている(maskImage/webkitMaskImageの二重収集): ${JSON.stringify(c7.images)}`
+  );
+  assert.equal(c7.images[0].src, "assets/places/reef.png");
+});
+
+test("border-image-source を1つ持つclipから素材がちょうど1件収集される", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+  const c8 = dom.clips.find((c) => c.id === "c8")!;
+  assert.equal(c8.images.length, 1);
+  assert.equal(c8.images[0].src, "assets/places/reef.png");
 });
 
 test("clip配下のクラスを descendantClasses に集める", async () => {
