@@ -137,3 +137,14 @@ test("data: URI とプロジェクト外の絶対URLは素材として数えな�
   const all = dom.clips.flatMap((c) => c.images.map((i) => i.src));
   assert.ok(all.every((s) => s.startsWith("assets/")), `ルート相対でない src がある: ${all.join(", ")}`);
 });
+
+test("clip配下のクラスを descendantClasses に集める", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+  const c3 = dom.clips.find((c) => c.id === "c3")!;
+  assert.deepEqual(c3.classes.sort(), ["clip", "scene"]);
+  assert.deepEqual(c3.descendantClasses, ["css-bg"]);
+
+  const c2 = dom.clips.find((c) => c.id === "c2")!;
+  assert.deepEqual(c2.descendantClasses, []);
+});

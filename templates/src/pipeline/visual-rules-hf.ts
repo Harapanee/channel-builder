@@ -54,6 +54,16 @@ export function sceneClipsOf(dom: CompositionDom, rules: VisualRules): ClipInfo[
   return dom.clips.filter((c) => need.every((n) => c.classes.includes(n)));
 }
 
+/**
+ * clip自身または配下に、指定クラスのいずれかがあるか。
+ * 様式クラス(章カード・クレジット等)は実物のcompositionでは
+ * clipラッパーではなく内側の要素に付くため、配下まで見る必要がある。
+ */
+function hasAnyClass(c: ClipInfo, classes: string[]): boolean {
+  if (classes.length === 0) return false;
+  return classes.some((cl) => c.classes.includes(cl) || c.descendantClasses.includes(cl));
+}
+
 function limitForKind(
   rules: VisualRules,
   kind: string | undefined
@@ -185,25 +195,32 @@ export function evaluateAdviseRules(
   const scenes = sceneClipsOf(dom, rules);
   if (scenes.length === 0) return findings;
 
+  // 様式clip(章カード・クレジット・タイトル札)は反復が正当なので、
+  // 構造シグネチャ系の規則6・7からは除外する。規則8はこれ自体を数える。
+  const styleClasses = rules.styleClasses ?? [];
+  const original = scenes.filter((c) => !hasAnyClass(c, styleClasses));
+
   // 規則6: 実効演出数(同一シグネチャ群を1演出と数える)
-  const bySig = new Map<string, string[]>();
-  for (const c of scenes) {
-    const list = bySig.get(c.signature) ?? [];
-    list.push(c.id ?? "(id無し)");
-    bySig.set(c.signature, list);
-  }
-  const biggest = [...bySig.entries()].sort((a, b) => b[1].length - a[1].length)[0];
-  const share = biggest[1].length / scenes.length;
-  if (share > 0.2) {
-    findings.push({
-      level: "ADVISE",
-      rule: "template-mass-production",
-      message: `シーンclip ${scenes.length}個に対し実効演出数 ${bySig.size}。最大のシグネチャ群が ${biggest[1].length}個(${Math.round(share * 100)}%)を占めます: ${biggest[1].slice(0, 8).join(", ")}`,
-    });
+  if (original.length > 0) {
+    const bySig = new Map<string, string[]>();
+    for (const c of original) {
+      const list = bySig.get(c.signature) ?? [];
+      list.push(c.id ?? "(id無し)");
+      bySig.set(c.signature, list);
+    }
+    const biggest = [...bySig.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    const share = biggest[1].length / original.length;
+    if (share > 0.2) {
+      findings.push({
+        level: "ADVISE",
+        rule: "template-mass-production",
+        message: `場面clip ${original.length}個に対し実効演出数 ${bySig.size}。最大のシグネチャ群が ${biggest[1].length}個(${Math.round(share * 100)}%)を占めます: ${biggest[1].slice(0, 8).join(", ")}`,
+      });
+    }
   }
 
   // 規則7: ゼロ持ち越し(過去epと同一シグネチャ)
-  const carried = scenes
+  const carried = original
     .filter((c) => pastSignatures.has(c.signature))
     .map((c) => `${c.id ?? "(id無し)"}→${pastSignatures.get(c.signature)!.join("/")}`);
   if (carried.length > 0) {
@@ -215,9 +232,8 @@ export function evaluateAdviseRules(
   }
 
   // 規則8: 様式clipの比率
-  const styleClasses = rules.styleClasses ?? [];
   if (styleClasses.length > 0 && rules.maxCaptionShotRatio !== undefined) {
-    const styled = scenes.filter((c) => c.classes.some((cl) => styleClasses.includes(cl)));
+    const styled = scenes.filter((c) => hasAnyClass(c, styleClasses));
     const ratio = styled.length / scenes.length;
     if (ratio > rules.maxCaptionShotRatio) {
       findings.push({
@@ -228,7 +244,7 @@ export function evaluateAdviseRules(
     }
   }
 
-  // 規則9: 縦長素材のフレーミング未指定
+  // 規則9: 縦長素材のフレーミング未指定(実寸が取れる <img> のみが対象)
   if (rules.minCoverAspectRatio !== undefined) {
     const bad = new Set<string>();
     for (const c of scenes) {

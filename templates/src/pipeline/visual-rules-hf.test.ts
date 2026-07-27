@@ -3,10 +3,17 @@ import test from "node:test";
 import type { ClipInfo, CompositionDom } from "./composition-dom";
 import { evaluateAdviseRules, evaluateBlockRules, sceneClipsOf, type LibraryEntry, type VisualRules } from "./visual-rules-hf";
 
-function clip(id: string, classes: string[], srcs: string[], sig = "aaaaaaaaaaaa"): ClipInfo {
+function clip(
+  id: string,
+  classes: string[],
+  srcs: string[],
+  sig = "aaaaaaaaaaaa",
+  descendantClasses: string[] = []
+): ClipInfo {
   return {
     id,
     classes,
+    descendantClasses,
     trackIndex: classes.includes("scene") ? 1 : 40,
     startSec: 0,
     durationSec: 1,
@@ -203,6 +210,7 @@ test("規則9: 縦長素材がobject-position既定のままならADVISE", () =>
   const tall: ClipInfo = {
     id: "c1",
     classes: ["clip", "scene"],
+    descendantClasses: [],
     trackIndex: 1,
     startSec: 0,
     durationSec: 1,
@@ -223,6 +231,7 @@ test("規則9: contain指定または明示のobject-positionなら指摘しな�
   const ok: ClipInfo = {
     id: "c1",
     classes: ["clip", "scene"],
+    descendantClasses: [],
     trackIndex: 1,
     startSec: 0,
     durationSec: 1,
@@ -237,4 +246,77 @@ test("規則9: contain指定または明示のobject-positionなら指摘しな�
     (x) => x.rule === "tall-image-framing"
   );
   assert.equal(f.length, 0);
+});
+
+test("規則8: 配下に様式クラスがあるclipも様式clipと数える", () => {
+  const dom: CompositionDom = {
+    durationSec: 600,
+    clips: [
+      clip("c1", ["clip", "scene"], [], "s1", ["chapter-card"]),
+      clip("c2", ["clip", "scene"], [], "s2", ["chapter-card"]),
+      clip("c3", ["clip", "scene"], [], "s3"),
+    ],
+  };
+  const rules: VisualRules = { ...RULES, styleClasses: ["chapter-card"], maxCaptionShotRatio: 0.2 };
+  const f = evaluateAdviseRules(dom, rules, new Map()).filter((x) => x.rule === "style-clip-ratio");
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /67%/);
+});
+
+test("規則6: 様式clipは実効演出数の集計から除外する", () => {
+  // 様式clip4個(すべて同一シグネチャ)+ 場面clip6個(すべて別シグネチャ)。
+  // 除外あり: 分母6・最大グループ1 → 16.7% で閾値20%を下回りADVISEなし
+  // 除外なし: 分母10・最大グループ4(様式clip) → 40% でADVISEが出る
+  const dom: CompositionDom = {
+    durationSec: 600,
+    clips: [
+      clip("k1", ["clip", "scene"], [], "same", ["chapter-card"]),
+      clip("k2", ["clip", "scene"], [], "same", ["chapter-card"]),
+      clip("k3", ["clip", "scene"], [], "same", ["chapter-card"]),
+      clip("k4", ["clip", "scene"], [], "same", ["chapter-card"]),
+      clip("c1", ["clip", "scene"], [], "a1"),
+      clip("c2", ["clip", "scene"], [], "a2"),
+      clip("c3", ["clip", "scene"], [], "a3"),
+      clip("c4", ["clip", "scene"], [], "a4"),
+      clip("c5", ["clip", "scene"], [], "a5"),
+      clip("c6", ["clip", "scene"], [], "a6"),
+    ],
+  };
+  const withExclusion = evaluateAdviseRules(
+    dom,
+    { ...RULES, styleClasses: ["chapter-card"] },
+    new Map()
+  ).filter((x) => x.rule === "template-mass-production");
+  assert.equal(withExclusion.length, 0, "様式clipが除外されていない");
+
+  const withoutExclusion = evaluateAdviseRules(dom, RULES, new Map()).filter(
+    (x) => x.rule === "template-mass-production"
+  );
+  assert.equal(withoutExclusion.length, 1, "除外しない場合はADVISEが出るはず");
+});
+
+test("規則7: 様式clipは持ち越し指摘に出さない", () => {
+  const dom: CompositionDom = {
+    durationSec: 600,
+    clips: [
+      clip("k1", ["clip", "scene"], [], "carried", ["chapter-card"]),
+      clip("c1", ["clip", "scene"], [], "fresh"),
+    ],
+  };
+  const past = new Map([["carried", ["ep001-x"]]]);
+  const f = evaluateAdviseRules(dom, { ...RULES, styleClasses: ["chapter-card"] }, past).filter(
+    (x) => x.rule === "zero-carryover"
+  );
+  assert.equal(f.length, 0);
+});
+
+test("規則6/7: 除外の結果0件になっても例外を出さない", () => {
+  const dom: CompositionDom = {
+    durationSec: 600,
+    clips: [clip("k1", ["clip", "scene"], [], "same", ["chapter-card"])],
+  };
+  const past = new Map([["same", ["ep001-x"]]]);
+  const f = evaluateAdviseRules(dom, { ...RULES, styleClasses: ["chapter-card"] }, past);
+  assert.equal(f.filter((x) => x.rule === "template-mass-production").length, 0);
+  assert.equal(f.filter((x) => x.rule === "zero-carryover").length, 0);
 });

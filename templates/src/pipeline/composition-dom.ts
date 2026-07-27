@@ -25,6 +25,8 @@ export type ImageUse = {
 export type ClipInfo = {
   id: string | null;
   classes: string[];
+  /** clip配下(自身は含まない)に現れる全クラスをユニーク化・昇順ソートしたもの */
+  descendantClasses: string[];
   trackIndex: number | null;
   startSec: number;
   durationSec: number;
@@ -194,6 +196,7 @@ export async function collectCompositionDom(
           return {
             id: c.id || null,
             classes: [...c.classList],
+            descendantClasses: [...new Set([].concat.apply([], [...c.querySelectorAll("*")].map(function (e) { return [...e.classList]; })))].sort(),
             trackIndex: trackRaw === null ? null : Number(trackRaw),
             startSec: parseFloat(c.getAttribute("data-start") || "0"),
             durationSec: parseFloat(c.getAttribute("data-duration") || "0"),
