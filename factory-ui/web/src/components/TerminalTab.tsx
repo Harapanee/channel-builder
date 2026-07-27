@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import type { ServerMsg, SessionInfo } from '../../../shared/types';
 import type { FactoryWS } from '../ws';
+import { createSession, listSessions, restartSession } from '../api';
 
 /**
  * 指定 dir(''=ファクトリールート / チャンネルフォルダ名)の埋め込みターミナル。
@@ -20,9 +21,7 @@ export function TerminalTab({ dir, ws }: { dir: string; ws: FactoryWS }) {
   const [error, setError] = useState<string | null>(null);
 
   const loadLatest = useCallback(async (): Promise<SessionInfo | null> => {
-    const res = await fetch('/api/sessions');
-    if (!res.ok) throw new Error(`GET /api/sessions -> ${res.status}`);
-    const list = (await res.json()) as SessionInfo[];
+    const list = await listSessions();
     // running を優先(操作ボタンの送信先=最新runningと画面表示を一致させる)、同格ならcreatedAt降順
     return (
       list
@@ -60,13 +59,7 @@ export function TerminalTab({ dir, ws }: { dir: string; ws: FactoryWS }) {
     setStarting(true);
     setError(null);
     try {
-      const res = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: dir, continue: continueFlag }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setSession((await res.json()) as SessionInfo);
+      setSession(await createSession({ cwd: dir, continue: continueFlag }));
     } catch (e) {
       setError(`セッション開始に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -131,6 +124,8 @@ function TerminalView({ session, ws }: { session: SessionInfo; ws: FactoryWS }) 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<'running' | 'exited'>(session.status);
   const [exitCode, setExitCode] = useState<number | undefined>(session.exitCode);
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
   const sessionId = session.id;
 
   useEffect(() => {
@@ -171,7 +166,10 @@ function TerminalView({ session, ws }: { session: SessionInfo; ws: FactoryWS }) 
           setStatus(msg.status);
           setExitCode(msg.exitCode);
           // 再起動などで再び稼働 → 最新の scrollback を取り直して端末をリセットする
-          if (msg.status === 'running') ws.attach(sessionId);
+          if (msg.status === 'running') {
+            setRestartError(null);
+            ws.attach(sessionId);
+          }
           break;
         default:
           break; // sessions-changed / fs-update はこの画面では扱わない
@@ -202,12 +200,16 @@ function TerminalView({ session, ws }: { session: SessionInfo; ws: FactoryWS }) 
   }, [sessionId, ws]);
 
   async function restart() {
+    setRestarting(true);
+    setRestartError(null);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/restart`, { method: 'POST' });
-      if (!res.ok) throw new Error(await res.text());
+      await restartSession(sessionId);
       // 成功すると session-status(running) が届き、上の購読で端末がリセットされる
-    } catch {
-      // 再起動失敗は致命ではないためここでは黙殺(ボタンは残る)
+    } catch (e) {
+      // 失敗を黙殺しない(ボタンは残るので再試行できる)
+      setRestartError(`再起動に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRestarting(false);
     }
   }
 
@@ -220,9 +222,14 @@ function TerminalView({ session, ws }: { session: SessionInfo; ws: FactoryWS }) 
             : `EXITED${exitCode !== undefined ? ` ${exitCode}` : ''}`}
         </span>
         {status === 'exited' && (
-          <button className="btn btn-ghost" onClick={restart}>
-            再起動
+          <button className="btn btn-ghost" onClick={restart} disabled={restarting}>
+            {restarting ? '再起動中…' : '再起動'}
           </button>
+        )}
+        {restartError && (
+          <span aria-live="polite" style={{ color: 'var(--status-err)' }}>
+            {restartError}
+          </span>
         )}
       </div>
       <div

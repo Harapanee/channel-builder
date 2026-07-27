@@ -3,6 +3,7 @@
  * 表示不要な行(rate_limit、正常なtool_result、サブエージェント内部の行など)は null。
  * 生ログは別タブで常に見られるため、解釈できない行は黙って捨ててよい。
  */
+import { parseTimestamp } from './logTime';
 
 export type FeedItem = {
   /** 一意キー。task_progress は 'task:{task_id}' で同一タスクを上書き更新する */
@@ -12,6 +13,8 @@ export type FeedItem = {
   /** 長文(発話・エラー本文)。label と分けて折りたたみ表示できるようにする */
   detail?: string;
   kind: 'tool' | 'text' | 'subagent' | 'error';
+  /** 行の壁時計(epoch ms)。持たない行(スタンプ導入前のログ等)は undefined */
+  time?: number;
 };
 
 export const MAX_FEED_ITEMS = 500;
@@ -58,6 +61,14 @@ export function parseFeedItem(line: string): FeedItem | null {
   }
   if (!d || typeof d !== 'object') return null;
 
+  const item = toFeedItem(d);
+  if (!item) return null;
+  const time = parseTimestamp(d.timestamp);
+  return time === undefined ? item : { ...item, time };
+}
+
+/** パース済みの1行 → フィード項目(時刻は parseFeedItem 側で付ける) */
+function toFeedItem(d: any): FeedItem | null {
   // サブエージェント内部の行は task_progress で代表させる
   if (d.parent_tool_use_id) return null;
 

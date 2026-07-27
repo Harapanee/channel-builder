@@ -4,23 +4,35 @@ import { badgeClassFor } from '../status';
 /**
  * ダッシュボード最上部の「要対応インボックス」。
  * 全チャンネル横断で awaiting_gate ジョブ + failed ジョブを集約し、件数バッジ付きで一覧表示する。
- * 各行クリックで該当ジョブの dir(チャンネル)へ遷移する
- * (ジョブ詳細そのものへのディープリンクは Task 12 の JobDetail 画面が担当のため、ここではチャンネル遷移までで足りる)。
+ * 各行クリックで該当ジョブの詳細(#/ch/<dir>/jobs/<jobId>)へ直行する。
  */
 export function AttentionInbox({
   jobs,
   channels,
-  onSelectChannel,
+  onOpenJob,
+  loaded = true,
 }: {
   jobs: JobSummary[];
   channels: ChannelSummary[];
-  onSelectChannel: (dir: string) => void;
+  onOpenJob: (dir: string, jobId: string) => void;
+  /** 親のジョブ一覧初回fetchが完了したか。未完了の間は空状態文言の代わりに「読み込み中…」を出す */
+  loaded?: boolean;
 }) {
   const items = jobs
     .filter((j) => j.status === 'awaiting_gate' || j.status === 'failed')
     .sort((a, b) => b.updatedAt - a.updatedAt);
 
-  const nameFor = (dir: string) => channels.find((c) => c.dir === dir)?.channelName || dir;
+  const nameFor = (dir: string) =>
+    dir === '' ? 'ファクトリー' : channels.find((c) => c.dir === dir)?.channelName || dir;
+
+  // 初回fetch前は「0件」と断言せず読み込み中表示にとどめる
+  if (!loaded) {
+    return (
+      <div className="panel" style={{ display: 'flex', alignItems: 'center', padding: '10px 18px' }}>
+        <span style={{ color: 'var(--text-secondary)' }}>読み込み中…</span>
+      </div>
+    );
+  }
 
   // 0件のときは巨大な空パネルを避け、ヘッダ1行のコンパクト表示にする。
   if (items.length === 0) {
@@ -59,7 +71,7 @@ export function AttentionInbox({
           key={job.id}
           type="button"
           className="inbox-item"
-          onClick={() => onSelectChannel(job.dir)}
+          onClick={() => onOpenJob(job.dir, job.id)}
         >
           <span className={badgeClassFor(job.status)}>
             {job.status === 'awaiting_gate' ? '要対応' : '失敗'}

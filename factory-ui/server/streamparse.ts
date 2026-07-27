@@ -134,6 +134,13 @@ function parseAssistant(obj: any): ParsedEvent {
  * ゲートは assistant text と result.result の両方に出るため、呼び出し側は
  * result 種別のイベントに対しても本関数を適用できる。
  */
+function isRenderCheckShaped(gate: GateRequest): boolean {
+  if (typeof gate.gateId === 'string' && gate.gateId.includes('render-check')) return true;
+  if (!Array.isArray(gate.options)) return false;
+  const ids = new Set(gate.options.map((o) => o?.id));
+  return ids.has('approve') && ids.has('revise');
+}
+
 export function extractGate(text: string): GateRequest | null {
   const m = GATE_RE.exec(text);
   if (!m) return null;
@@ -142,9 +149,10 @@ export function extractGate(text: string): GateRequest | null {
     const parsed = JSON.parse(m[1].trim());
     if (parsed !== null && typeof parsed === 'object') {
       const gate = parsed as GateRequest;
-      // モデルが kind を出し忘れても、gateId の命名から render-check を補完する
-      // (UIのStudioボタン表示・レンダーキュー登録がkindに依存するため)
-      if (gate.kind === undefined && typeof gate.gateId === 'string' && gate.gateId.includes('render-check')) {
+      // モデルが kind を出し忘れても render-check を補完する
+      // (UIのStudioボタン表示・レンダーキュー登録・レンダー突入バックストップがkindに依存するため)。
+      // 判定は gateId 命名に加え、approve+revise の options ペア(契約上render-check専用)でも行う
+      if (gate.kind === undefined && isRenderCheckShaped(gate)) {
         gate.kind = 'render-check';
       }
       return gate;

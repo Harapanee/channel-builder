@@ -21,6 +21,7 @@ function makeFakeApi(overrides: Partial<YoutubeApi> = {}): YoutubeApi {
     getChannelTitle: async () => 'テストチャンネル',
     upload: async () => 'vid-123',
     setThumbnail: async () => {},
+    fetchAnalytics: async () => ({ metrics: {}, retentionCurve: [] }),
     ...overrides,
   };
 }
@@ -234,11 +235,48 @@ describe('YoutubeManager アップロード', () => {
     await done;
   });
 
+  it('videoFileのstatが非ENOENTエラー(ENOTDIR)で失敗した場合はnot_found:に変換せずrethrowする(誤404防止)', async () => {
+    const m = await connected();
+    // out/ をディレクトリではなくファイルに置き換え、fsp.stat(out/final.mp4) が
+    // ENOENTではなくENOTDIR(パス構成要素がディレクトリでない)で失敗する状況を作る(EACCES等の代役)。
+    const outDir = path.join(root, 'ch-a', 'episodes', 'ep001', 'out');
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.writeFileSync(outDir, 'out/ のはずがファイル');
+    await expect(m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' }))
+      .rejects.toMatchObject({ code: 'ENOTDIR' });
+  });
+
   it('同エピソードの実行中ジョブがあればduplicate:', async () => {
     const m = await connected({ upload: () => new Promise(() => {}) }); // 終わらない
     await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
     await expect(m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' }))
       .rejects.toThrow(/^duplicate: /);
+  });
+
+  it('完了ジョブは永続化され、同じrootで新しいManagerを作ってもlist()に残る', async () => {
+    const m = await connected();
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    await done;
+
+    const m2 = new YoutubeManager(root, () => makeFakeApi());
+    const jobs = m2.list();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe('done');
+    expect(jobs[0].epId).toBe('ep001');
+    expect(jobs[0].videoId).toBe('vid-123');
+  });
+
+  it('実行中(uploading)に再生成するとfailed(中断)扱いになる', async () => {
+    const m = await connected({ upload: () => new Promise(() => {}) }); // 終わらない
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+
+    const m2 = new YoutubeManager(root, () => makeFakeApi());
+    const jobs = m2.list();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe('failed');
+    expect(jobs[0].error).toBe('サーバー再起動により中断されました');
+    expect(jobs[0].finishedAt).toBeDefined();
   });
 
   it('metadata.json不在/壊れ/動画不在/不正videoFile/未連携はそれぞれ規約のprefixでthrow', async () => {

@@ -29,6 +29,31 @@ function writeStatus(root: string, dir: string, epId: string, obj: Record<string
   fs.writeFileSync(path.join(out, '.render-status-final.json'), JSON.stringify(obj));
 }
 
+function makeShort(
+  root: string,
+  dir: string,
+  shorts: Array<{ shortId: string; status: string }>,
+): void {
+  for (const s of shorts) {
+    const d = path.join(root, dir, 'shorts', s.shortId);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(
+      path.join(d, 'short.json'),
+      JSON.stringify(
+        { shortId: s.shortId, formatId: 'f1', sourceEpisodeId: 'ep001-a', title: s.shortId, status: s.status },
+        null,
+        2,
+      ),
+    );
+  }
+}
+
+function writeShortStatus(root: string, dir: string, shortId: string, obj: Record<string, unknown>): void {
+  const out = path.join(root, dir, 'shorts', shortId, 'out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, '.render-status-final.json'), JSON.stringify(obj));
+}
+
 async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
   const t0 = Date.now();
   while (!cond()) {
@@ -68,6 +93,10 @@ describe('RenderQueueManager', () => {
       { epId: 'ep001-a', status: 'render_ready' },
       { epId: 'ep002-b', status: 'render_ready' },
       { epId: 'ep003-packaged', status: 'packaged' },
+    ]);
+    makeShort(root, 'ch1', [
+      { shortId: 'sh001-t', status: 'studio_checked' },
+      { shortId: 'sh002-t', status: 'implemented' },
     ]);
     spawns = [];
     gitCalls = [];
@@ -192,6 +221,73 @@ describe('RenderQueueManager', () => {
     expect(() => m.cancel('no-such-id')).toThrow(/^unknown:/);
   });
 
+  it('clearFinished: 終了済み(done/failed)だけ消して件数を返す。waitingは残り、永続化とupdate通知が走る', async () => {
+    m.enqueue('ch1', 'ep001-a');
+    m.enqueue('ch1', 'ep002-b');
+    m.start();
+    await waitFor(() => spawns.length === 1);
+    writeStatus(root, 'ch1', 'ep001-a', { out: 'final', ok: true, durationSec: 10, qaExit: 0 });
+    await waitFor(() => spawns.length === 2);
+    writeStatus(root, 'ch1', 'ep002-b', { out: 'final', ok: false, reason: 'infinity_gate' });
+    await waitFor(() => m.list().every((i) => i.status === 'done' || i.status === 'failed'));
+    const waiting = m.enqueue('ch1', 'ep001-a'); // 再キュー(waiting)は消えない対象
+    let updates = 0;
+    m.on('update', () => updates++);
+
+    expect(m.clearFinished()).toBe(2);
+    expect(m.list().map((i) => i.id)).toEqual([waiting.id]);
+    expect(updates).toBe(1);
+    const persisted = JSON.parse(
+      fs.readFileSync(path.join(root, 'factory-ui', 'render-queue.json'), 'utf8'),
+    ) as { items: Array<{ id: string }> };
+    expect(persisted.items.map((i) => i.id)).toEqual([waiting.id]);
+
+    // 0件のときは何もしない(永続化もupdateも走らない)
+    fs.rmSync(path.join(root, 'factory-ui', 'render-queue.json'));
+    expect(m.clearFinished()).toBe(0);
+    expect(updates).toBe(1);
+    expect(fs.existsSync(path.join(root, 'factory-ui', 'render-queue.json'))).toBe(false);
+  });
+
+  it('startOne: 選んだ1本だけ実行し、他のwaitingへは進まない。実行中はstart/startOneともbusy', async () => {
+    const a = m.enqueue('ch1', 'ep001-a');
+    m.enqueue('ch1', 'ep002-b');
+    m.startOne(a.id);
+    // 単発実行中は一括開始も別の単発開始もbusy
+    expect(() => m.start()).toThrow(/^busy:/);
+    expect(() => m.startOne(a.id)).toThrow(/^busy:/);
+    await waitFor(() => spawns.length === 1);
+    expect(spawns[0]!.args).toEqual(['scripts/render-episode.sh', 'episodes/ep001-a', 'final']);
+    writeStatus(root, 'ch1', 'ep001-a', { out: 'final', ok: true, durationSec: 60, qaExit: 0 });
+    await waitFor(() => m.list().find((i) => i.id === a.id)?.status === 'done');
+    // 完了しても次のwaiting(ep002-b)には進まない
+    await new Promise((r) => setTimeout(r, 50));
+    expect(spawns).toHaveLength(1);
+    expect(m.list().find((i) => i.epId === 'ep002-b')?.status).toBe('waiting');
+    // 単発完了後は通常のstart()が使える(consumingが解放されている)
+    m.start();
+    await waitFor(() => spawns.length === 2);
+    writeStatus(root, 'ch1', 'ep002-b', { out: 'final', ok: true, durationSec: 10, qaExit: 0 });
+    await waitFor(() => m.list().every((i) => i.status === 'done'));
+  });
+
+  it('startOne: 不明IDはunknown、非waitingはconflict、キュー消化中はbusy', async () => {
+    expect(() => m.startOne('no-such-id')).toThrow(/^unknown:/);
+    const a = m.enqueue('ch1', 'ep001-a');
+    const b = m.enqueue('ch1', 'ep002-b');
+    m.start();
+    await waitFor(() => spawns.length === 1);
+    // 消化ループ稼働中: runningのaはconflictより先にbusy、waitingのbもbusy
+    expect(() => m.startOne(b.id)).toThrow(/^busy:/);
+    writeStatus(root, 'ch1', 'ep001-a', { out: 'final', ok: true, durationSec: 10, qaExit: 0 });
+    // bが実際にspawnされてから書く(先書きするとrunOneの残骸クリアで消される)
+    await waitFor(() => spawns.length === 2);
+    writeStatus(root, 'ch1', 'ep002-b', { out: 'final', ok: true, durationSec: 10, qaExit: 0 });
+    await waitFor(() => m.list().every((i) => i.status === 'done'));
+    // 確定済み(done)アイテムの単発開始はconflict
+    expect(() => m.startOne(a.id)).toThrow(/^conflict:/);
+  });
+
   it('復元: runningアイテムはステータスファイルで確定し、waitingの消化を続ける', async () => {
     // 前世代のサーバーが残した状態を模擬(runningのpidは死んでいる)
     const stateDir = path.join(root, 'factory-ui');
@@ -220,5 +316,49 @@ describe('RenderQueueManager', () => {
     expect(spawns[0]!.args[1]).toBe('episodes/ep002-b');
     writeStatus(root, 'ch1', 'ep002-b', { out: 'final', ok: true, durationSec: 10, qaExit: 0 });
     await waitFor(() => m2.list().every((i) => i.status === 'done'));
+  });
+
+  describe('kind=short', () => {
+    it('enqueue: short.jsonを参照して登録されkindが保存される。requireReadyはstudio_checked未満を弾く', () => {
+      const item = m.enqueue('ch1', 'sh001-t', { kind: 'short', requireReady: true });
+      expect(item.kind).toBe('short');
+      expect(item.status).toBe('waiting');
+      expect(() => m.enqueue('ch1', 'sh002-t', { kind: 'short', requireReady: true })).toThrow(/^not_ready:/);
+      expect(() => m.enqueue('ch1', 'sh999-none', { kind: 'short' })).toThrow(/^unknown:/);
+      // kindごとに参照先が異なる: 同じIDをエピソードとして探すと見つからない
+      expect(() => m.enqueue('ch1', 'sh001-t')).toThrow(/^unknown:/);
+    });
+
+    it('start: shortは scripts/render-episode.sh shorts/<id> final でspawnされ、成功で short.json が rendered になる', async () => {
+      m.enqueue('ch1', 'sh001-t', { kind: 'short' });
+      m.start();
+      await waitFor(() => spawns.length === 1);
+      expect(spawns[0].args).toEqual(['scripts/render-episode.sh', 'shorts/sh001-t', 'final']);
+      writeShortStatus(root, 'ch1', 'sh001-t', { out: 'final', ok: true, qaExit: 0, durationSec: 55 });
+      await waitFor(() => m.list()[0].status === 'done');
+      const meta = JSON.parse(
+        fs.readFileSync(path.join(root, 'ch1', 'shorts', 'sh001-t', 'short.json'), 'utf8'),
+      ) as { status: string };
+      expect(meta.status).toBe('rendered');
+      // metrics(renderMinutes)はエピソード専用 — shortでは書かない
+      const sys = JSON.parse(
+        fs.readFileSync(path.join(root, 'ch1', '.channel-system.json'), 'utf8'),
+      ) as { metrics: unknown[] };
+      expect(sys.metrics).toEqual([]);
+      // git commit は shorts/ 配下を対象にする
+      expect(gitCalls.some((c) => c.args.join(' ').includes('shorts/sh001-t'))).toBe(true);
+    });
+
+    it('start: short失敗時は short.json を触らず failed にする', async () => {
+      m.enqueue('ch1', 'sh001-t', { kind: 'short' });
+      m.start();
+      await waitFor(() => spawns.length === 1);
+      writeShortStatus(root, 'ch1', 'sh001-t', { out: 'final', ok: false, reason: 'all_attempts_failed' });
+      await waitFor(() => m.list()[0].status === 'failed');
+      const meta = JSON.parse(
+        fs.readFileSync(path.join(root, 'ch1', 'shorts', 'sh001-t', 'short.json'), 'utf8'),
+      ) as { status: string };
+      expect(meta.status).toBe('studio_checked');
+    });
   });
 });

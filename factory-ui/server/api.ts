@@ -3,17 +3,20 @@ import path from 'node:path';
 import express, { Router, type Request, type Response } from 'express';
 import { safeResolve } from './pathguard';
 import { scanFactory, readChannel } from './scanner';
+import { collectMetrics } from './metrics';
 import type { SessionManager } from './sessions';
 import type { JobManager } from './jobs';
 import type { RenderQueueManager } from './render-queue';
 import type { StudioManager } from './studio';
 import type { YoutubeManager } from './youtube';
+import type { UploadKind } from '../shared/types';
 import { OPERATIONS } from './operations';
-import { approveEpisode, curateLibraryEntry, readBible, writeBible } from './edits';
+import { approveEpisode, approveShortStudioCheck, curateLibraryEntry, readBible, writeBible } from './edits';
 import { sendMedia, listImages, listVoices, MEDIA_CONTENT_TYPES } from './media';
 import { parseBacklog } from './backlog';
 import { listSkills } from './skills';
 import { getClientStatus, saveClientJson, deleteClientJson } from './youtube-client';
+import { readAnalytics, saveManualAnalytics, readThumbTest, saveThumbTest } from './youtube';
 
 const TEXT_EXTS = new Set(['.md', '.json', '.txt']);
 const TEXT_MAX_BYTES = 2 * 1024 * 1024;
@@ -41,6 +44,13 @@ export function createApiRouter(deps: {
   router.get('/factory', async (_req, res) => {
     const channels = await scanFactory(root);
     res.json({ name: path.basename(root), channels });
+  });
+
+  // ---------------------------------------------------------------- metrics
+
+  // ダッシュボードの統計セクション用。読み取り専用・同期集計(collectMetrics)なのでハンドラも同期でよい
+  router.get('/metrics', (_req, res) => {
+    res.json(collectMetrics(root));
   });
 
   // ---------------------------------------------------------------- channels
@@ -253,6 +263,16 @@ export function createApiRouter(deps: {
     res.json(detail);
   });
 
+  // ジョブの過去ログ(WS購読前の分)。log.jsonl の末尾を返す(上限はJobManager側)
+  router.get('/jobs/:id/log', (req, res) => {
+    const lines = jobs.readLog(req.params.id);
+    if (!lines) {
+      res.status(404).json({ error: 'job not found' });
+      return;
+    }
+    res.json({ lines });
+  });
+
   router.post('/jobs', (req, res) => {
     if (!requireJson(req, res)) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -271,6 +291,11 @@ export function createApiRouter(deps: {
       res.status(400).json({ error: 'durationSec must be a number' });
       return;
     }
+    const durationSecMax = body.durationSecMax === undefined ? undefined : Number(body.durationSecMax);
+    if (durationSecMax !== undefined && !Number.isFinite(durationSecMax)) {
+      res.status(400).json({ error: 'durationSecMax must be a number' });
+      return;
+    }
     try {
       // create は不正 operation / dir / model / effort / durationSec を throw する
       const summary = jobs.create({
@@ -281,6 +306,7 @@ export function createApiRouter(deps: {
         model: typeof body.model === 'string' ? body.model : undefined,
         effort: typeof body.effort === 'string' ? body.effort : undefined,
         durationSec,
+        durationSecMax,
         episodeId: typeof body.episodeId === 'string' && body.episodeId !== '' ? body.episodeId : undefined,
       });
       res.status(201).json(summary);
@@ -299,6 +325,19 @@ export function createApiRouter(deps: {
     res.status(204).end();
   });
 
+  router.delete('/jobs/:id', (req, res) => {
+    try {
+      jobs.remove(req.params.id); // unknown/conflict は throw
+      res.status(204).end();
+    } catch (err) {
+      sendRenderQueueError(res, err); // unknown:→404 / conflict: は下で409に写す
+    }
+  });
+
+  router.post('/jobs/clear-finished', (req, res) => {
+    res.json({ cleared: jobs.clearFinished() }); // 冪等: 0件でも200
+  });
+
   router.post('/jobs/:id/resume', (req, res) => {
     if (!jobs.get(req.params.id)) {
       res.status(404).json({ error: 'job not found' });
@@ -311,6 +350,25 @@ export function createApiRouter(deps: {
       const msg = errMessage(err);
       // sessionId欠落は「最初からの再試行」へフォールバックさせたいので409で区別する
       res.status(msg.includes('sessionId') ? 409 : 400).json({ error: msg });
+    }
+  });
+
+  router.post('/jobs/:id/mode', (req, res) => {
+    if (!requireJson(req, res)) return;
+    if (!jobs.get(req.params.id)) {
+      res.status(404).json({ error: 'job not found' });
+      return;
+    }
+    const mode = ((req.body ?? {}) as Record<string, unknown>).mode;
+    if (mode !== 'manual' && mode !== 'semi' && mode !== 'auto') {
+      res.status(400).json({ error: "mode must be 'manual' | 'semi' | 'auto'" });
+      return;
+    }
+    try {
+      // setMode は終了状態(succeeded/failed/cancelled/interrupted)を throw
+      res.json(jobs.setMode(req.params.id, mode));
+    } catch (err) {
+      res.status(409).json({ error: errMessage(err) });
     }
   });
 
@@ -366,10 +424,15 @@ export function createApiRouter(deps: {
       res.status(404).json({ error: 'channel not found' });
       return;
     }
+    const idPattern = /^[A-Za-z0-9._-]+$/;
     const episodeId =
-      typeof body.episodeId === 'string' && /^[A-Za-z0-9._-]+$/.test(body.episodeId) ? body.episodeId : undefined;
+      typeof body.episodeId === 'string' && idPattern.test(body.episodeId) ? body.episodeId : undefined;
+    const shortId =
+      typeof body.shortId === 'string' && idPattern.test(body.shortId) ? body.shortId : undefined;
+    // Root の Composition props は episodeDir 1つで episodes/ と shorts/ の両方を受ける
+    const targetDir = shortId ? `shorts/${shortId}` : episodeId ? `episodes/${episodeId}` : undefined;
     try {
-      const url = await studio.start(body.dir, episodeId);
+      const url = await studio.start(body.dir, targetDir);
       res.json({ url });
     } catch (err) {
       res.status(500).json({ error: errMessage(err) });
@@ -406,13 +469,36 @@ export function createApiRouter(deps: {
       res.status(400).json({ error: 'dir and epId must be strings' });
       return;
     }
+    if (body.kind !== undefined && body.kind !== 'short') {
+      res.status(400).json({ error: "kind must be 'short' when provided" });
+      return;
+    }
     try {
-      // 手動登録は render_ready 以降のみ(承認前のレンダー突入を防ぐ)
-      const item = renderQueue.enqueue(body.dir, body.epId, { requireReady: true });
+      // 手動登録は render_ready(shortはstudio_checked)以降のみ(承認前のレンダー突入を防ぐ)
+      const item = renderQueue.enqueue(body.dir, body.epId, {
+        requireReady: true,
+        kind: body.kind === 'short' ? 'short' : 'episode',
+      });
       res.status(201).json(item);
     } catch (err) {
       sendRenderQueueError(res, err);
     }
+  });
+
+  router.post('/render-queue/clear-finished', (req, res) => {
+    if (!requireJson(req, res)) return;
+    res.json({ cleared: renderQueue.clearFinished() }); // 冪等: 0件でも200
+  });
+
+  router.post('/render-queue/:id/start', (req, res) => {
+    if (!requireJson(req, res)) return;
+    try {
+      renderQueue.startOne(req.params.id); // busy/conflict→409, unknown→404
+    } catch (err) {
+      sendRenderQueueError(res, err);
+      return;
+    }
+    res.status(204).end();
   });
 
   router.post('/render-queue/:id/cancel', (req, res) => {
@@ -439,6 +525,32 @@ export function createApiRouter(deps: {
       await approveEpisode(root, req.params.dir, req.params.episodeId);
     } catch (err) {
       res.status(400).json({ error: errMessage(err) });
+      return;
+    }
+    res.status(204).end();
+  });
+
+  router.post('/channels/:dir/shorts/:shortId/studio-checked', async (req, res) => {
+    if (!requireJson(req, res)) return;
+    const channelDir = await resolveChannelDir(root, req.params.dir);
+    if (!channelDir) {
+      res.status(404).json({ error: 'channel not found' });
+      return;
+    }
+    try {
+      // approveShortStudioCheck の接頭辞契約: invalid→400 / not_found→404 / not_ready→409
+      await approveShortStudioCheck(root, req.params.dir, req.params.shortId);
+    } catch (err) {
+      const msg = errMessage(err);
+      if (msg.startsWith('not_found:')) {
+        res.status(404).json({ error: msg });
+        return;
+      }
+      if (msg.startsWith('not_ready:')) {
+        res.status(409).json({ error: msg });
+        return;
+      }
+      res.status(400).json({ error: msg });
       return;
     }
     res.status(204).end();
@@ -493,6 +605,114 @@ export function createApiRouter(deps: {
     res.status(204).end();
   });
 
+  // -- アナリティクス還流・thumb-test記録(純ファイル操作。youtube未配線でも動く。Task 7) --
+
+  router.get('/channels/:dir/episodes/:epId/analytics', async (req, res) => {
+    const channelDir = await resolveChannelDir(root, req.params.dir);
+    if (!channelDir) {
+      res.status(404).json({ error: 'channel not found' });
+      return;
+    }
+    try {
+      const data = await readAnalytics(root, req.params.dir, req.params.epId);
+      if (!data) {
+        res.status(404).json({ error: 'analytics not found' });
+        return;
+      }
+      res.json(data);
+    } catch (err) {
+      res.status(400).json({ error: errMessage(err) });
+    }
+  });
+
+  router.put('/channels/:dir/episodes/:epId/analytics/manual', async (req, res) => {
+    if (!requireJson(req, res)) return;
+    const channelDir = await resolveChannelDir(root, req.params.dir);
+    if (!channelDir) {
+      res.status(404).json({ error: 'channel not found' });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const patch: { impressions?: number; impressionsCtr?: number } = {};
+    if (body.impressions !== undefined) {
+      if (typeof body.impressions !== 'number') {
+        res.status(400).json({ error: 'impressions must be a number' });
+        return;
+      }
+      patch.impressions = body.impressions;
+    }
+    if (body.impressionsCtr !== undefined) {
+      if (typeof body.impressionsCtr !== 'number') {
+        res.status(400).json({ error: 'impressionsCtr must be a number' });
+        return;
+      }
+      patch.impressionsCtr = body.impressionsCtr;
+    }
+    try {
+      // saveManualAnalytics の接頭辞契約: not_found(analytics.json未取得)→404 / invalid(スキーマ違反等)→400
+      await saveManualAnalytics(root, req.params.dir, req.params.epId, patch);
+    } catch (err) {
+      sendYoutubeError(res, err);
+      return;
+    }
+    res.status(204).end();
+  });
+
+  router.get('/channels/:dir/episodes/:epId/thumb-test', async (req, res) => {
+    const channelDir = await resolveChannelDir(root, req.params.dir);
+    if (!channelDir) {
+      res.status(404).json({ error: 'channel not found' });
+      return;
+    }
+    try {
+      const data = await readThumbTest(root, req.params.dir, req.params.epId);
+      if (!data) {
+        res.status(404).json({ error: 'thumb-test not found' });
+        return;
+      }
+      res.json(data);
+    } catch (err) {
+      res.status(400).json({ error: errMessage(err) });
+    }
+  });
+
+  router.put('/channels/:dir/episodes/:epId/thumb-test', async (req, res) => {
+    if (!requireJson(req, res)) return;
+    const channelDir = await resolveChannelDir(root, req.params.dir);
+    if (!channelDir) {
+      res.status(404).json({ error: 'channel not found' });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.winner !== 'string') {
+      res.status(400).json({ error: 'winner must be a string' });
+      return;
+    }
+    if (
+      body.shares !== undefined &&
+      (typeof body.shares !== 'object' || body.shares === null || Array.isArray(body.shares))
+    ) {
+      res.status(400).json({ error: 'shares must be an object' });
+      return;
+    }
+    if (body.note !== undefined && typeof body.note !== 'string') {
+      res.status(400).json({ error: 'note must be a string' });
+      return;
+    }
+    try {
+      // saveThumbTest の接頭辞契約: invalid(winner/shares不正・スキーマ違反)→400
+      await saveThumbTest(root, req.params.dir, req.params.epId, {
+        winner: body.winner,
+        shares: body.shares as Record<string, number> | undefined,
+        note: body.note as string | undefined,
+      });
+    } catch (err) {
+      sendYoutubeError(res, err);
+      return;
+    }
+    res.status(204).end();
+  });
+
   // ---------------------------------------------------------------- youtube
 
   // channelクエリを検証して返す(不在は404を送ってnull)
@@ -507,6 +727,13 @@ export function createApiRouter(deps: {
 
   if (youtube) {
     const yt = youtube;
+
+    // kind は 'episode'(既定) | 'short'。それ以外は400にする
+    const parseKind = (v: unknown): UploadKind | null => {
+      if (v === undefined || v === 'episode') return 'episode';
+      if (v === 'short') return 'short';
+      return null;
+    };
 
     // クライアントJSON(factory-ui/youtube-client.json)のUI設置。
     // GETは設定タブの状態表示用 — client_secret は絶対に返さない
@@ -582,8 +809,13 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: 'ep query is required' });
         return;
       }
+      const kind = parseKind(req.query.kind);
+      if (kind === null) {
+        res.status(400).json({ error: "kind must be 'episode' or 'short'" });
+        return;
+      }
       try {
-        res.json({ files: await yt.listVideoFiles(channel, ep) });
+        res.json({ files: await yt.listVideoFiles(channel, ep, kind) });
       } catch (err) {
         sendYoutubeError(res, err);
       }
@@ -598,11 +830,17 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: 'epId and videoFile must be strings' });
         return;
       }
+      const kind = parseKind(body.kind);
+      if (kind === null) {
+        res.status(400).json({ error: "kind must be 'episode' or 'short'" });
+        return;
+      }
       try {
         const job = await yt.startUpload({
           dir: channel,
           epId: body.epId,
           videoFile: body.videoFile,
+          kind,
           force: body.force === true,
         });
         res.status(201).json(job);
@@ -613,6 +851,23 @@ export function createApiRouter(deps: {
 
     router.get('/youtube/uploads', (_req, res) => {
       res.json({ jobs: yt.list() });
+    });
+
+    router.post('/youtube/analytics/fetch', async (req, res) => {
+      if (!requireJson(req, res)) return;
+      const channel = await resolveYtChannel(req, res);
+      if (channel === null) return;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof body.epId !== 'string' || body.epId === '') {
+        res.status(400).json({ error: 'epId must be a string' });
+        return;
+      }
+      try {
+        const data = await yt.fetchAnalytics(channel, body.epId);
+        res.json(data);
+      } catch (err) {
+        sendYoutubeError(res, err);
+      }
     });
   }
 
@@ -652,8 +907,8 @@ function errMessage(err: unknown): string {
 }
 
 /**
- * RenderQueueManager の throw メッセージ(先頭トークン)を HTTP コードへ写す。
- * duplicate/not_ready/busy/empty → 409、unknown → 404、その他(invalid等)→ 400。
+ * RenderQueueManager / JobManager の throw メッセージ(先頭トークン)を HTTP コードへ写す。
+ * duplicate/not_ready/busy/empty/conflict → 409、unknown → 404、その他(invalid等)→ 400。
  */
 function sendRenderQueueError(res: Response, err: unknown): void {
   const msg = errMessage(err);
@@ -661,7 +916,7 @@ function sendRenderQueueError(res: Response, err: unknown): void {
     res.status(404).json({ error: msg });
     return;
   }
-  if (/^(duplicate|not_ready|busy|empty):/.test(msg)) {
+  if (/^(duplicate|not_ready|busy|empty|conflict):/.test(msg)) {
     res.status(409).json({ error: msg });
     return;
   }
@@ -670,7 +925,8 @@ function sendRenderQueueError(res: Response, err: unknown): void {
 
 /**
  * YoutubeManager の throw メッセージ(先頭トークン)を HTTP コードへ写す。
- * duplicate → 409、not_found → 404、no_auth → 認可の問題(auth未設置は503/未連携は401)、他 → 400。
+ * duplicate → 409、not_found → 404、no_auth → 認可の問題(auth未設置は503/未連携は401)、
+ * needs_reauth(スコープ不足・トークン失効等の再連携要求)→ 401、他 → 400。
  */
 function sendYoutubeError(res: Response, err: unknown): void {
   const msg = errMessage(err);
@@ -680,6 +936,10 @@ function sendYoutubeError(res: Response, err: unknown): void {
   }
   if (msg.startsWith('not_found:')) {
     res.status(404).json({ error: msg });
+    return;
+  }
+  if (msg.startsWith('needs_reauth:')) {
+    res.status(401).json({ error: msg });
     return;
   }
   if (msg.startsWith('no_auth:')) {

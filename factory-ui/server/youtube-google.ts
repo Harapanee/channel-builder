@@ -10,6 +10,7 @@ type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly', // 連携先チャンネル名の表示用
+  'https://www.googleapis.com/auth/yt-analytics.readonly', // アナリティクス還流(Task 7)。既存トークンはneeds_reauthになる
 ];
 
 type ClientSecret = { client_id: string; client_secret: string };
@@ -82,6 +83,10 @@ export function loadYoutubeApi(root: string, redirectUri: string): YoutubeApi | 
             status: {
               privacyStatus: params.meta.privacyStatus,
               selfDeclaredMadeForKids: false,
+              // YouTubeの改変コンテンツ開示。全チャンネル方針として常に「いいえ」を送る
+              // (metadata.jsonのaiDisclosureは互換のため受理するが送信には使わない)
+              containsSyntheticMedia: false,
+              ...(params.meta.publishAt ? { publishAt: params.meta.publishAt } : {}),
             },
           },
           media: { body: fs.createReadStream(params.videoPath) },
@@ -102,6 +107,44 @@ export function loadYoutubeApi(root: string, redirectUri: string): YoutubeApi | 
       const auth = makeClient(token, onToken);
       const yt = google.youtube({ version: 'v3', auth });
       await yt.thumbnails.set({ videoId, media: { body: fs.createReadStream(thumbnailPath) } });
+    },
+
+    async fetchAnalytics({ token, onToken, videoId }) {
+      const auth = makeClient(token, onToken);
+      const yta = google.youtubeAnalytics({ version: 'v2', auth });
+      const startDate = '2020-01-01';
+      const endDate = new Date().toISOString().slice(0, 10);
+      const filters = `video==${videoId}`;
+
+      const summaryRes = await yta.reports.query({
+        ids: 'channel==MINE',
+        startDate,
+        endDate,
+        metrics:
+          'views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,likes,comments',
+        filters,
+      });
+      const headers = summaryRes.data.columnHeaders ?? [];
+      const row = summaryRes.data.rows?.[0] ?? [];
+      const metrics: Record<string, number> = {};
+      headers.forEach((h, i) => {
+        if (h.name) metrics[h.name] = Number(row[i] ?? 0);
+      });
+
+      const retentionRes = await yta.reports.query({
+        ids: 'channel==MINE',
+        startDate,
+        endDate,
+        dimensions: 'elapsedVideoTimeRatio',
+        metrics: 'audienceWatchRatio',
+        filters,
+      });
+      const retentionCurve = (retentionRes.data.rows ?? []).map((r) => ({
+        elapsedRatio: Number(r[0]),
+        watchRatio: Number(r[1]),
+      }));
+
+      return { metrics, retentionCurve };
     },
   };
 }

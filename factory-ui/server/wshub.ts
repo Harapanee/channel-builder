@@ -8,6 +8,7 @@ import type { RenderQueueManager } from './render-queue';
 import type { YoutubeManager } from './youtube';
 import type { JobDetail, GateRequest, RateLimitInfo, RenderQueueItem, YoutubeUploadJob } from '../shared/types';
 import { isLocalRequest } from './guards';
+import { isAuthorized } from './auth';
 
 /**
  * `/ws` にWebSocketハブを取り付ける。単一接続でメッセージを多重化する。
@@ -22,6 +23,7 @@ export function attachWsHub(
   jobs: JobManager,
   renderQueue: RenderQueueManager,
   youtube?: YoutubeManager,
+  authToken?: string,
 ): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
   wss.on('error', (err) => console.error('wss error:', err.message));
@@ -30,7 +32,11 @@ export function attachWsHub(
   server.on('upgrade', (req, socket, head) => {
     const pathname = new URL(req.url ?? '', 'http://127.0.0.1').pathname;
     // WebSocketはCORS対象外。第三者ページからのws接続をOrigin/Hostで弾く
-    if (pathname !== '/ws' || !isLocalRequest(req.headers)) {
+    if (
+      pathname !== '/ws' ||
+      !isLocalRequest(req.headers) ||
+      (authToken !== undefined && !isAuthorized(authToken, { headers: {}, url: req.url }))
+    ) {
       socket.destroy();
       return;
     }
@@ -67,6 +73,9 @@ export function attachWsHub(
   // ジョブ層のイベントを配信
   jobs.on('update', (job: JobDetail) => {
     broadcast({ type: 'job-update', job });
+  });
+  jobs.on('removed', (jobId: string) => {
+    broadcast({ type: 'job-removed', jobId });
   });
   jobs.on('log', (jobId: string, line: string) => {
     broadcast({ type: 'job-log', jobId, line });

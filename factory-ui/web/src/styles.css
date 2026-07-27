@@ -5,7 +5,7 @@
   --surface-2: color-mix(in srgb, #f7f8fa 60%, #e2e8f0 40%);
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: color-mix(in srgb, #475569 65%, #ffffff 35%);
+  --text-muted: color-mix(in srgb, #475569 85%, #ffffff 15%);
   --border: #e2e8f0;
   --accent: #4f46e5;
   --on-accent: #ffffff;
@@ -64,6 +64,14 @@ h2 {
 h3 {
   font-size: 20px;
   font-weight: 600;
+}
+/* 小見出し(セクション内グルーピング。scale 13 / weight 600。JobsTabのステータス群など) */
+h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  margin: 0;
 }
 
 a {
@@ -181,6 +189,11 @@ button {
   color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
+.stepper-node.queued .stepper-circle {
+  border-color: var(--accent);
+  border-style: dashed;
+  color: var(--accent);
+}
 .stepper-connector {
   height: 2px;
   flex: 1;
@@ -258,6 +271,12 @@ button {
   background: transparent;
   color: var(--text-secondary);
 }
+/* メタ行内などに置く小型ボタン(ジョブ詳細のモード切替) */
+.btn-sm {
+  min-height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -315,6 +334,28 @@ button {
 .app {
   display: flex;
   height: 100%;
+}
+/* WS切断バナー: 接続断の間だけ画面最上部に出す(古い表示を最新と誤認させない) */
+.ws-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--status-warn) 14%, var(--surface));
+  color: var(--status-warn);
+  border-bottom: 1px solid color-mix(in srgb, var(--status-warn) 40%, var(--border));
+  font-weight: 500;
+}
+@media (max-width: 900px) {
+  .sidebar {
+    width: 200px;
+  }
 }
 .sidebar {
   width: 256px;
@@ -442,8 +483,29 @@ button {
   color: var(--text-secondary);
   max-height: 320px;
   overflow-y: auto;
+}
+.job-log-row {
+  display: flex;
+  gap: 8px;
+}
+.job-log-line {
+  min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* 行頭の時刻。桁を固定して本文の左端を揃える(時刻が無い行は空のまま桁だけ空ける) */
+.job-log-time,
+.job-feed-time {
+  flex: none;
+  width: 8ch;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  user-select: none;
+}
+.job-feed-time {
+  font-size: 12px;
+  line-height: inherit;
 }
 .job-feed {
   background: color-mix(in srgb, var(--bg) 70%, var(--surface));
@@ -482,12 +544,12 @@ button {
   word-break: break-word;
 }
 .job-feed-text .job-feed-detail {
-  color: var(--text);
+  color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
 }
 .job-feed-subagent .job-feed-label {
-  color: var(--text);
+  color: var(--text-primary);
 }
 .job-feed-error .job-feed-label,
 .job-feed-error .job-feed-detail {
@@ -585,6 +647,29 @@ button {
   border-radius: var(--radius-s);
   display: block;
 }
+/* 確認ダイアログ(ネイティブconfirm()の置き換え) */
+.confirm-dialog {
+  width: min(90vw, 440px);
+  padding: 20px;
+  gap: 14px;
+}
+.confirm-dialog h3 {
+  font-size: 16px;
+}
+.confirm-dialog p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn-danger-solid {
+  background: var(--status-err);
+  color: var(--on-accent);
+  border: 1px solid var(--status-err);
+}
 
 /* ---- 折りたたみ(台本など長文セクション)---- */
 .collapse > summary {
@@ -676,6 +761,14 @@ button {
   flex-direction: column;
 }
 
+/* ---- 一覧行の状態バッジ用固定幅スロット(行ごとの表示有無でバッジ位置が揺れないように) ---- */
+.status-slot {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 104px;
+  flex-shrink: 0;
+}
+
 /* ---- 空状態 ---- */
 .empty {
   color: var(--text-secondary);
@@ -688,4 +781,55 @@ button {
   * {
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---- ギャラリー拡張(タイル=拡大ボタン化・キャプション選択・検索・セクション見出し) ---- */
+.gallery-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.gallery-item .tile {
+  width: 100%;
+}
+.tile-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  min-width: 0;
+}
+.tile-caption .tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gallery-search {
+  min-height: 32px;
+  width: 260px;
+  max-width: 100%;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+}
+.gallery-search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.gallery-section-title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 確認ダイアログ本文の改行を保持(アップロード確認などの複数行 body 用) */
+.confirm-dialog p {
+  white-space: pre-line;
 }

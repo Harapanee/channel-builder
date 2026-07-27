@@ -57,6 +57,26 @@ describe('scanner', () => {
       approvedEpisodes: [],
     });
 
+    // --- chan-a のショート2件 + フォーマット ---
+    const sh1 = path.join(root, 'chan-a', 'shorts', 'sh001-test');
+    await fs.mkdir(path.join(sh1, 'out'), { recursive: true });
+    await fs.writeFile(
+      path.join(sh1, 'short.json'),
+      JSON.stringify({ shortId: 'sh001-test', formatId: 'rank3', sourceEpisodeId: 'ep001', title: 'テストショート', status: 'implemented' }),
+    );
+    await fs.writeFile(path.join(sh1, 'script.md'), '# short script');
+    await fs.mkdir(path.join(sh1, 'review'), { recursive: true });
+    await fs.writeFile(path.join(sh1, 'review', 'qa-report.json'), '{}');
+
+    // sh002-nometa: short.json 不在(フラグのみで含める)
+    await fs.mkdir(path.join(root, 'chan-a', 'shorts', 'sh002-nometa'), { recursive: true });
+
+    const fmts = path.join(root, 'chan-a', 'channel', 'short-formats');
+    await fs.mkdir(fmts, { recursive: true });
+    await fs.writeFile(path.join(fmts, 'rank3.json'), JSON.stringify({ formatId: 'rank3', name: 'TOP3', targetDurationSec: 55 }));
+    await fs.writeFile(path.join(fmts, 'broken.json'), '{ not valid json ');
+    await fs.writeFile(path.join(fmts, 'readme.md'), '# 教義(jsonではないので無視される)');
+
     // --- 壊れたJSONのチャンネル ---
     await fs.mkdir(path.join(root, 'chan-broken'), { recursive: true });
     await fs.writeFile(path.join(root, 'chan-broken', '.channel-system.json'), '{ not valid json ');
@@ -157,5 +177,62 @@ describe('scanner', () => {
     } finally {
       await fs.rm(evil, { recursive: true, force: true });
     }
+  });
+
+  it('shorts を short.json から構築する(不在フォルダはフラグのみで含める)', async () => {
+    const ch = await readChannel(root, 'chan-a');
+    expect(ch!.shorts.map((s) => s.shortId)).toEqual(['sh001-test', 'sh002-nometa']);
+    const sh = ch!.shorts[0]!;
+    expect(sh.title).toBe('テストショート');
+    expect(sh.formatId).toBe('rank3');
+    expect(sh.sourceEpisodeId).toBe('ep001');
+    expect(sh.status).toBe('implemented');
+    expect(sh.hasScript).toBe(true);
+    expect(sh.hasFinal).toBe(false);
+    expect(sh.reviewFiles).toEqual(['qa-report.json']);
+    expect(sh.stages.filter((s) => s.state === 'done')).toHaveLength(4);
+    const nometa = ch!.shorts[1]!;
+    expect(nometa.status).toBeUndefined();
+    expect(nometa.hasScript).toBe(false);
+  });
+
+  it('shorts: hasMetadata は publish/metadata.json の有無を反映し、公開準備工程の完了に使われる', async () => {
+    // sh003-published: Studio確認済み + publish/metadata.json あり → 公開準備まで完了(6工程)
+    const sh3 = path.join(root, 'chan-a', 'shorts', 'sh003-published');
+    await fs.mkdir(path.join(sh3, 'publish'), { recursive: true });
+    await fs.writeFile(
+      path.join(sh3, 'short.json'),
+      JSON.stringify({ shortId: 'sh003-published', status: 'studio_checked' }),
+    );
+    await fs.writeFile(path.join(sh3, 'publish', 'metadata.json'), '{}');
+
+    const ch = await readChannel(root, 'chan-a');
+
+    // sh001-test は publish/metadata.json を持たない(既存フィクスチャ)
+    const sh1 = ch!.shorts.find((s) => s.shortId === 'sh001-test')!;
+    expect(sh1.hasMetadata).toBe(false);
+
+    const sh3res = ch!.shorts.find((s) => s.shortId === 'sh003-published')!;
+    expect(sh3res.hasMetadata).toBe(true);
+    expect(sh3res.stages.filter((s) => s.state === 'done')).toHaveLength(6);
+    expect(sh3res.stages.find((s) => s.label === '公開準備')?.state).toBe('done');
+  });
+
+  it('short-formats はパース可能な .json のみを返す', async () => {
+    const ch = await readChannel(root, 'chan-a');
+    expect(ch!.shortFormats).toEqual([{ formatId: 'rank3', name: 'TOP3', targetDurationSec: 55 }]);
+  });
+
+  it('shorts/ が無いチャンネルは空配列', async () => {
+    const ch = await readChannel(root, '動物転生');
+    expect(ch!.shorts).toEqual([]);
+    expect(ch!.shortFormats).toEqual([]);
+  });
+
+  it('.channel-system.jsonが読めない非ENOENTエラー(EISDIR)はスキップせずrethrowする(誤404防止)', async () => {
+    // ファイルであるべき .channel-system.json を実体ディレクトリにして、
+    // fs.readFile が ENOENT ではない実エラー(EISDIR)を投げる状況を作る(EACCES等の一過性エラーの代役)。
+    await fs.mkdir(path.join(root, 'chan-poison', '.channel-system.json'), { recursive: true });
+    await expect(scanFactory(root)).rejects.toMatchObject({ code: 'EISDIR' });
   });
 });

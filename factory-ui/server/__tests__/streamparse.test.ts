@@ -216,6 +216,32 @@ describe('extractGate — text から最初の <gate>...</gate> を JSON.parse',
     const g = { gateId: 'voice-pick', question: 'q', options: [], context: 'c' };
     expect(extractGate(`<gate>${JSON.stringify(g)}</gate>`)?.kind).toBeUndefined();
   });
+
+  it('kind欠落でも options が approve+revise ペアなら render-check を補完する(契約上このペアはrender-check専用)', () => {
+    const g = {
+      gateId: 'sh005-penguin-gacha-studio-check',
+      question: 'q',
+      options: [
+        { id: 'approve', label: '承認して公開準備へ進む' },
+        { id: 'revise', label: '修正を依頼する' },
+      ],
+      context: 'c',
+    };
+    expect(extractGate(`<gate>${JSON.stringify(g)}</gate>`)?.kind).toBe('render-check');
+  });
+
+  it('approve だけ(revise なし)の options には kind を付けない', () => {
+    const g = {
+      gateId: 'style-pick',
+      question: 'q',
+      options: [
+        { id: 'approve', label: 'OK' },
+        { id: 'retry', label: 'やり直し' },
+      ],
+      context: 'c',
+    };
+    expect(extractGate(`<gate>${JSON.stringify(g)}</gate>`)?.kind).toBeUndefined();
+  });
 });
 
 describe('stripMarkers', () => {

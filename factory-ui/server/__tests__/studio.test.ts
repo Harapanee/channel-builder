@@ -25,6 +25,7 @@ function manager(overrides?: {
   probe?: () => Promise<boolean>;
   spawnFn?: StudioSpawn;
   killPort?: () => Promise<void>;
+  engineOf?: (dir: string) => string;
 }) {
   const procs: ReturnType<typeof fakeProc>[] = [];
   const spawnFn: StudioSpawn =
@@ -40,6 +41,7 @@ function manager(overrides?: {
     probeIntervalMs: 1,
     probeTimeoutMs: 100,
     killPort: overrides?.killPort ?? (async () => {}),
+    engineOf: overrides?.engineOf,
   });
   return { m, procs };
 }
@@ -48,9 +50,15 @@ describe('StudioManager', () => {
   it('start で spawn し、疎通確認後に URL を返して ready になる', async () => {
     const { m, procs } = manager();
     const url = await m.start('ch1');
-    expect(url).toBe('http://127.0.0.1:4710');
+    expect(url).toBe('http://127.0.0.1:4710/Episode');
     expect(procs).toHaveLength(1);
-    expect(m.status()).toEqual({ running: true, dir: 'ch1', url, status: 'ready' });
+    expect(m.status()).toEqual({ running: true, dir: 'ch1', url: 'http://127.0.0.1:4710', status: 'ready' });
+  });
+
+  it('shorts/ 対象では Short コンポジションのURLを返す', async () => {
+    const { m } = manager();
+    const url = await m.start('ch1', 'shorts/sh001-foo');
+    expect(url).toBe('http://127.0.0.1:4710/Short');
   });
 
   it('同一dirで再startしても新プロセスを起動しない(冪等)', async () => {
@@ -100,11 +108,11 @@ describe('StudioManager', () => {
     expect(m.status()).toEqual({ running: false });
   });
 
-  it('spawnFn には チャンネル絶対パスと episodeId が渡る', async () => {
-    const spawnFn = vi.fn((_cwd: string, _episodeId?: string) => fakeProc());
+  it('spawnFn には チャンネル絶対パスと対象ディレクトリが渡る', async () => {
+    const spawnFn = vi.fn((_cwd: string, _targetDir?: string) => fakeProc());
     const { m } = manager({ spawnFn });
-    await m.start('ch1', 'ep010-cleopatra');
-    expect(spawnFn).toHaveBeenCalledWith('/factory/ch1', 'ep010-cleopatra');
+    await m.start('ch1', 'episodes/ep010-cleopatra');
+    expect(spawnFn).toHaveBeenCalledWith('/factory/ch1', 'episodes/ep010-cleopatra', 'remotion');
   });
 
   it('管理外プロセスが4710を占有していたら排除してから起動する', async () => {
@@ -127,6 +135,25 @@ describe('StudioManager', () => {
     expect(killCalled).toBe(1);
     expect(m.status()).toMatchObject({ running: true, status: 'ready' });
     expect(procs).toHaveLength(0); // 独自spawnFnを使ったのでmanager既定のprocsは空
+  });
+
+  it('hyperframesチャンネルではコンポジションパスなしのルートURLを返す', async () => {
+    const { m } = manager({ engineOf: () => 'hyperframes' });
+    const url = await m.start('war-memory-hf', 'episodes/ep003-macarthur');
+    expect(url).toBe('http://127.0.0.1:4710');
+  });
+
+  it('spawnFn にはエンジン種別が渡る', async () => {
+    const spawnFn = vi.fn((_cwd: string, _targetDir?: string, _engine?: string) => fakeProc());
+    const { m } = manager({ spawnFn, engineOf: () => 'hyperframes' });
+    await m.start('war-memory-hf', 'episodes/ep003-macarthur');
+    expect(spawnFn).toHaveBeenCalledWith('/factory/war-memory-hf', 'episodes/ep003-macarthur', 'hyperframes');
+  });
+
+  it('engineOf未指定(既定remotion相当)では従来どおりEpisode URLを返す', async () => {
+    const { m } = manager({ engineOf: () => 'remotion' });
+    const url = await m.start('ch1', 'episodes/ep001-x');
+    expect(url).toBe('http://127.0.0.1:4710/Episode');
   });
 
   it('同一dirでもエピソードが違えば起動し直す', async () => {

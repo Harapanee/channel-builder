@@ -39,4 +39,13 @@ describe('validateMetadata', () => {
   it('descriptionが5000文字超はthrow', () => {
     expect(() => validateMetadata({ ...base, description: 'x'.repeat(5001) })).toThrow(/^invalid: /);
   });
+
+  it('aiDisclosure/productionNotes/publishAt を通し、publishAt+非privateを拒否する', () => {
+    const base = { title: 't', description: 'd', tags: [], categoryId: '27' };
+    expect(validateMetadata({ ...base, aiDisclosure: true, productionNotes: 'x', publishAt: '2026-07-20T09:00:00+09:00' }))
+      .toMatchObject({ aiDisclosure: true, publishAt: '2026-07-20T09:00:00+09:00' });
+    expect(() => validateMetadata({ ...base, publishAt: 'not-a-date' })).toThrow(/publishAt/);
+    expect(() => validateMetadata({ ...base, publishAt: '2026-07-20T09:00:00Z', privacyStatus: 'public' })).toThrow(/publishAt/);
+    expect(() => validateMetadata({ ...base, aiDisclosure: 'yes' })).toThrow(/aiDisclosure/);
+  });
 });

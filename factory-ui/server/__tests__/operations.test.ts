@@ -17,6 +17,33 @@ describe('OPERATIONS 登録', () => {
     expect(vc.buildCommand('')).toBe('/video-create');
     expect(vc.buildCommand('織田信長')).toBe('/video-create 織田信長');
   });
+
+  it('short-create: buildCommand は /short-create <arg>、工程は8つ', () => {
+    const op = OPERATIONS['short-create']!;
+    expect(op.buildCommand('ep008-caesar rank3-reasons')).toBe('/short-create ep008-caesar rank3-reasons');
+    expect(op.stages).toEqual([
+      '台本',
+      '承認',
+      '音声',
+      '実装',
+      'Studio確認',
+      '公開準備',
+      'キュー投入',
+      'レンダー',
+    ]);
+    expect(op.needsArg).toBe(true);
+  });
+
+  it('channel-analyze はルートレベル操作として登録されている', () => {
+    const op = OPERATIONS['channel-analyze']!;
+    expect(op.rootLevel).toBe(true);
+    expect(op.label).toBe('チャンネルを分析');
+    expect(op.stages).toEqual(['収集', '分析', 'スタイル定義']);
+    expect(op.needsArg).toBe(true);
+    expect(op.buildCommand('https://www.youtube.com/@example')).toBe(
+      '/channel-analyze https://www.youtube.com/@example',
+    );
+  });
 });
 
 describe('buildJobPrompt', () => {
@@ -45,6 +72,13 @@ describe('buildJobPrompt', () => {
     const p = buildJobPrompt(vc, 'x', { durationSec: 180 });
     expect(p).toContain('targetDurationSec');
     expect(p).toContain('180');
+  });
+
+  it('durationSec + durationSecMax は範囲指示になる', () => {
+    const p = buildJobPrompt(vc, 'x', { durationSec: 480, durationSecMax: 900 });
+    expect(p).toContain('480〜900秒の範囲');
+    expect(p).toContain('targetDurationSec');
+    expect(p).not.toContain('約480秒');
   });
 
   it('episodeId は個別フィードバック指示になる', () => {

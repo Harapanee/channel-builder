@@ -1,20 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageEntry } from '../../../shared/types';
 import type { FactoryWS } from '../ws';
 import { curateLibrary, getFileText, getImages, mediaUrl, sendInput, type CurateDecision } from '../api';
+import { useConfirm } from './ConfirmDialog';
 
 type LibraryAsset = { assetId: string; file: string; approvedBy: string };
 
 /**
  * 素材ギャラリー: assets/、episodes/ 配下各エピソード、scratchpad_gen/ の画像を mtime 降順で並べる。
  *
- * - タイル(.tile)クリックで選択トグル(.tile.selected)。タイル右上の「拡大」ボタンは
- *   選択トグルとは独立していて(stopPropagation)、モーダルで大きめのプレビューを開く。
+ * - タイル(.tile)は <button> で、クリックすると拡大モーダルを開く。
+ *   選択トグルはタイル下のキャプション(チェックボックス+ファイル名)が担う
+ *   (拡大と選択を1つのタイルに同居させつつ、button のネストを避けるための分担)。
+ * - 検索ボックスでファイル名の部分一致フィルタができる。
+ * - library.json 登録済み素材と未登録(サムネ・中間生成物等)はセクション見出しで分ける。
  * - 1件以上選択すると下部に編集可能なテキストエリアが現れる。初期値は選択中ファイル名から
  *   自動生成し、選択が変わるたびに追従する。ただしユーザーが一度手で編集したら、
  *   選択を全解除するまでは自動追従を止める(textEdited で追跡)。
- * - fs-update(kind:'images', dir が一致)を受けたら一覧を再取得する
- *   (生成直後のバリアントが mtime 降順で先頭に現れる)。
+ * - 画像のライブ更新はしない(watcherのfd枯渇対策で画像は監視対象外)。タブ表示時と
+ *   WS再接続時にAPIで再取得する。
+ * - ws-status(connected:true = 再接続)を受けたら切断中の取りこぼしを埋めるため再取得する。
  *
  * 素材キュレーション(直接編集): assets/library.json を getFileText 経由で読み、
  * ImageEntry.path(チャンネルdir相対。例 "assets/characters/x.png")から
@@ -32,9 +37,11 @@ export function GalleryTab({
   activeSessionId: string | null;
 }) {
   const [images, setImages] = useState<ImageEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [text, setText] = useState('');
   const [textEdited, setTextEdited] = useState(false);
   const [sending, setSending] = useState(false);
@@ -46,6 +53,12 @@ export function GalleryTab({
   const [curateError, setCurateError] = useState<string | null>(null);
   const [curateMessage, setCurateMessage] = useState<string | null>(null);
 
+  const confirm = useConfirm();
+  // モーダルのフォーカス管理: 開いたら閉じるボタンへ、閉じたら開いた元のタイルへ戻す
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+
   const reload = useCallback(async () => {
     try {
       const res = await getImages(dir);
@@ -53,6 +66,8 @@ export function GalleryTab({
       setLoadError(null);
     } catch (e) {
       setLoadError(`素材一覧の取得に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
     }
   }, [dir]);
 
@@ -88,9 +103,11 @@ export function GalleryTab({
 
   useEffect(() => {
     setImages([]);
+    setLoading(true);
     setLoadError(null);
     setSelected(new Set());
     setPreviewPath(null);
+    setQuery('');
     setText('');
     setTextEdited(false);
     setSendError(null);
@@ -104,20 +121,57 @@ export function GalleryTab({
 
   useEffect(() => {
     return ws.onMessage((msg) => {
-      if (msg.type === 'fs-update' && msg.dir === dir && msg.kind === 'images') {
+      if (msg.type === 'ws-status' && msg.connected) {
+        // 再接続: 切断中の fs-update を取りこぼしている可能性があるため再取得
         reload();
+        reloadLibrary();
       }
     });
-  }, [ws, dir, reload]);
+  }, [ws, dir, reload, reloadLibrary]);
+
+  function openPreview(path: string) {
+    restoreFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setCurateError(null);
+    setCurateMessage(null);
+    setPreviewPath(path);
+  }
+
+  const closePreview = useCallback(() => {
+    setPreviewPath(null);
+    restoreFocusRef.current?.focus();
+    restoreFocusRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!previewPath) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPreviewPath(null);
+      if (e.key === 'Escape') closePreview();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+  }, [previewPath, closePreview]);
+
+  // モーダルを開いたら閉じるボタンへフォーカス(ConfirmDialog と同じ流儀)
+  useEffect(() => {
+    if (previewPath) closeButtonRef.current?.focus();
   }, [previewPath]);
+
+  function onModalKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== 'Tab') return;
+    // 簡易フォーカストラップ: モーダル内のボタン間で循環させる(ConfirmDialog と同じ実装)
+    const focusables = modalRef.current?.querySelectorAll<HTMLElement>('button');
+    if (!focusables || focusables.length === 0) return;
+    const first = focusables[0]!;
+    const last = focusables[focusables.length - 1]!;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 
   const selectedImages = useMemo(
     () => images.filter((img) => selected.has(img.path)),
@@ -165,17 +219,23 @@ export function GalleryTab({
     }
   }
 
-  function libraryAssetFor(path: string): LibraryAsset | null {
-    if (!path.startsWith('assets/')) return null;
-    return libraryByFile.get(path.slice('assets/'.length)) ?? null;
-  }
+  const libraryAssetFor = useCallback(
+    (path: string): LibraryAsset | null => {
+      if (!path.startsWith('assets/')) return null;
+      return libraryByFile.get(path.slice('assets/'.length)) ?? null;
+    },
+    [libraryByFile],
+  );
 
   async function curate(assetId: string, decision: CurateDecision) {
     if (curating) return;
     if (decision === 'reject') {
-      const ok = window.confirm(
-        `素材 ${assetId} を library.json から削除します(元の画像ファイル自体は残ります)。よろしいですか?`,
-      );
+      const ok = await confirm({
+        title: `素材 ${assetId} を却下しますか?`,
+        body: 'library.json から削除します(元の画像ファイル自体は残ります)。',
+        confirmLabel: '却下する',
+        danger: true,
+      });
       if (!ok) return;
     }
     setCurating(true);
@@ -186,7 +246,7 @@ export function GalleryTab({
       setCurateMessage(decision === 'approve' ? '採用しました' : '却下しました');
       await reloadLibrary();
       if (decision === 'reject') {
-        setPreviewPath(null);
+        closePreview();
       }
     } catch (e) {
       setCurateError(`キュレーションに失敗しました: ${e instanceof Error ? e.message : String(e)}`);
@@ -195,53 +255,93 @@ export function GalleryTab({
     }
   }
 
+  // 検索(ファイル名の部分一致・大文字小文字無視)→ 登録済み/未登録に分ける
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q === '') return images;
+    return images.filter((img) => basename(img.path).toLowerCase().includes(q));
+  }, [images, query]);
+
+  const registered = useMemo(
+    () => filtered.filter((img) => libraryAssetFor(img.path) !== null),
+    [filtered, libraryAssetFor],
+  );
+  const unregistered = useMemo(
+    () => filtered.filter((img) => libraryAssetFor(img.path) === null),
+    [filtered, libraryAssetFor],
+  );
+
   const preview = previewPath ? (images.find((img) => img.path === previewPath) ?? null) : null;
   const previewAsset = preview ? libraryAssetFor(preview.path) : null;
+
+  function renderTiles(list: ImageEntry[]) {
+    return (
+      <div className="gallery-grid">
+        {list.map((img) => {
+          const name = basename(img.path);
+          const isSelected = selected.has(img.path);
+          return (
+            <div key={img.path} className="gallery-item">
+              <button
+                type="button"
+                className={`tile${isSelected ? ' selected' : ''}`}
+                aria-label={`${name} を拡大表示`}
+                title={name}
+                onClick={() => openPreview(img.path)}
+              >
+                <img src={mediaUrl(dir, img.path)} alt={name} loading="lazy" />
+              </button>
+              <label className="tile-caption" title={name}>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleSelect(img.path)}
+                  aria-label={`${name} を選択`}
+                />
+                <span className="tile-name">{stripExt(name)}</span>
+              </label>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {loadError && <span style={{ color: 'var(--status-err)' }}>{loadError}</span>}
 
-      {images.length === 0 && !loadError ? (
+      {loading && !loadError ? (
+        <div className="empty">読み込み中…</div>
+      ) : images.length === 0 && !loadError ? (
         <div className="empty">素材がまだありません</div>
       ) : (
-        <div className="gallery-grid">
-          {images.map((img) => {
-            const name = basename(img.path);
-            const isSelected = selected.has(img.path);
-            return (
-              <div
-                key={img.path}
-                className={`tile${isSelected ? ' selected' : ''}`}
-                role="button"
-                tabIndex={0}
-                aria-pressed={isSelected}
-                title={name}
-                onClick={() => toggleSelect(img.path)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    toggleSelect(img.path);
-                  }
-                }}
-              >
-                <img src={mediaUrl(dir, img.path)} alt={name} loading="lazy" />
-                <button
-                  type="button"
-                  className="tile-zoom"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCurateError(null);
-                    setCurateMessage(null);
-                    setPreviewPath(img.path);
-                  }}
-                >
-                  拡大
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <input
+            type="search"
+            className="gallery-search"
+            placeholder="ファイル名で検索"
+            aria-label="ファイル名で検索"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+
+          {filtered.length === 0 ? (
+            <div className="empty">検索に一致する素材がありません</div>
+          ) : registered.length > 0 && unregistered.length > 0 ? (
+            <>
+              <h3 className="gallery-section-title">素材ライブラリ登録済み({registered.length})</h3>
+              {renderTiles(registered)}
+              <h3 className="gallery-section-title">
+                未登録 — サムネイル・中間生成物など({unregistered.length})
+              </h3>
+              {renderTiles(unregistered)}
+            </>
+          ) : (
+            // 片方しか無いときは見出しを出さず1グリッドで表示(library.json が無いチャンネルを含む)
+            renderTiles(filtered)
+          )}
+        </>
       )}
 
       {selected.size > 0 && (
@@ -267,20 +367,24 @@ export function GalleryTab({
             {!activeSessionId && (
               <span className="mono">稼働中のジョブがありません(ジョブタブから操作を起動してください)</span>
             )}
-            {sent && <span style={{ color: 'var(--status-ok)' }}>送信済み</span>}
-            {sendError && <span style={{ color: 'var(--status-err)' }}>{sendError}</span>}
+            <span aria-live="polite">
+              {sent && <span style={{ color: 'var(--status-ok)' }}>送信済み</span>}
+              {sendError && <span style={{ color: 'var(--status-err)' }}>{sendError}</span>}
+            </span>
           </div>
         </div>
       )}
 
       {preview && (
-        <div className="modal-backdrop" onClick={() => setPreviewPath(null)}>
+        <div className="modal-backdrop" onClick={closePreview}>
           <div
+            ref={modalRef}
             className="panel modal"
             role="dialog"
             aria-modal="true"
             aria-label={basename(preview.path)}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={onModalKeyDown}
           >
             <img src={mediaUrl(dir, preview.path)} alt={basename(preview.path)} />
             <div
@@ -292,7 +396,7 @@ export function GalleryTab({
               }}
             >
               <span className="mono">{basename(preview.path)}</span>
-              <button className="btn btn-ghost" onClick={() => setPreviewPath(null)}>
+              <button ref={closeButtonRef} className="btn btn-ghost" onClick={closePreview}>
                 閉じる
               </button>
             </div>
@@ -322,12 +426,14 @@ export function GalleryTab({
                     >
                       却下
                     </button>
-                    {curateMessage && <span style={{ color: 'var(--status-ok)' }}>{curateMessage}</span>}
-                    {curateError && <span style={{ color: 'var(--status-err)' }}>{curateError}</span>}
+                    <span aria-live="polite">
+                      {curateMessage && <span style={{ color: 'var(--status-ok)' }}>{curateMessage}</span>}
+                      {curateError && <span style={{ color: 'var(--status-err)' }}>{curateError}</span>}
+                    </span>
                   </div>
                 </>
               ) : (
-                <span className="mono">library.json に未登録の画像です(直接編集の対象外)</span>
+                <span className="mono">素材ライブラリ未登録の画像です(サムネイル・中間生成物など)</span>
               )}
             </div>
           </div>
@@ -340,4 +446,10 @@ export function GalleryTab({
 function basename(p: string): string {
   const idx = p.lastIndexOf('/');
   return idx === -1 ? p : p.slice(idx + 1);
+}
+
+/** タイル下のキャプション用にファイル名の拡張子を落とす(識別に不要な情報を減らす) */
+function stripExt(name: string): string {
+  const idx = name.lastIndexOf('.');
+  return idx <= 0 ? name : name.slice(0, idx);
 }

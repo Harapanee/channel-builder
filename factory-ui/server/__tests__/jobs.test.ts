@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { JobDetail } from '../../shared/types';
-import { JobManager, type SpawnClaude } from '../jobs';
+import { JobManager, makeClaudeSpawn, type SpawnClaude } from '../jobs';
+import { _clearProgressCache } from '../progress';
 
 // FakeSpawn: テストが stdout に流す行を制御し、exitを手動発火する
 class FakeProc {
@@ -52,6 +53,9 @@ describe('JobManager', () => {
   let m: JobManager;
 
   beforeEach(() => {
+    // progress.ts のTTLキャッシュ(dir+episodeId/titleがキー。rootは含まない)が
+    // 別テストのmkdtempルートをまたいで衝突しないよう、テストごとに空にする
+    _clearProgressCache();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'fui-jobs-'));
     fs.mkdirSync(path.join(root, 'ch1'));
     fs.writeFileSync(path.join(root, 'ch1', '.channel-system.json'), JSON.stringify({ channelId: 'ch1' }));
@@ -78,6 +82,18 @@ describe('JobManager', () => {
     expect(() => m.create({ dir: 'ch1', operation: 'nope', arg: 'x' })).toThrow();
     expect(() => m.create({ dir: '../etc', operation: 'theme-scout', arg: '' })).toThrow();
     expect(() => m.create({ dir: 'missing', operation: 'theme-scout', arg: '' })).toThrow();
+  });
+
+  it('rootLevel操作(channel-analyze)は dir="" で起動し、cwdはファクトリールートになる', () => {
+    const j = m.create({ dir: '', operation: 'channel-analyze', arg: 'https://www.youtube.com/@example' });
+    expect(j.status).toBe('running');
+    expect(j.dir).toBe('');
+    expect(procs[0].cwd).toBe(root);
+  });
+
+  it('rootLevel操作にチャンネルdirは指定できず、非rootLevel操作の dir="" も拒否する', () => {
+    expect(() => m.create({ dir: 'ch1', operation: 'channel-analyze', arg: '@x' })).toThrow();
+    expect(() => m.create({ dir: '', operation: 'theme-scout', arg: '' })).toThrow();
   });
 
   it('init 行で sessionId を記録する', () => {
@@ -132,6 +148,62 @@ describe('JobManager', () => {
     expect(m.get(j2.id)!.status).toBe('failed');
   });
 
+  it('成功時に生成物(artifacts)を収集する: out/*.mp4・publish/metadata.json・publish/thumb-*.png', async () => {
+    const epDir = path.join(root, 'ch1', 'episodes', 'ep001-x');
+    fs.mkdirSync(path.join(epDir, 'out'), { recursive: true });
+    fs.mkdirSync(path.join(epDir, 'publish'), { recursive: true });
+    fs.writeFileSync(path.join(epDir, 'out', 'final.mp4'), '');
+    fs.writeFileSync(path.join(epDir, 'publish', 'metadata.json'), '{}');
+    fs.writeFileSync(path.join(epDir, 'publish', 'thumb-1.png'), '');
+    // フェーズチェーン導入により video-create は既定でphase0開始(<done>で次フェーズへ)。
+    // このテストの意図(成功時のartifacts収集)を保つため、render_readyで最終フェーズから開始させる
+    fs.writeFileSync(
+      path.join(epDir, 'episode.json'),
+      JSON.stringify({ episodeId: 'ep001-x', subject: 'x', status: 'render_ready' }),
+    );
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep001-x' });
+    procs[0].push(initLine('sArt', path.join(root, 'ch1')));
+    procs[0].push(resultLine('sArt', `完了 ${DONE}`));
+    await new Promise((r) => setTimeout(r, 20)); // 実プロセス同様、stdout処理後にclose
+    procs[0].emitExit(0);
+    await new Promise((r) => setTimeout(r, 30));
+    const d = m.get(j.id)!;
+    expect(d.status).toBe('succeeded');
+    expect(d.artifacts).toEqual([
+      path.join('episodes', 'ep001-x', 'out', 'final.mp4'),
+      path.join('episodes', 'ep001-x', 'publish', 'metadata.json'),
+      path.join('episodes', 'ep001-x', 'publish', 'thumb-1.png'),
+    ]);
+  });
+
+  it('short-create成功時はshorts/<shortId>/out/*.mp4を収集する(publishは対象外)', async () => {
+    const shDir = path.join(root, 'ch1', 'shorts', 'sh002-nobunaga-top3');
+    fs.mkdirSync(path.join(shDir, 'out'), { recursive: true });
+    fs.writeFileSync(path.join(shDir, 'out', 'short.mp4'), '');
+    writeShort('sh002-nobunaga-top3', 'ep001-nobunaga', 'rank3-reasons', 'implemented');
+    const j = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    procs[0].push(initLine('sSh', path.join(root, 'ch1')));
+    procs[0].push(resultLine('sSh', `完了 ${DONE}`));
+    await new Promise((r) => setTimeout(r, 20));
+    procs[0].emitExit(0);
+    await new Promise((r) => setTimeout(r, 30));
+    const d = m.get(j.id)!;
+    expect(d.status).toBe('succeeded');
+    expect(d.artifacts).toEqual([path.join('shorts', 'sh002-nobunaga-top3', 'out', 'short.mp4')]);
+  });
+
+  it('channel-refineはepisodeId/shortIdどちらも解決できないため生成物は空のまま', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'channel-refine', arg: 'サムネの文字を大きく' });
+    procs[0].push(initLine('sRef', path.join(root, 'ch1')));
+    procs[0].push(resultLine('sRef', `完了 ${DONE}`));
+    await new Promise((r) => setTimeout(r, 20));
+    procs[0].emitExit(0);
+    await new Promise((r) => setTimeout(r, 30));
+    const d = m.get(j.id)!;
+    expect(d.status).toBe('succeeded');
+    expect(d.artifacts).toEqual([]);
+  });
+
   it('cancel は kill して cancelled にする', async () => {
     const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
     m.cancel(j.id);
@@ -167,7 +239,10 @@ describe('JobManager', () => {
   // ---- Task 5: 多段ゲート・待ち中キャンセル・不正optionId・復元 ----
 
   it('多段ゲート: gate→respond→gate→respond→succeeded', async () => {
-    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    // <done>の有無とゲート応答の世代管理を見るテストでvideo-createである必然はない。
+    // video-createはフェーズチェーン導入で<done>=即succeededではなくなったため、
+    // phases無しのtheme-scoutに差し替えて完走(succeeded)の意図を保つ
+    const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
     procs[0].push(initLine('sA', path.join(root, 'ch1')));
     procs[0].push(textLine(GATE));
     await new Promise((r) => setTimeout(r, 20));
@@ -275,6 +350,120 @@ describe('JobManager', () => {
     expect(m.get(j2.id)!.status).toBe('queued');
   });
 
+  it('short-create同士(対象違い)は同一チャンネルで並列実行できる', () => {
+    m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep006-ieyasu rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('running');
+    expect(procs.length).toBe(2);
+  });
+
+  it('同じ対象のshort-create同士は排他(2本目はqueued)', () => {
+    m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('queued');
+    expect(procs.length).toBe(1);
+  });
+
+  it('video-createとshort-createは元エピソードが違えば並列実行できる', () => {
+    m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep002-b' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('running');
+    expect(procs.length).toBe(2);
+  });
+
+  it('制作中エピソードを元にするshort-createは排他(queued)', () => {
+    m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep001-nobunaga' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('queued');
+    expect(procs.length).toBe(1);
+  });
+
+  // video-create × short-create の突き合わせ用(題材名からepisodeIdを解決させる)
+  function writeEpisodeFixture(episodeId: string, subject: string) {
+    const ep = path.join(root, 'ch1', 'episodes', episodeId);
+    fs.mkdirSync(ep, { recursive: true });
+    fs.writeFileSync(path.join(ep, 'episode.json'), JSON.stringify({ episodeId, subject, status: 'scripted' }));
+    _clearProgressCache();
+  }
+
+  it('題材名で起動したvideo-create稼働中でも、別エピソード元のshort-createは並列実行できる(episodeIdをディスクから解決)', () => {
+    writeEpisodeFixture('ep004-penguin', 'コウテイペンギン');
+    m.create({ dir: 'ch1', operation: 'video-create', arg: 'コウテイペンギン' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('running');
+    expect(procs.length).toBe(2);
+  });
+
+  it('題材名で起動したvideo-createの解決先エピソードを元にするshort-createは排他(queued)', () => {
+    writeEpisodeFixture('ep004-penguin', 'コウテイペンギン');
+    m.create({ dir: 'ch1', operation: 'video-create', arg: 'コウテイペンギン' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep004-penguin rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('queued');
+    expect(procs.length).toBe(1);
+  });
+
+  it('episodeId未解決で待機したshort-createは、video-createの<stage>前進時に再評価されて起動する', async () => {
+    const j1 = m.create({ dir: 'ch1', operation: 'video-create', arg: 'コウテイペンギン' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    expect(m.get(j2.id)!.status).toBe('queued'); // エピソード未作成=解決不能なので保守的に待機
+    // スキルがエピソードフォルダを作って工程マーカーを出した時点で解決可能になる
+    writeEpisodeFixture('ep004-penguin', 'コウテイペンギン');
+    procs[0].push(initLine('sVC', path.join(root, 'ch1')));
+    procs[0].push(textLine('<stage>台本</stage>'));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.get(j1.id)!.status).toBe('running');
+    expect(m.get(j2.id)!.status).toBe('running');
+    expect(procs.length).toBe(2);
+  });
+
+  it('short-publish同士(別ショート)は同一チャンネルで並列実行できる', () => {
+    m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh003-ieyasu-top3' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh002-nobunaga-top3' });
+    expect(m.get(j2.id)!.status).toBe('running');
+    expect(procs.length).toBe(2);
+  });
+
+  it('同じショートを対象とするshort-publish同士は排他(2本目はqueued)', () => {
+    m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh003-ieyasu-top3' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh003-ieyasu-top3' });
+    expect(m.get(j2.id)!.status).toBe('queued');
+    expect(procs.length).toBe(1);
+  });
+
+  // short-create × short-publish の突き合わせ用(short-create の arg から shortId を解決させる)
+  function writeShortFixture(shortId: string, sourceEpisodeId: string, formatId: string) {
+    const sh = path.join(root, 'ch1', 'shorts', shortId);
+    fs.mkdirSync(sh, { recursive: true });
+    fs.writeFileSync(
+      path.join(sh, 'short.json'),
+      JSON.stringify({ shortId, sourceEpisodeId, formatId, status: 'implemented' }),
+    );
+    _clearProgressCache();
+  }
+
+  it('short-createとshort-publishは対象ショートが違えば並列実行できる', () => {
+    writeShortFixture('sh002-nobunaga-top3', 'ep001-nobunaga', 'rank3-reasons');
+    m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh003-ieyasu-top3' });
+    expect(m.get(j2.id)!.status).toBe('running');
+    expect(procs.length).toBe(2);
+  });
+
+  it('制作中のショートを対象とするshort-publishは排他(queued)', () => {
+    writeShortFixture('sh002-nobunaga-top3', 'ep001-nobunaga', 'rank3-reasons');
+    m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh002-nobunaga-top3' });
+    expect(m.get(j2.id)!.status).toBe('queued');
+    expect(procs.length).toBe(1);
+  });
+
+  it('対象ショート未解決のshort-create稼働中はshort-publishもqueued(保守的排他)', () => {
+    m.create({ dir: 'ch1', operation: 'short-create', arg: 'ep999-none rank3-reasons' });
+    const j2 = m.create({ dir: 'ch1', operation: 'short-publish', arg: 'sh003-ieyasu-top3' });
+    expect(m.get(j2.id)!.status).toBe('queued');
+    expect(procs.length).toBe(1);
+  });
+
   it('先行ジョブ完了時、起動可能なqueuedがまとめて起動する(排他のものは残る)', async () => {
     const j1 = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
     const q1 = m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep001-a' });
@@ -304,14 +493,22 @@ describe('JobManager', () => {
     expect(d.gate).toBeUndefined();
   });
 
-  it('ステージレール: 起動で先頭active、ゲートで前進、成功で全done', async () => {
-    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+  it('ステージレール: 起動で先頭active、<stage>で前進、成功で全done', async () => {
+    // <stage>マーカーの前進と成功時の全done化を見るテストでvideo-createである必然はない。
+    // video-createはフェーズチェーン導入で<done>=即succeededではなくなったため、
+    // phases無しのtheme-scoutに差し替える(工程ラベルは探索/採点の2本)
+    const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
     let d = m.get(j.id)!;
     expect(d.stages.length).toBeGreaterThan(1);
     expect(d.stages[0]!.state).toBe('active');
     expect(d.stages[1]!.state).toBe('pending');
     procs[0].push(initLine('sG', path.join(root, 'ch1')));
-    procs[0].push(textLine(GATE));
+    procs[0].push(textLine('<stage>採点</stage>'));
+    await new Promise((r) => setTimeout(r, 20));
+    d = m.get(j.id)!;
+    expect(d.stages[0]!.state).toBe('done');
+    expect(d.stages[1]!.state).toBe('active');
+    procs[0].push(textLine(GATE)); // ゲートは工程を動かさない
     await new Promise((r) => setTimeout(r, 20));
     d = m.get(j.id)!;
     expect(d.stages[0]!.state).toBe('done');
@@ -367,27 +564,137 @@ describe('JobManager', () => {
   it('<stage>マーカーで該当工程がactiveになり、前工程はdoneになる', async () => {
     const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
     procs[0].push(initLine('sS', path.join(root, 'ch1')));
-    procs[0].push(textLine('調査が終わりました。<stage>絵コンテ</stage> 映像設計に入ります。'));
+    procs[0].push(textLine('調査が終わりました。<stage>台本</stage> 執筆に入ります。'));
     await new Promise((r) => setTimeout(r, 20));
     const d = m.get(j.id)!;
     const labels = d.stages.map((s) => `${s.label}:${s.state}`);
-    expect(labels).toContain('絵コンテ:active');
+    expect(labels).toContain('台本:active');
     expect(d.stages[0]!.state).toBe('done'); // 調査
-    expect(d.stages[1]!.state).toBe('done'); // 台本
     expect(d.stages[4]!.state).toBe('pending'); // 素材
   });
 
-  it('<stage>の未知ラベル・後退は無視する', async () => {
+  it('<stage>の未知ラベル・後退・フェーズ外は無視する', async () => {
     const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
     procs[0].push(initLine('sS2', path.join(root, 'ch1')));
-    procs[0].push(textLine('<stage>音声</stage>'));
+    procs[0].push(textLine('<stage>台本</stage>'));
     await new Promise((r) => setTimeout(r, 20));
     procs[0].push(textLine('<stage>存在しない工程</stage>'));
     procs[0].push(textLine('<stage>調査</stage>')); // 後退
+    // フェーズ外: フェーズ1(工程0〜3)のセッションが監査などで後工程ラベルを誤発行
+    // (実測 ep001-shoyu: 素材・実装の実作業が「検査」枠に計上された表示ずれの原因)
+    procs[0].push(textLine('<stage>検査</stage>'));
+    procs[0].push(textLine('<stage>実装</stage>'));
     await new Promise((r) => setTimeout(r, 20));
     const d = m.get(j.id)!;
-    expect(d.stages[2]!.state).toBe('active'); // 音声のまま
+    expect(d.stages[1]!.state).toBe('active'); // 台本のまま
     expect(d.stages[0]!.state).toBe('done');
+    expect(d.stages[5]!.state).toBe('pending'); // 実装は前進しない
+    expect(d.stages[6]!.state).toBe('pending'); // 検査は前進しない
+  });
+
+  // ---- 回帰: 工程ラベル「レビュー」の誤マッチ(実バグ ep004-emperor-penguin) ----
+  // 台本工程内の「台本レビュー(二重審査)」開始時にエージェントが <stage>レビュー</stage> を
+  // 誤出力し、進捗バーが音声〜検査を飛ばして最終レビューまで暴走した。ラベルを「最終レビュー」に
+  // 改名したため、旧ラベルは未知として無視されることを保証する。
+
+  it('<stage>レビュー</stage>(旧ラベル)は未知として無視され、工程は前進しない', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'コウテイペンギン' });
+    procs[0].push(initLine('sPen', path.join(root, 'ch1')));
+    procs[0].push(textLine('<stage>台本</stage>'));
+    await new Promise((r) => setTimeout(r, 20));
+    procs[0].push(textLine('二重審査を並列で起動します。<stage>レビュー</stage>'));
+    await new Promise((r) => setTimeout(r, 20));
+    const d = m.get(j.id)!;
+    expect(d.stages.find((s) => s.state === 'active')?.label).toBe('台本');
+    expect(d.stages.find((s) => s.label === '最終レビュー')?.state).toBe('pending');
+  });
+
+  it('restore: 旧ラベル「レビュー」を含むstate.jsonは「最終レビュー」へ移行される', () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    const statePath = path.join(root, 'factory-ui', 'jobs', j.id, 'state.json');
+    const persisted = JSON.parse(fs.readFileSync(statePath, 'utf8')) as JobDetail;
+    persisted.stages.find((s) => s.label === '最終レビュー')!.label = 'レビュー'; // 旧形式を再現
+    fs.writeFileSync(statePath, JSON.stringify(persisted));
+    const m2 = new JobManager(root, spawnFn);
+    m2.restore();
+    const labels = m2.get(j.id)!.stages.map((s) => s.label);
+    expect(labels).toContain('最終レビュー');
+    expect(labels).not.toContain('レビュー');
+  });
+
+  // ---- 回帰: ゲートは工程の境界ではない(実バグ ep011-galileo) ----
+  // 素材工程で画像生成クレジットが枯渇し、同一工程内で確認ゲートが5回開いた。
+  // ゲート到達=1工程前進としていたため、進捗バーが素材→…→レンダーまで暴走し、
+  // 以降の本物の<stage>マーカーは後退ガードで無視されて二度と戻らなくなった。
+
+  it('同一工程内でゲートが複数回開いても工程は前進しない', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'ガリレオ・ガリレイ' });
+    procs[0].push(initLine('sRG', path.join(root, 'ch1')));
+    procs[0].push(textLine('<stage>台本</stage> 執筆します'));
+    await new Promise((r) => setTimeout(r, 20));
+
+    // クレジット枯渇の確認ゲートが素材工程の中で3回開く(実バグは5回)
+    for (let i = 0; i < 3; i++) {
+      procs[i]!.push(textLine(GATE));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(m.get(j.id)!.status).toBe('awaiting_gate');
+      m.respondGate(j.id, 'yes');
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const labels = Object.fromEntries(m.get(j.id)!.stages.map((s) => [s.label, s.state]));
+    expect(labels['台本']).toBe('active'); // 台本のまま。ゲート数だけ勝手に進まない
+    expect(labels['音声']).toBe('pending');
+    expect(labels['レンダー']).toBe('pending');
+  });
+
+  it('工程がレンダーまで進んだ状態でも、未承認なら<stage>レンダー</stage>でバックストップが効く', async () => {
+    // 壊れたstate.jsonからのrestore等でfrontierが既にレンダーに達していても、
+    // 目視確認(render-check)未承認のレンダー突入は止める(後退ガードに飲まれない)
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    procs[0].push(initLine('sRB', path.join(root, 'ch1')));
+    procs[0].push(textLine('<stage>レンダー</stage>'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.get(j.id)!.status).toBe('awaiting_gate');
+    expect(m.get(j.id)!.gate?.kind).toBe('render-check');
+
+    // 承認せずに修正を依頼 → 再開後にまたレンダーへ入ろうとしても再び止まる
+    m.respondGate(j.id, 'revise', '画像を差し替えて');
+    await new Promise((r) => setTimeout(r, 20));
+    procs[1]!.push(textLine('<stage>レンダー</stage>'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.get(j.id)!.status).toBe('awaiting_gate');
+    expect(m.get(j.id)!.gate?.kind).toBe('render-check');
+  });
+
+  // ---- 工程タイムスタンプ: 全stage遷移経路でstartedAt/endedAtが刻まれる ----
+
+  it('create直後の先頭stageにstartedAtが入る(以降のstageは未設定)', () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    const d = m.get(j.id)!;
+    expect(d.stages[0]!.startedAt).toBeTypeOf('number');
+    expect(d.stages[0]!.endedAt).toBeUndefined();
+    expect(d.stages[1]!.startedAt).toBeUndefined();
+    expect(d.stages[1]!.endedAt).toBeUndefined();
+  });
+
+  it('<stage>マーカー前進(maybeStage経由)で前stageのendedAtと新activeのstartedAtが入る', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    procs[0].push(initLine('sTS', path.join(root, 'ch1')));
+    procs[0].push(textLine('調査完了。<stage>台本</stage> 執筆に入ります。'));
+    await new Promise((r) => setTimeout(r, 20));
+    const d = m.get(j.id)!;
+    const active = d.stages.find((s) => s.state === 'active')!;
+    expect(active.label).toBe('台本');
+    expect(active.startedAt).toBeTypeOf('number');
+    const doneStages = d.stages.filter((s) => s.state === 'done');
+    expect(doneStages.length).toBeGreaterThan(0);
+    for (const s of doneStages) expect(s.endedAt).toBeTypeOf('number');
+    // 未到達のstageにはまだ刻まれない
+    for (const s of d.stages.filter((s) => s.state === 'pending')) {
+      expect(s.startedAt).toBeUndefined();
+      expect(s.endedAt).toBeUndefined();
+    }
   });
 
   it('ジョブのプロンプトに <stage> 規約と工程ラベル一覧が含まれる', () => {
@@ -413,13 +720,14 @@ describe('JobManager', () => {
   it('Important-1: 同一メッセージの<stage>と<gate>が同居してもstageが無視されない', async () => {
     const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
     procs[0].push(initLine('sN', path.join(root, 'ch1')));
-    procs[0].push(textLine('<stage>素材</stage> 確認お願いします ' + GATE));
+    procs[0].push(textLine('<stage>台本</stage> 確認お願いします ' + GATE));
     await new Promise((r) => setTimeout(r, 20));
     const d = m.get(j.id)!;
     expect(d.status).toBe('awaiting_gate'); // ゲートは開く
     const labels = Object.fromEntries(d.stages.map((s) => [s.label, s.state]));
-    expect(labels['素材']).toBe('done'); // <stage>で素材まで前進し、openGateのadvanceStageでさらに1つ進む
-    expect(labels['実装']).toBe('active');
+    expect(labels['台本']).toBe('active'); // <stage>で台本まで前進する(ゲート同居で無視されない)
+    expect(labels['調査']).toBe('done');
+    expect(labels['音声']).toBe('pending'); // ゲートでは進まない
   });
 
   it('Important-2: sawDoneはプロセス世代をまたいで残らない(旧世代の<done>で新世代が誤succeededにならない)', async () => {
@@ -438,33 +746,43 @@ describe('JobManager', () => {
     expect(m.get(j.id)!.status).toBe('interrupted'); // 旧世代のsawDoneに引きずられてsucceededにならない
   });
 
-  it('Important-3: 最終工程のゲート後(active無し)でも<stage>の後退ガードが効く', async () => {
-    const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
-    procs[0].push(initLine('sP', path.join(root, 'ch1')));
-    procs[0].push(textLine('<stage>採点</stage>'));
-    await new Promise((r) => setTimeout(r, 20));
-    procs[0].push(textLine(GATE)); // ゲート到達で採点がdoneになり、次工程が無いのでactiveが消える
-    await new Promise((r) => setTimeout(r, 20));
-    let d = m.get(j.id)!;
-    expect(d.stages[0]!.state).toBe('done'); // 探索
-    expect(d.stages[1]!.state).toBe('done'); // 採点
+  it('Important-3: activeが無い工程レール(全done)でも<stage>の後退ガードが効く', async () => {
+    // 全工程doneでゲート待ちのまま永続化されたジョブを復元して再開する経路。
+    // activeが無いため findIndex(active) では後退を検出できず、frontier(pendingでない最大index)
+    // で判定する必要がある
+    const dir = path.join(root, 'factory-ui', 'jobs', 'nog-1');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'state.json'),
+      JSON.stringify({
+        id: 'nog-1', dir: 'ch1', operation: 'theme-scout', title: 'ネタ帳を補充',
+        status: 'awaiting_gate', createdAt: 1, updatedAt: 1, artifacts: [], sessionId: 'sP',
+        gate: { gateId: 'g1', question: '?', options: [{ id: 'yes', label: 'はい', description: '' }] },
+        stages: [
+          { key: 's0', label: '探索', state: 'done' },
+          { key: 's1', label: '採点', state: 'done' },
+        ],
+      }),
+    );
+    m.restore();
+    expect(m.get('nog-1')!.stages.find((s) => s.state === 'active')).toBeUndefined();
 
-    m.respondGate(j.id, 'yes'); // procs[1]、statusはrunningに戻る
-    procs[1].push(textLine('<stage>探索</stage>')); // 後退マーカー。無視されるべき
+    m.respondGate('nog-1', 'yes'); // procs[0]、statusはrunningに戻る
+    procs[0].push(textLine('<stage>探索</stage>')); // 後退マーカー。無視されるべき
     await new Promise((r) => setTimeout(r, 20));
-    d = m.get(j.id)!;
+    const d = m.get('nog-1')!;
     expect(d.stages[0]!.state).toBe('done'); // 巻き戻らない
     expect(d.stages[1]!.state).toBe('done'); // 巻き戻らない
   });
 
   // ---- 型拡張: mode/model/effort/request の既定値と永続化互換 ----
 
-  it('create は mode=manual, model=opus, effort=xhigh, request.arg を既定で持つ', () => {
+  it('create は mode=manual, model=opus, effort=high, request.arg を既定で持つ', () => {
     const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '織田信長' });
     const d = m.get(j.id)!;
     expect(d.mode).toBe('manual');
     expect(d.model).toBe('opus');
-    expect(d.effort).toBe('xhigh');
+    expect(d.effort).toBe('high');
     expect(d.request).toEqual({ arg: '織田信長', durationSec: undefined, episodeId: undefined });
   });
 
@@ -482,7 +800,7 @@ describe('JobManager', () => {
     const d = m.get('old-1')!;
     expect(d.mode).toBe('manual');
     expect(d.model).toBe('opus');
-    expect(d.effort).toBe('xhigh');
+    expect(d.effort).toBe('high');
     expect(d.request).toEqual({ arg: '' });
   });
 
@@ -493,10 +811,10 @@ describe('JobManager', () => {
     return i >= 0 ? args[i + 1] : undefined;
   }
 
-  it('既定で --model opus --effort xhigh が付く。指定時はその値', () => {
+  it('既定で --model opus --effort high が付く。指定時はその値', () => {
     m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
     expect(argAfter(procs[0].args, '--model')).toBe('opus');
-    expect(argAfter(procs[0].args, '--effort')).toBe('xhigh');
+    expect(argAfter(procs[0].args, '--effort')).toBe('high');
     fs.mkdirSync(path.join(root, 'ch2'), { recursive: true });
     fs.writeFileSync(path.join(root, 'ch2', '.channel-system.json'), '{}');
     m.create({ dir: 'ch2', operation: 'theme-scout', arg: '', model: 'sonnet', effort: 'high' });
@@ -520,6 +838,12 @@ describe('JobManager', () => {
     expect(() => m.create({ dir: 'ch1', operation: 'theme-scout', arg: '', mode: 'yolo' as never })).toThrow(/mode/);
     expect(() => m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', durationSec: 5 })).toThrow(/durationSec/);
     expect(() => m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', durationSec: 4000 })).toThrow(/durationSec/);
+    // durationSecMax は durationSec と併せた範囲指定のみ受理する
+    expect(() => m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', durationSecMax: 900 })).toThrow(/durationSecMax/);
+    expect(() => m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', durationSec: 480, durationSecMax: 480 })).toThrow(/durationSecMax/);
+    expect(() => m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', durationSec: 480, durationSecMax: 4000 })).toThrow(/durationSecMax/);
+    const ok = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', durationSec: 480, durationSecMax: 900 });
+    expect(m.get(ok.id)!.request.durationSecMax).toBe(900);
   });
 
   it('needsArg かつ argOptional でないオペは空引数を拒否する', () => {
@@ -613,7 +937,10 @@ describe('JobManager', () => {
   // ---- resume: 中断・失敗・キャンセル済みジョブの途中再開 ----
 
   async function makeInterrupted(): Promise<string> {
-    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    // resumeの汎用機構(--resume/セッション再開/<done>完走)を見るテストでvideo-createである
+    // 必然はない。video-createはフェーズチェーン導入で<done>=即succeededではなくなったため、
+    // phases無しのtheme-scoutに差し替える
+    const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
     procs[0].push(initLine('sR', path.join(root, 'ch1')));
     procs[0].push(resultLine('sR', '途中')); // <done>なし
     await new Promise((r) => setTimeout(r, 20));
@@ -715,6 +1042,55 @@ describe('JobManager', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(m.get(j.id)!.status).toBe('awaiting_gate'); // render-checkは人間待ち
     expect(m.get(j.id)!.gate?.kind).toBe('render-check');
+  });
+
+  it('setMode: ゲート停止中に manual → auto へ切り替えると、そのゲートを即自動応答する', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' }); // manual
+    procs[0].push(initLine('sM1', path.join(root, 'ch1')));
+    procs[0].push(textLine(GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.get(j.id)!.status).toBe('awaiting_gate'); // manualなので停止
+
+    const d = m.setMode(j.id, 'auto');
+    expect(d.mode).toBe('auto');
+    await new Promise((r) => setTimeout(r, 50)); // setImmediate分の余裕
+    expect(m.get(j.id)!.status).toBe('running'); // 停止中のゲートが自動応答された
+    expect(procs.length).toBe(2);
+  });
+
+  it('setMode: running中の auto → manual 切替は次のゲートで停止する', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', mode: 'auto' });
+    procs[0].push(initLine('sM2', path.join(root, 'ch1')));
+    await new Promise((r) => setTimeout(r, 20));
+    m.setMode(j.id, 'manual');
+    procs[0].push(textLine(GATE));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(m.get(j.id)!.status).toBe('awaiting_gate'); // 自動応答されない
+    expect(procs.length).toBe(1);
+  });
+
+  it('setMode: 終了状態のジョブ・不正モードは throw する', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    expect(() => m.setMode(j.id, 'turbo' as never)).toThrow(/invalid mode/);
+    m.cancel(j.id);
+    expect(() => m.setMode(j.id, 'auto')).toThrow(/conflict/);
+  });
+
+  it('setMode: 切替は暴走保護カウンタをリセットする(上限間際でも切替後は前進できる)', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', mode: 'auto' });
+    procs[0].push(initLine('sM3', path.join(root, 'ch1')));
+    for (let i = 0; i < 19; i++) {
+      procs[procs.length - 1].push(textLine(GATE));
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    expect(m.get(j.id)!.status).toBe('running'); // まだ上限未満
+    m.setMode(j.id, 'semi'); // 人間の切替=リセット
+    m.setMode(j.id, 'auto');
+    for (let i = 0; i < 3; i++) {
+      procs[procs.length - 1].push(textLine(GATE));
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    expect(m.get(j.id)!.status).toBe('running'); // リセット済みなのでinterruptedにならない
   });
 
   it('自動応答が上限(20回)に達したら interrupted にする', async () => {
@@ -826,17 +1202,24 @@ describe('JobManager', () => {
     expect(m.get(j.id)!.stages.find((s) => s.state === 'active')?.label).toBe('レンダー');
   });
 
-  it('semi: 承認工程からゲートでレンダーがactiveに達しても自動応答されず人間待ちになる(atRenderBrink)', async () => {
+  it('semi: レンダー直前(未承認)で通常ゲートが出ても自動応答されず人間待ちになる(atRenderBrink)', async () => {
     const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x', mode: 'semi' });
     procs[0].push(initLine('sBrink', path.join(root, 'ch1')));
-    procs[0].push(textLine('<stage>承認</stage>'));
+    procs[0].push(textLine('<stage>レンダー</stage>')); // バックストップでレンダーactive+render-checkゲート
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.get(j.id)!.gate?.kind).toBe('render-check');
+
+    m.respondGate(j.id, 'revise', '画像を差し替えて'); // 未承認のまま再開(procs[1])
     await new Promise((r) => setTimeout(r, 20));
-    procs[0].push(textLine(GATE)); // 通常ゲート(kind無し) → openGate内のadvanceStageでレンダーがactiveに
+    expect(m.get(j.id)!.renderApproved).toBeFalsy();
+    const spawned = procs.length;
+
+    procs[1]!.push(textLine(GATE)); // 通常ゲート(kind無し)。semiなら本来は自動応答される
     await new Promise((r) => setTimeout(r, 30));
     const d = m.get(j.id)!;
     expect(d.status).toBe('awaiting_gate');
     expect(d.stages.find((s) => s.state === 'active')?.label).toBe('レンダー');
-    expect(procs.length).toBe(1); // 自動応答による再spawnは起きない
+    expect(procs.length).toBe(spawned); // 自動応答による再spawnは起きない
   });
 
   // ---- resultText: 最終resultの本文を保存(質問オペの回答表示) ----
@@ -859,6 +1242,9 @@ describe('JobManager', () => {
     const ep = path.join(root, 'ch1', 'episodes', episodeId);
     fs.mkdirSync(ep, { recursive: true });
     fs.writeFileSync(path.join(ep, 'episode.json'), JSON.stringify({ episodeId, subject, status }));
+    // m.create()のemitUpdate(reconciled)がこの時点より前にfindEpisodeProgressを呼び、
+    // 「episode.json不在」のmissをTTLキャッシュ済みのことがある。書き換え後は必ず無効化して読み直させる
+    _clearProgressCache();
   }
 
   it('video-create: <stage>マーカーが無くても episode.json の status まで工程が前進して見える', () => {
@@ -871,17 +1257,20 @@ describe('JobManager', () => {
   });
 
   it('突き合わせは前進のみ: マーカーの方が先なら維持。永続stateは書き換えない', async () => {
-    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'クレオパトラ' });
+    // prechecked から始める作り直しジョブ(フェーズ4=工程9〜10)なら
+    // <stage>最終レビュー</stage> は担当フェーズ内で有効
+    writeEpisode('ep010-cleopatra', 'クレオパトラ', 'prechecked');
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'クレオパトラ', episodeId: 'ep010-cleopatra' });
     procs[0].push(initLine('sRec', path.join(root, 'ch1')));
-    procs[0].push(textLine('<stage>レビュー</stage>'));
+    procs[0].push(textLine('<stage>最終レビュー</stage>'));
     await new Promise((r) => setTimeout(r, 20));
     writeEpisode('ep010-cleopatra', 'クレオパトラ', 'scripted'); // 実進捗の方が手前
     const d = m.get(j.id)!;
-    expect(d.stages.find((s) => s.state === 'active')?.label).toBe('レビュー');
+    expect(d.stages.find((s) => s.state === 'active')?.label).toBe('最終レビュー');
     const persisted = JSON.parse(
       fs.readFileSync(path.join(root, 'factory-ui', 'jobs', j.id, 'state.json'), 'utf8'),
     ) as JobDetail;
-    expect(persisted.stages.find((s) => s.state === 'active')?.label).toBe('レビュー');
+    expect(persisted.stages.find((s) => s.state === 'active')?.label).toBe('最終レビュー');
   });
 
   it('対応エピソードが無い・video-create以外は工程をいじらない', () => {
@@ -895,15 +1284,60 @@ describe('JobManager', () => {
   // ---- 夜間レンダーキュー連携(render-check承認 → キュー登録 + 決定文変更) ----
 
   function hookedManager() {
-    const calls: Array<[string, string]> = [];
+    const calls: Array<[string, string] | [string, string, string]> = [];
     const mgr = new JobManager(root, spawnFn, {
-      enqueueRender: (dir: string, epId: string) => {
-        calls.push([dir, epId]);
+      enqueueRender: (dir: string, epId: string, kind?: 'episode' | 'short') => {
+        calls.push(kind ? [dir, epId, kind] : [dir, epId]);
         return true;
       },
     });
     return { mgr, calls };
   }
+
+  function writeShort(shortId: string, sourceEpisodeId: string, formatId: string, status: string) {
+    const sh = path.join(root, 'ch1', 'shorts', shortId);
+    fs.mkdirSync(sh, { recursive: true });
+    fs.writeFileSync(
+      path.join(sh, 'short.json'),
+      JSON.stringify({ shortId, sourceEpisodeId, formatId, status }),
+    );
+    // writeEpisode同様、create()時点でのfindShortIdForJobのmissキャッシュを無効化する
+    _clearProgressCache();
+  }
+
+  it('short-create: render-check承認でショートがkind=shortでキュー登録され、決定文がショート完了処理指示になる', async () => {
+    const { mgr, calls } = hookedManager();
+    const j = mgr.create({ dir: 'ch1', operation: 'short-create', arg: 'ep001-nobunaga rank3-reasons' });
+    writeShort('sh002-nobunaga-top3', 'ep001-nobunaga', 'rank3-reasons', 'implemented');
+    procs[0].push(initLine('sQ8', path.join(root, 'ch1')));
+    procs[0].push(textLine(RENDER_GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    mgr.respondGate(j.id, 'approve');
+    expect(calls).toEqual([['ch1', 'sh002-nobunaga-top3', 'short']]);
+    const decision = procs[1].args[procs[1].args.indexOf('sQ8') + 1]!;
+    expect(decision).toContain('レンダーは実行せず');
+    expect(decision).toContain('short.json');
+    expect(decision).toContain('"queued"');
+    expect(decision).not.toContain('レンダーを実行し');
+    // Important-1(最終レビュー): 公開準備工程(/short-publish)を飛ばさせない
+    expect(decision).toContain('short-publish');
+    expect(decision).toContain('公開準備');
+    expect(decision).toContain('metadata.json');
+    expect(decision).toContain('validate:metadata');
+    expect(decision.indexOf('公開準備')).toBeLessThan(decision.indexOf('"queued"')); // 公開メタデータ→status更新の順
+  });
+
+  it('short-create: 対応ショート未解決ならフックを呼ばず従来のレンダー実行指示にフォールバック', async () => {
+    const { mgr, calls } = hookedManager();
+    const j = mgr.create({ dir: 'ch1', operation: 'short-create', arg: 'ep999-none rank3-reasons' });
+    procs[0].push(initLine('sQ9', path.join(root, 'ch1')));
+    procs[0].push(textLine(RENDER_GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    mgr.respondGate(j.id, 'approve');
+    expect(calls).toEqual([]);
+    const decision = procs[1].args[procs[1].args.indexOf('sQ9') + 1]!;
+    expect(decision).toContain('レンダーを実行');
+  });
 
   it('render-check承認: エピソードが解決できればキュー登録フックが呼ばれ、決定文が完了処理指示に変わる', async () => {
     const { mgr, calls } = hookedManager();
@@ -916,7 +1350,7 @@ describe('JobManager', () => {
     expect(calls).toEqual([['ch1', 'ep010-cleopatra']]);
     const decision = procs[1].args[procs[1].args.indexOf('sQ1') + 1]!;
     expect(decision).toContain('レンダーは実行せず');
-    expect(decision).toContain('render_ready');
+    expect(decision).toContain('npm run finalize');
     expect(decision).not.toContain('レンダーを実行し');
   });
 
@@ -993,8 +1427,16 @@ describe('JobManager', () => {
 
   it('auto成功時: episode.json が render_ready ならキュー登録フックが呼ばれる', async () => {
     const { mgr, calls } = hookedManager();
-    const j = mgr.create({ dir: 'ch1', operation: 'video-create', arg: 'クレオパトラ', mode: 'auto' });
+    // フェーズチェーン導入により、完走後の挙動(maybeQueueOnSuccess)を見るには最終フェーズから
+    // 開始させる必要がある。episodeIdを明示しepisode.jsonをcreate前に用意する
     writeEpisode('ep010-cleopatra', 'クレオパトラ', 'render_ready');
+    const j = mgr.create({
+      dir: 'ch1',
+      operation: 'video-create',
+      arg: 'クレオパトラ',
+      episodeId: 'ep010-cleopatra',
+      mode: 'auto',
+    });
     procs[0].push(initLine('sQ4', path.join(root, 'ch1')));
     procs[0].push(resultLine('sQ4', '<done>承認済みで完了処理まで実施</done>'));
     await new Promise((r) => setTimeout(r, 20));
@@ -1006,8 +1448,16 @@ describe('JobManager', () => {
 
   it('成功時でも status が render_ready 未満(packaged)なら登録しない', async () => {
     const { mgr, calls } = hookedManager();
-    const j = mgr.create({ dir: 'ch1', operation: 'video-create', arg: 'クレオパトラ', mode: 'auto' });
+    // packagedはvideoCreatePhaseForStatusで最終フェーズ(4)に該当するため、
+    // episodeId指定で最終フェーズから開始しても完走後の判定(未満なら未登録)を検証できる
     writeEpisode('ep010-cleopatra', 'クレオパトラ', 'packaged');
+    const j = mgr.create({
+      dir: 'ch1',
+      operation: 'video-create',
+      arg: 'クレオパトラ',
+      episodeId: 'ep010-cleopatra',
+      mode: 'auto',
+    });
     procs[0].push(initLine('sQ5', path.join(root, 'ch1')));
     procs[0].push(resultLine('sQ5', '<done>途中まで</done>'));
     await new Promise((r) => setTimeout(r, 20));
@@ -1015,5 +1465,369 @@ describe('JobManager', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(mgr.get(j.id)!.status).toBe('succeeded');
     expect(calls).toEqual([]);
+  });
+
+  // ---- 削除: remove / clearFinished ----
+
+  it('remove は終了状態のジョブをメモリとディスクから消し removed を発火する', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
+    procs[0].push(initLine('sR1', path.join(root, 'ch1')));
+    procs[0].push(resultLine('sR1', DONE));
+    await new Promise((r) => setTimeout(r, 20));
+    procs[0].emitExit(0);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.get(j.id)!.status).toBe('succeeded');
+    const dir = path.join(root, 'factory-ui', 'jobs', j.id);
+    expect(fs.existsSync(dir)).toBe(true);
+    const removed: string[] = [];
+    m.on('removed', (id: string) => removed.push(id));
+    m.remove(j.id);
+    expect(m.get(j.id)).toBeUndefined();
+    expect(fs.existsSync(dir)).toBe(false);
+    expect(removed).toEqual([j.id]);
+  });
+
+  it('remove は running/queued/awaiting_gate を conflict で拒否し、不明idは unknown', () => {
+    const j1 = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' }); // running
+    const j2 = m.create({ dir: 'ch1', operation: 'ask', arg: 'q' }); // queued(ch1排他)
+    expect(() => m.remove(j1.id)).toThrow(/^conflict:/);
+    expect(() => m.remove(j2.id)).toThrow(/^conflict:/);
+    expect(() => m.remove('nope')).toThrow(/^unknown:/);
+  });
+
+  it('clearFinished は終了状態のジョブだけまとめて消し件数を返す(冪等)', () => {
+    const j1 = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' }); // running
+    const j2 = m.create({ dir: 'ch1', operation: 'ask', arg: 'q' }); // queued
+    m.cancel(j2.id); // queued → cancelled(終了状態)
+    expect(m.clearFinished()).toBe(1);
+    expect(m.get(j2.id)).toBeUndefined();
+    expect(m.get(j1.id)!.status).toBe('running');
+    expect(m.clearFinished()).toBe(0);
+  });
+
+  // ---- Task 4: 同期I/Oの解消(ジョブログのメモリテール化・ファイルtail読み) ----
+
+  it('readLog はこのプロセスが書いたジョブについてはログファイルが消えてもメモリから返す', async () => {
+    const j = m.create({ dir: 'ch1', operation: 'theme-scout', arg: '' });
+    procs[0].push(initLine('sMem', path.join(root, 'ch1')));
+    procs[0].push(textLine('メモリ経由のテスト'));
+    await new Promise((r) => setTimeout(r, 20));
+    // ディスク上のログファイルを消しても、このプロセスがappendLogした内容はメモリ(logTail)から返せる
+    fs.rmSync(path.join(root, 'factory-ui', 'jobs', j.id, 'log.jsonl'), { force: true });
+    const lines = m.readLog(j.id);
+    expect(lines).toHaveLength(2); // init行 + text行
+    expect(lines![0]).toContain('sMem');
+    expect(lines![1]).toContain('メモリ経由のテスト');
+  });
+
+  it('restore→resume後のappendLogは既存ログ履歴を保持する(readLogが旧3行+新2行の5行を返す)', async () => {
+    // 実バグ: appendLogの遅延初期化が空配列だったため、resume後の最初の1行で
+    // readLogがメモリ経由に切り替わり、resume前のファイル履歴が返却窓から消えた
+    const dir = path.join(root, 'factory-ui', 'jobs', 'res-1');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'state.json'),
+      JSON.stringify({
+        id: 'res-1', dir: 'ch1', operation: 'theme-scout', title: 'x',
+        status: 'interrupted', createdAt: 1, updatedAt: 1, stages: [], artifacts: [],
+        mode: 'manual', model: 'opus', effort: 'xhigh', request: { arg: '' },
+        sessionId: 'sOld',
+      }),
+    );
+    fs.writeFileSync(path.join(dir, 'log.jsonl'), 'old1\nold2\nold3\n');
+    m.restore();
+    m.resume('res-1'); // --resume sOld で procs[0] がspawnされる
+    procs[0].push(textLine('新しい行A'));
+    procs[0].push(textLine('新しい行B'));
+    await new Promise((r) => setTimeout(r, 20));
+    const lines = m.readLog('res-1')!;
+    expect(lines).toHaveLength(5);
+    expect(lines.slice(0, 3)).toEqual(['old1', 'old2', 'old3']);
+    expect(lines[3]).toContain('新しい行A');
+    expect(lines[4]).toContain('新しい行B');
+  });
+
+  it('auto成功時のキュー登録判定はキャッシュを迂回する(直前のstale進捗キャッシュで取りこぼさない)', async () => {
+    const { mgr, calls } = hookedManager();
+    // フェーズチェーン導入により、完走後の挙動(maybeQueueOnSuccess)を見るには最終フェーズから
+    // 開始させる必要がある。packagedはvideoCreatePhaseForStatusで最終フェーズ(4)に該当するため、
+    // これをcreate前のepisode.jsonに書いてepisodeId指定で最終フェーズから開始させる。
+    // writeEpisodeヘルパー(キャッシュクリア付き)は意図的に使わず、create直後にrender_readyへ
+    // 書き換えてキャッシュをクリアしない → create()時点でTTLキャッシュされた古い進捗(packaged)が
+    // 残ったまま <done> 終了するシナリオ(maybeQueueOnSuccessの明示的_clearProgressCache()の検証)
+    const ep = path.join(root, 'ch1', 'episodes', 'ep010-cleopatra');
+    fs.mkdirSync(ep, { recursive: true });
+    fs.writeFileSync(
+      path.join(ep, 'episode.json'),
+      JSON.stringify({ episodeId: 'ep010-cleopatra', subject: 'クレオパトラ', status: 'packaged' }),
+    );
+    const j = mgr.create({
+      dir: 'ch1',
+      operation: 'video-create',
+      arg: 'クレオパトラ',
+      episodeId: 'ep010-cleopatra',
+      mode: 'auto',
+    });
+    fs.writeFileSync(
+      path.join(ep, 'episode.json'),
+      JSON.stringify({ episodeId: 'ep010-cleopatra', subject: 'クレオパトラ', status: 'render_ready' }),
+    );
+    procs[0].push(initLine('sStale', path.join(root, 'ch1')));
+    procs[0].push(resultLine('sStale', '<done>完了</done>'));
+    await new Promise((r) => setTimeout(r, 20));
+    procs[0].emitExit(0);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(mgr.get(j.id)!.status).toBe('succeeded');
+    expect(calls).toEqual([['ch1', 'ep010-cleopatra']]); // stale窓で取りこぼさない
+  });
+
+  it('restore後(このプロセスで書いていないジョブ)のreadLogは、ファイル末尾512KiBのtail読みで返す(全量は読まない)', () => {
+    const dir = path.join(root, 'factory-ui', 'jobs', 'big-1');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'state.json'),
+      JSON.stringify({
+        id: 'big-1', dir: 'ch1', operation: 'theme-scout', title: 'x',
+        status: 'interrupted', createdAt: 1, updatedAt: 1, stages: [], artifacts: [],
+        mode: 'manual', model: 'opus', effort: 'xhigh', request: { arg: '' },
+      }),
+    );
+    // 512KiBを超えるログファイルを直接用意する(1行2000バイト級 × 300行 ≒ 600KB)。
+    // 総行数はMAX_LOG_READ_LINES(2000)よりずっと少ないので、旧実装(全文readFileSync+末尾2000行slice)
+    // なら300行全部が返るはず。tail読み(末尾512KiBのみ)なら一部の先頭行が欠けるので行数が減る。
+    const totalLines = 300;
+    const lines: string[] = [];
+    for (let i = 0; i < totalLines; i++) {
+      lines.push(`L${String(i).padStart(4, '0')}:${'x'.repeat(2000)}`);
+    }
+    fs.writeFileSync(path.join(dir, 'log.jsonl'), lines.join('\n') + '\n');
+    m.restore(); // status=interrupted なので新規spawnはされない
+    const got = m.readLog('big-1');
+    expect(got).toBeDefined();
+    expect(got!.length).toBeGreaterThan(0);
+    expect(got!.length).toBeLessThan(totalLines); // 512KiB上限でファイル全体は読み込まない
+    expect(got![got!.length - 1]).toBe(lines[totalLines - 1]); // 末尾行は正しく読める
+    expect(got![0]!.startsWith('L')).toBe(true); // 先頭行は途中で切れた壊れた行ではない
+  });
+
+  describe('video-create フェーズチェーン', () => {
+    function makeEpisode(epId: string, subject: string, status: string) {
+      const epDir = path.join(root, 'ch1', 'episodes', epId);
+      fs.mkdirSync(epDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(epDir, 'episode.json'),
+        JSON.stringify({ episodeId: epId, subject, status }),
+      );
+    }
+
+    it('create時: phaseIndex=0、プロンプトにP1の担当範囲が入る', () => {
+      const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '織田信長' });
+      expect(m.get(j.id)!.phaseIndex).toBe(0);
+      expect(procs[0].args[1]).toContain('工程0〜3');
+    });
+
+    it('P1の<done>終了で succeeded にせず、新規セッション(--resumeなし)でP2を起動する', async () => {
+      makeEpisode('ep001-x', '織田信長', 'scripted');
+      const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '織田信長' });
+      procs[0].push(initLine('sid-p1', path.join(root, 'ch1')));
+      procs[0].push(resultLine('sid-p1', `台本審査PASS ${DONE}`));
+      await new Promise((r) => setTimeout(r, 20));
+      procs[0].emitExit(0);
+      await new Promise((r) => setTimeout(r, 30));
+      const d = m.get(j.id)!;
+      expect(d.status).toBe('running');
+      expect(d.phaseIndex).toBe(1);
+      expect(d.request.episodeId).toBe('ep001-x'); // 引き継ぎ時にepisodeIdを確定
+      expect(procs.length).toBe(2);
+      expect(procs[1].args[0]).toBe('-p');
+      expect(procs[1].args).not.toContain('--resume');
+      expect(procs[1].args[1]).toContain('工程4〜6');
+      expect(procs[1].args[1]).toContain('ep001-x');
+    });
+
+    it('最終フェーズ(P5)の<done>で succeeded になる', async () => {
+      makeEpisode('ep002-y', 'カエサル', 'packaged');
+      const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep002-y' });
+      // episodeId指定+status packaged → 開始フェーズ4(最終)
+      expect(m.get(j.id)!.phaseIndex).toBe(4);
+      expect(procs[0].args[1]).toContain('工程11〜12');
+      procs[0].push(initLine('sid-p3', path.join(root, 'ch1')));
+      procs[0].push(resultLine('sid-p3', `完了 ${DONE}`));
+      await new Promise((r) => setTimeout(r, 20));
+      procs[0].emitExit(0);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(m.get(j.id)!.status).toBe('succeeded');
+      expect(procs.length).toBe(1); // 次フェーズは起動しない
+    });
+
+    it('エピソードを特定できないままP1が<done>したら failed(エラーメッセージつき)', async () => {
+      const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '見つからない題材' });
+      procs[0].push(initLine('sid-nf', path.join(root, 'ch1')));
+      procs[0].push(resultLine('sid-nf', DONE));
+      await new Promise((r) => setTimeout(r, 20));
+      procs[0].emitExit(0);
+      await new Promise((r) => setTimeout(r, 30));
+      const d = m.get(j.id)!;
+      expect(d.status).toBe('failed');
+      expect(d.error).toContain('エピソード');
+      expect(procs.length).toBe(1);
+    });
+
+    it('フェーズ途中のexit≠0はfailed。resumeは現フェーズの範囲指示つきで--resume再開する', async () => {
+      makeEpisode('ep003-z', '信玄', 'voiced');
+      const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep003-z' });
+      expect(m.get(j.id)!.phaseIndex).toBe(1);
+      procs[0].push(initLine('sid-f', path.join(root, 'ch1')));
+      await new Promise((r) => setTimeout(r, 20));
+      procs[0].emitExit(1);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(m.get(j.id)!.status).toBe('failed');
+      m.resume(j.id);
+      expect(procs.length).toBe(2);
+      expect(procs[1].args).toContain('--resume');
+      expect(procs[1].args.some((a) => a.includes('工程4〜6'))).toBe(true);
+    });
+
+    it('restore互換: phaseIndexの無い旧running ジョブは interrupted になり、<done>で従来どおり完走できる', async () => {
+      // 旧形式のstate.json(phaseIndexなし)を直接書いてrestoreする
+      const oldId = 'legacy-job-1';
+      const jdir = path.join(root, 'factory-ui', 'jobs', oldId);
+      fs.mkdirSync(jdir, { recursive: true });
+      fs.writeFileSync(
+        path.join(jdir, 'state.json'),
+        JSON.stringify({
+          id: oldId, dir: 'ch1', operation: 'video-create', title: 'x', status: 'running',
+          createdAt: Date.now(), updatedAt: Date.now(),
+          mode: 'manual', model: 'opus', effort: 'xhigh', request: { arg: 'x' },
+          sessionId: 'sid-legacy', stages: [], artifacts: [],
+        }),
+      );
+      m.restore();
+      const d = m.get(oldId)!;
+      expect(d.status).toBe('interrupted');
+      expect(d.phaseIndex).toBeUndefined();
+      m.resume(oldId);
+      const p = procs[procs.length - 1];
+      expect(p.args.some((a) => a.includes('担当範囲'))).toBe(false); // 旧ジョブに範囲指示を付けない
+      p.push(resultLine('sid-legacy', DONE));
+      await new Promise((r) => setTimeout(r, 20));
+      p.emitExit(0);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(m.get(oldId)!.status).toBe('succeeded'); // フェーズチェーンに入らない
+    });
+  });
+});
+
+// spawn失敗の防御(2026-07-16 fd枯渇でのspawn EBADF座礁対策)
+describe('JobManager spawn失敗', () => {
+  let root: string;
+
+  beforeEach(() => {
+    _clearProgressCache();
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'fui-jobs-spawnfail-'));
+    fs.mkdirSync(path.join(root, 'ch1'));
+    fs.writeFileSync(path.join(root, 'ch1', '.channel-system.json'), JSON.stringify({ channelId: 'ch1' }));
+  });
+
+  it('create時にspawnFnが同期throwしたら failed になり error に原因を含む(座礁しない)', () => {
+    const m = new JobManager(root, () => {
+      throw new Error('spawn EBADF');
+    });
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    const d = m.get(j.id)!;
+    expect(d.status).toBe('failed');
+    expect(d.error).toContain('spawn EBADF');
+  });
+
+  it('respondGate時にspawnFnが同期throwしたら failed になる(running×プロセスなしで残らない)', async () => {
+    const procs: FakeProc[] = [];
+    let broken = false;
+    const m = new JobManager(root, (args, opts) => {
+      if (broken) throw new Error('spawn EBADF');
+      const p = new FakeProc(args, opts.cwd);
+      procs.push(p);
+      return { stdout: p.stdout, onExit: (cb) => p.onExit(cb), kill: () => p.kill() };
+    });
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    procs[0].push(initLine('sid-f', path.join(root, 'ch1')));
+    procs[0].push(textLine(GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.get(j.id)!.status).toBe('awaiting_gate');
+    broken = true;
+    m.respondGate(j.id, 'yes');
+    const d = m.get(j.id)!;
+    expect(d.status).toBe('failed');
+    expect(d.error).toContain('spawn EBADF');
+    // failed なので resume で復旧できる
+    broken = false;
+    m.resume(j.id);
+    expect(m.get(j.id)!.status).toBe('running');
+    expect(procs[1].args).toContain('--resume');
+  });
+
+  it('makeClaudeSpawn は起動失敗(errorイベント)を onExit(-1) として通知する', async () => {
+    const spawnBroken = makeClaudeSpawn('definitely-not-a-real-binary-xyz');
+    const p = spawnBroken(['-p', 'hi'], { cwd: root });
+    const code = await new Promise<number>((resolve) => p.onExit(resolve));
+    expect(code).toBe(-1);
+  });
+});
+
+describe('JobManager killAll(サーバー終了時の道連れkill)', () => {
+  let root: string;
+  let procs: FakeProc[];
+  let m: JobManager;
+
+  beforeEach(() => {
+    _clearProgressCache();
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'fui-jobs-'));
+    fs.mkdirSync(path.join(root, 'ch1'));
+    fs.mkdirSync(path.join(root, 'ch2'));
+    fs.writeFileSync(path.join(root, 'ch1', '.channel-system.json'), JSON.stringify({ channelId: 'ch1' }));
+    fs.writeFileSync(path.join(root, 'ch2', '.channel-system.json'), JSON.stringify({ channelId: 'ch2' }));
+    procs = [];
+    const spawnFn: SpawnClaude = (args, opts) => {
+      const p = new FakeProc(args, opts.cwd);
+      procs.push(p);
+      return { stdout: p.stdout, onExit: (cb) => p.onExit(cb), kill: () => p.kill() };
+    };
+    m = new JobManager(root, spawnFn);
+  });
+
+  it('running ジョブの proc を kill し interrupted へ。kill由来の遅延exitで状態が汚れない', () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    m.killAll();
+    expect(procs[0].killed).toBe(true);
+    // FakeProc.kill() は exit(143) を同期発火する — 世代無効化により interrupted のまま
+    const d = m.get(j.id)!;
+    expect(d.status).toBe('interrupted');
+    expect(d.error).toBeUndefined();
+  });
+
+  it('interrupted が state.json に即時永続化される(restore不要でディスクも正しい)', () => {
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    m.killAll();
+    const st = JSON.parse(
+      fs.readFileSync(path.join(root, 'factory-ui', 'jobs', j.id, 'state.json'), 'utf8'),
+    );
+    expect(st.status).toBe('interrupted');
+  });
+
+  it('終了状態のジョブには触らない。複数running は全て止まる', async () => {
+    const j1 = m.create({ dir: 'ch1', operation: 'video-create', arg: 'x' });
+    procs[0].push(initLine('sid1', path.join(root, 'ch1')));
+    await new Promise((r) => setTimeout(r, 10));
+    m.cancel(j1.id);
+    expect(m.get(j1.id)!.status).toBe('cancelled');
+    const j2 = m.create({ dir: 'ch1', operation: 'video-create', arg: 'y' });
+    const j3 = m.create({ dir: 'ch2', operation: 'video-create', arg: 'z' });
+    procs[1].push(initLine('sid2', path.join(root, 'ch1')));
+    await new Promise((r) => setTimeout(r, 10));
+    m.killAll();
+    expect(m.get(j1.id)!.status).toBe('cancelled');
+    expect(m.get(j2.id)!.status).toBe('interrupted');
+    expect(m.get(j3.id)!.status).toBe('interrupted');
+    // interrupted は resume で --resume 再開できる(既存機構との整合)
+    expect(() => m.resume(j2.id)).not.toThrow();
   });
 });

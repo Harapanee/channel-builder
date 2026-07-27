@@ -1,5 +1,5 @@
 import type { ChannelSummary } from '../../../shared/types';
-import { badgeClassFor } from '../status';
+import { badgeClassFor, statusLabel } from '../status';
 
 /**
  * 左サイドバー: ダッシュボードへのリンク + チャンネル一覧 + 「+ 新チャンネル」。
@@ -33,6 +33,13 @@ export function Sidebar({
       >
         <span>ダッシュボード</span>
       </button>
+
+      {/* ルートターミナル('')滞在中だけ現在地として表示する(平常時の導線には出さない) */}
+      {activeDir === '' && (
+        <button className="sidebar-item active" onClick={() => onSelect('')}>
+          <span>新チャンネル構築(ルート)</span>
+        </button>
+      )}
 
       <div className="mono" style={{ padding: '16px 10px 4px' }}>
         チャンネル({channels.length})
@@ -86,7 +93,7 @@ export function Sidebar({
               </span>
             </span>
             <span className={badgeClassFor(c.status)} style={{ flexShrink: 0 }}>
-              {c.status || '不明'}
+              {statusLabel(c.status)}
             </span>
           </button>
         ))

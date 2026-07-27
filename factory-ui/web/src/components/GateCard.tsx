@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { GateRequest } from '../../../shared/types';
-import { getStudioStatus, respondGate, startStudio, stopStudio } from '../api';
+import { getStudioStatus, respondGate, startStudio, startStudioShort, stopStudio } from '../api';
 
 /**
  * render-check用: Remotion Studio の起動・リンク・停止(サーバーが該当チャンネルで
  * `npm run studio` を起動し、疎通確認後にURLが返る)。
+ * shortId があればショート対象(shorts/<shortId>)で起動する(short-createジョブのゲート)。
  */
-function StudioLauncher({ dir, episodeId }: { dir: string; episodeId?: string }) {
+function StudioLauncher({ dir, episodeId, shortId }: { dir: string; episodeId?: string; shortId?: string }) {
   const [state, setState] = useState<'idle' | 'starting' | 'ready'>('idle');
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ function StudioLauncher({ dir, episodeId }: { dir: string; episodeId?: string })
     setState('starting');
     setError(null);
     try {
-      const res = await startStudio(dir, episodeId);
+      const res = shortId ? await startStudioShort(dir, shortId) : await startStudio(dir, episodeId);
       setUrl(res.url);
       setState('ready');
     } catch (e) {
@@ -59,7 +60,7 @@ function StudioLauncher({ dir, episodeId }: { dir: string; episodeId?: string })
         </>
       ) : (
         <button type="button" className="btn btn-ghost" disabled={state === 'starting'} onClick={handleStart}>
-          {state === 'starting' ? 'Studio起動中…(初回は1分ほどかかることがあります)' : '🎬 Studioで確認'}
+          {state === 'starting' ? 'Studio起動中…(初回は1分ほどかかることがあります)' : 'Studioで確認'}
         </button>
       )}
       {error && <span style={{ color: 'var(--status-err)' }}>{error}</span>}
@@ -77,11 +78,13 @@ export function GateCard({
   gate,
   dir,
   episodeId,
+  shortId,
 }: {
   jobId: string;
   gate: GateRequest;
   dir?: string;
   episodeId?: string;
+  shortId?: string;
 }) {
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sentLabel, setSentLabel] = useState<string | null>(null);
@@ -117,7 +120,9 @@ export function GateCard({
         {gate.context && <span style={{ color: 'var(--text-secondary)' }}>{gate.context}</span>}
       </div>
 
-      {isRenderCheck && dir !== undefined && sentLabel === null && <StudioLauncher dir={dir} episodeId={episodeId} />}
+      {isRenderCheck && dir !== undefined && sentLabel === null && (
+        <StudioLauncher dir={dir} episodeId={episodeId} shortId={shortId} />
+      )}
 
       {sentLabel ? (
         <div className="gate-options">

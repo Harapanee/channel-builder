@@ -23,6 +23,8 @@ const ASSETS_DIR = 'assets';
 const LIBRARY_FILE = 'library.json';
 const CHANNEL_DIR = 'channel';
 const BIBLE_FILE = 'bible.md';
+const SHORTS_DIR = 'shorts';
+const SHORT_FILE = 'short.json';
 
 /** bible.md の最大サイズ(バイト)。巨大入力による事故・DoS を防ぐ。 */
 const MAX_BIBLE_BYTES = 1024 * 1024; // 1MB
@@ -140,6 +142,46 @@ export async function writeBible(root: string, dir: string, content: string): Pr
     await writeFileAtomic(bibleAbs + '.bak', previous);
   }
   await writeFileAtomic(bibleAbs, content);
+}
+
+/**
+ * ショートのStudio確認を人間が承認する。shorts/<shortId>/short.json の status を
+ * implemented → studio_checked へ更新する(short-create のゲート2に相当する直接編集)。
+ * throw メッセージの接頭辞契約(API層がHTTPコードへ写す):
+ *   invalid: 不正な shortId / 壊れたJSON(400) / not_found: short.json 不在(404) /
+ *   not_ready: status が implemented 以外(409)
+ */
+export async function approveShortStudioCheck(
+  root: string,
+  dir: string,
+  shortId: string,
+): Promise<void> {
+  await assertChannel(root, dir);
+  if (
+    typeof shortId !== 'string' ||
+    shortId === '' ||
+    shortId === '.' ||
+    shortId === '..' ||
+    shortId.includes('/') ||
+    shortId.includes('\\') ||
+    shortId.includes(path.sep)
+  ) {
+    throw new Error(`invalid: 不正な shortId です: ${JSON.stringify(shortId)}`);
+  }
+
+  let raw: string;
+  try {
+    raw = await readGuarded(root, path.join(dir, SHORTS_DIR, shortId, SHORT_FILE));
+  } catch {
+    throw new Error(`not_found: ${SHORTS_DIR}/${shortId}/${SHORT_FILE} がありません`);
+  }
+  const meta = parseJsonObject(raw, `invalid: ${SHORT_FILE} の JSON が不正です`);
+  if (meta.status !== 'implemented') {
+    const current = typeof meta.status === 'string' ? meta.status : '(none)';
+    throw new Error(`not_ready: short status is ${current}(implemented のみStudio確認を承認できます)`);
+  }
+  meta.status = 'studio_checked';
+  await writeGuarded(root, path.join(dir, SHORTS_DIR, shortId), SHORT_FILE, jsonText(meta));
 }
 
 // --- 内部ヘルパ --------------------------------------------------------------

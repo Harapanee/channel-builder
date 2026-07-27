@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteYoutubeClient, getYoutubeClient, putYoutubeClient } from '../api';
+import { useConfirm } from './ConfirmDialog';
 
 type ClientInfo = { configured: boolean; clientId?: string; redirectUri: string };
 
@@ -50,6 +51,7 @@ export function YoutubeClientSettings() {
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   const reload = useCallback(async () => {
     setLoadError(null);
@@ -115,7 +117,12 @@ export function YoutubeClientSettings() {
   }
 
   async function remove() {
-    const ok = window.confirm('クライアントJSONを削除します。全チャンネルのYouTube連携が使えなくなります(再設置すれば復帰)。よろしいですか?');
+    const ok = await confirm({
+      title: 'クライアントJSONを削除しますか?',
+      body: '全チャンネルのYouTube連携が使えなくなります(再設置すれば復帰します)。',
+      confirmLabel: '削除する',
+      danger: true,
+    });
     if (!ok) return;
     setMessage(null);
     try {
@@ -203,9 +210,11 @@ export function YoutubeClientSettings() {
           </button>
           {saving && <span className="mono">保存中…</span>}
         </div>
-        {message && (
-          <span style={{ color: message.kind === 'ok' ? 'var(--status-ok)' : 'var(--status-err)' }}>{message.text}</span>
-        )}
+        <span aria-live="polite">
+          {message && (
+            <span style={{ color: message.kind === 'ok' ? 'var(--status-ok)' : 'var(--status-err)' }}>{message.text}</span>
+          )}
+        </span>
       </div>
     </section>
   );

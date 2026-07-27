@@ -52,6 +52,12 @@ type RenderStatusFile = {
   qaExit?: number;
 };
 
+/** キューアイテムの種別。永続化JSON互換のため kind キー省略=エピソード */
+type ItemKind = 'episode' | 'short';
+const baseDirFor = (kind: ItemKind): string => (kind === 'short' ? 'shorts' : 'episodes');
+const metaFileFor = (kind: ItemKind): string => (kind === 'short' ? 'short.json' : 'episode.json');
+const kindOf = (item: RenderQueueItem): ItemKind => (item.kind === 'short' ? 'short' : 'episode');
+
 export type RenderQueueOpts = {
   spawnFn?: SpawnRender;
   gitFn?: RunGit;
@@ -66,6 +72,7 @@ export type RenderQueueOpts = {
  * - 実行主体はサーバー(Claudeセッション不使用)。レンダー本体は detached で切り離す
  * - 完了検知は out/.render-status-final.json のポーリング(サーバー再起動に耐える)
  * - 失敗してもキューは止めない。成功時は episode.json final / metrics renderMinutes / git commit を機械的に行う
+ * ショート(kind: 'short')も同じキューで扱う(shorts/<shortId>/short.json を参照し、成功で status: "rendered")。
  * - 永続化: factory-ui/render-queue.json
  * emit: 'update'(RenderQueueItem[])
  */
@@ -78,6 +85,8 @@ export class RenderQueueManager extends EventEmitter {
   private readonly pollMs: number;
   private items: RenderQueueItem[] = [];
   private consuming = false;
+  /** レンダー+QA成功時の通知フック(index.tsでジョブの「レンダー」工程done反映に配線する) */
+  onSuccess?: (dir: string, epId: string) => void;
 
   constructor(root: string, opts: RenderQueueOpts = {}) {
     super();
@@ -97,33 +106,51 @@ export class RenderQueueManager extends EventEmitter {
    * キューへ登録する。throwメッセージの先頭トークンでAPI層がHTTPコードへ写す:
    * duplicate: / not_ready: → 409、unknown: → 404、invalid: → 400
    */
-  enqueue(dir: string, epId: string, opts: { requireReady?: boolean } = {}): RenderQueueItem {
+  enqueue(
+    dir: string,
+    epId: string,
+    opts: { requireReady?: boolean; kind?: ItemKind } = {},
+  ): RenderQueueItem {
+    const kind: ItemKind = opts.kind ?? 'episode';
     const cwd = this.resolveChannel(dir);
     if (!isSingleSegment(epId)) throw new Error(`invalid: bad epId: ${epId}`);
     let meta: Record<string, unknown>;
     try {
       const parsed = JSON.parse(
-        fs.readFileSync(path.join(cwd, 'episodes', epId, 'episode.json'), 'utf8'),
+        fs.readFileSync(path.join(cwd, baseDirFor(kind), epId, metaFileFor(kind)), 'utf8'),
       ) as unknown;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('bad json');
       meta = parsed as Record<string, unknown>;
     } catch {
-      throw new Error(`unknown: episode not found: ${epId}`);
+      throw new Error(`unknown: ${kind} not found: ${epId}`);
     }
     const dup = this.items.find(
-      (i) => i.dir === dir && i.epId === epId && (i.status === 'waiting' || i.status === 'running'),
+      (i) =>
+        i.dir === dir &&
+        i.epId === epId &&
+        kindOf(i) === kind &&
+        (i.status === 'waiting' || i.status === 'running'),
     );
     if (dup) throw new Error(`duplicate: already queued: ${dir}/${epId}`);
     if (opts.requireReady) {
       const status = typeof meta.status === 'string' ? meta.status : '';
-      if (status !== 'render_ready' && status !== 'final') {
-        throw new Error(`not_ready: episode status is ${status || '(none)'}(render_ready 以降のみ登録できます)`);
+      const ready =
+        kind === 'short'
+          ? status === 'studio_checked' || status === 'queued' || status === 'rendered'
+          : status === 'render_ready' || status === 'final';
+      if (!ready) {
+        throw new Error(
+          kind === 'short'
+            ? `not_ready: short status is ${status || '(none)'}(studio_checked 以降のみ登録できます)`
+            : `not_ready: episode status is ${status || '(none)'}(render_ready 以降のみ登録できます)`,
+        );
       }
     }
     const item: RenderQueueItem = {
       id: randomUUID(),
       dir,
       epId,
+      ...(kind === 'short' ? { kind: 'short' as const } : {}),
       status: 'waiting',
       enqueuedAt: new Date().toISOString(),
     };
@@ -134,9 +161,9 @@ export class RenderQueueManager extends EventEmitter {
   }
 
   /** jobs.ts のrender-check承認から呼ぶ登録口。既登録は「登録済み」としてtrue */
-  enqueueFromGate(dir: string, epId: string): boolean {
+  enqueueFromGate(dir: string, epId: string, kind: ItemKind = 'episode'): boolean {
     try {
-      this.enqueue(dir, epId);
+      this.enqueue(dir, epId, { kind });
       return true;
     } catch (e) {
       return e instanceof Error && e.message.startsWith('duplicate:');
@@ -149,6 +176,23 @@ export class RenderQueueManager extends EventEmitter {
     if (!this.items.some((i) => i.status === 'waiting')) throw new Error('empty: no waiting items');
     this.consuming = true;
     void this.consumeLoop();
+  }
+
+  /**
+   * waitingアイテム1本だけを即レンダーする(単発。完了しても他のwaitingへは進まない)。
+   * busy: 消化ループ稼働中/単発実行中 / unknown: 不明ID / conflict: waiting以外
+   */
+  startOne(id: string): void {
+    if (this.consuming) throw new Error('busy: render queue is already running');
+    const item = this.items.find((i) => i.id === id);
+    if (!item) throw new Error(`unknown: item not found: ${id}`);
+    if (item.status !== 'waiting') throw new Error(`conflict: item is not waiting: ${id}`);
+    this.consuming = true;
+    void this.runOne(item).finally(() => {
+      this.consuming = false;
+      this.persist();
+      this.emitUpdate();
+    });
   }
 
   cancel(id: string): void {
@@ -169,6 +213,18 @@ export class RenderQueueManager extends EventEmitter {
       }
     }
     this.finish(item, 'canceled', {});
+  }
+
+  /** 終了済み(done/failed/canceled)を一括削除して件数を返す。waiting/runningには触れない */
+  clearFinished(): number {
+    const before = this.items.length;
+    this.items = this.items.filter((i) => i.status === 'waiting' || i.status === 'running');
+    const cleared = before - this.items.length;
+    if (cleared > 0) {
+      this.persist();
+      this.emitUpdate();
+    }
+    return cleared;
   }
 
   /**
@@ -228,11 +284,12 @@ export class RenderQueueManager extends EventEmitter {
       this.finish(item, 'failed', { reason: 'invalid_dir' });
       return;
     }
-    const outDir = path.join(cwd, 'episodes', item.epId, 'out');
+    const base = baseDirFor(kindOf(item));
+    const outDir = path.join(cwd, base, item.epId, 'out');
     try {
       fs.mkdirSync(outDir, { recursive: true });
       // 前回レンダーの残骸を先に消す(スクリプト起動前の誤検知防止)
-      fs.rmSync(this.statusPath(cwd, item.epId), { force: true });
+      fs.rmSync(this.statusPath(cwd, item), { force: true });
     } catch {
       /* ignore */
     }
@@ -241,7 +298,7 @@ export class RenderQueueManager extends EventEmitter {
     try {
       const { pid } = this.spawnFn(
         'bash',
-        ['scripts/render-episode.sh', `episodes/${item.epId}`, 'final'],
+        ['scripts/render-episode.sh', `${base}/${item.epId}`, 'final'],
         { cwd, logPath: path.join(outDir, 'render-final.log') },
       );
       item.pid = pid;
@@ -255,7 +312,7 @@ export class RenderQueueManager extends EventEmitter {
   }
 
   private async pollUntilDone(item: RenderQueueItem, cwd: string): Promise<void> {
-    const statusPath = this.statusPath(cwd, item.epId);
+    const statusPath = this.statusPath(cwd, item);
     let deadTicks = 0;
     for (;;) {
       await sleep(this.pollMs);
@@ -265,6 +322,11 @@ export class RenderQueueManager extends EventEmitter {
         if (st.ok === true && st.qaExit === 0) {
           await this.applySuccess(item, cwd);
           this.finish(item, 'done', { durationSec: st.durationSec, qaExit: st.qaExit });
+          try {
+            this.onSuccess?.(item.dir, item.epId);
+          } catch (e) {
+            console.error(`render-queue: onSuccessフック失敗 ${item.dir}/${item.epId}:`, e);
+          }
         } else {
           // 失敗時は episode.json を触らない(render_readyのまま → 修正後に再キューできる)
           this.finish(item, 'failed', {
@@ -292,6 +354,25 @@ export class RenderQueueManager extends EventEmitter {
    * チャンネルリポジトリへ git commit。各段は失敗してもキューを止めない(ログのみ)。
    */
   private async applySuccess(item: RenderQueueItem, cwd: string): Promise<void> {
+    if (kindOf(item) === 'short') {
+      // short.json → rendered。metrics(renderMinutes)はエピソード専用のため書かない
+      try {
+        const shortJsonPath = path.join(cwd, 'shorts', item.epId, 'short.json');
+        const meta = JSON.parse(fs.readFileSync(shortJsonPath, 'utf8')) as Record<string, unknown>;
+        meta.status = 'rendered';
+        fs.writeFileSync(shortJsonPath, JSON.stringify(meta, null, 2) + '\n');
+      } catch (e) {
+        console.error(`render-queue: short.json更新失敗 ${item.dir}/${item.epId}:`, e);
+      }
+      try {
+        await this.gitFn(cwd, ['add', '-A', `shorts/${item.epId}`]);
+        await this.gitFn(cwd, ['commit', '-m', `render(${item.epId}): short final render + QA pass [factory-ui]`]);
+      } catch (e) {
+        console.error(`render-queue: git commit失敗 ${item.dir}/${item.epId}:`, e);
+      }
+      return;
+    }
+    // 以下、既存のエピソード処理(変更なし)
     try {
       const epJsonPath = path.join(cwd, 'episodes', item.epId, 'episode.json');
       const meta = JSON.parse(fs.readFileSync(epJsonPath, 'utf8')) as Record<string, unknown>;
@@ -354,8 +435,8 @@ export class RenderQueueManager extends EventEmitter {
     return abs;
   }
 
-  private statusPath(cwd: string, epId: string): string {
-    return path.join(cwd, 'episodes', epId, 'out', '.render-status-final.json');
+  private statusPath(cwd: string, item: RenderQueueItem): string {
+    return path.join(cwd, baseDirFor(kindOf(item)), item.epId, 'out', '.render-status-final.json');
   }
 
   private queuePath(): string {

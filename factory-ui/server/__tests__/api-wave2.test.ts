@@ -179,6 +179,52 @@ describe('api routes (wave2)', () => {
     expect((await post('/api/render-queue/enqueue', { dir: 'ch1' })).status).toBe(400);
   });
 
+  it('render-queue: kind=shortはshort.jsonを検証して201、studio_checked未満は409、不正kindは400', async () => {
+    const d = path.join(root, 'ch1', 'shorts', 'sh001-t');
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(
+      path.join(d, 'short.json'),
+      JSON.stringify({ shortId: 'sh001-t', formatId: 'f1', sourceEpisodeId: 'ep001-a', title: 't', status: 'studio_checked' }),
+    );
+    const d2 = path.join(root, 'ch1', 'shorts', 'sh002-t');
+    fs.mkdirSync(d2, { recursive: true });
+    fs.writeFileSync(
+      path.join(d2, 'short.json'),
+      JSON.stringify({ shortId: 'sh002-t', formatId: 'f1', sourceEpisodeId: 'ep001-a', title: 't', status: 'implemented' }),
+    );
+    const ok = await post('/api/render-queue/enqueue', { dir: 'ch1', epId: 'sh001-t', kind: 'short' });
+    expect(ok.status).toBe(201);
+    expect(((await ok.json()) as { kind?: string }).kind).toBe('short');
+    expect((await post('/api/render-queue/enqueue', { dir: 'ch1', epId: 'sh002-t', kind: 'short' })).status).toBe(409);
+    expect((await post('/api/render-queue/enqueue', { dir: 'ch1', epId: 'sh001-t', kind: 'bogus' })).status).toBe(400);
+  });
+
+  it('render-queue: clear-finishedは200 {cleared:n} で終了済みだけ消える(0件でも200)', async () => {
+    writeApiEpisode('ep001-a', 'render_ready');
+    // Manager経由で done 1件を作る(完了模擬の詳細はManagerテスト側で担保済み)
+    renderQueue.enqueue('ch1', 'ep001-a');
+    renderQueue.start();
+    await new Promise((r) => setTimeout(r, 30));
+    const out = path.join(root, 'ch1', 'episodes', 'ep001-a', 'out');
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(
+      path.join(out, '.render-status-final.json'),
+      JSON.stringify({ out: 'final', ok: true, durationSec: 10, qaExit: 0 }),
+    );
+    await new Promise((r) => setTimeout(r, 60));
+    const waiting = renderQueue.enqueue('ch1', 'ep001-a');
+
+    const res = await post('/api/render-queue/clear-finished', {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ cleared: 1 });
+    const list = (await (await fetch(`${url}/api/render-queue`)).json()) as { items: Array<{ id: string }> };
+    expect(list.items.map((i) => i.id)).toEqual([waiting.id]);
+
+    const res2 = await post('/api/render-queue/clear-finished', {});
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toEqual({ cleared: 0 });
+  });
+
   it('render-queue: startは204(空/実行中は409)、cancelは204(未知は404)。startでrender-episode.shがspawnされる', async () => {
     expect((await post('/api/render-queue/start', {})).status).toBe(409); // empty
     writeApiEpisode('ep001-a', 'render_ready');
@@ -190,5 +236,16 @@ describe('api routes (wave2)', () => {
     expect(renderSpawns[0]).toEqual(['bash', 'scripts/render-episode.sh', 'episodes/ep001-a', 'final']);
     expect((await post(`/api/render-queue/${item.id}/cancel`, {})).status).toBe(204);
     expect((await post('/api/render-queue/no-such-id/cancel', {})).status).toBe(404);
+  });
+
+  it('render-queue: :id/start はwaitingを単発開始して204。不明IDは404、非waitingは409', async () => {
+    writeApiEpisode('ep001-a', 'render_ready');
+    const created = await post('/api/render-queue/enqueue', { dir: 'ch1', epId: 'ep001-a' });
+    const item = (await created.json()) as { id: string };
+    // busy(consuming)前: 未知IDは404
+    expect((await post('/api/render-queue/no-such-id/start', {})).status).toBe(404);
+    expect((await post(`/api/render-queue/${item.id}/start`, {})).status).toBe(204);
+    // 実行中(consuming)の再開始はbusy=409(未知IDでもbusyが優先される)
+    expect((await post(`/api/render-queue/${item.id}/start`, {})).status).toBe(409);
   });
 });

@@ -18,7 +18,29 @@ export type EpisodeSummary = {
   hasFinal: boolean;      // out/final.mp4 が存在
   hasScript: boolean;     // script.md が存在
   reviewFiles: string[];  // review/ 直下のファイル名(ソート済み)
+  thumbnailFiles: string[]; // publish/ 直下の画像ファイル名(ソート済み)
+  selectedThumbnail?: string; // publish/metadata.json の thumbnail(エピソード相対パス)
   stages: JobStage[];     // video-create工程レール(episode.jsonのstatus由来の進捗)
+};
+
+export type ShortSummary = {
+  shortId: string;         // shorts/<shortId> のフォルダ名
+  title?: string;
+  formatId?: string;       // channel/short-formats/<formatId>.json への参照
+  sourceEpisodeId?: string; // 元エピソード
+  status?: string;         // scripted → … → rendered(short-create スキルが更新)
+  hasScript: boolean;      // script.md が存在
+  hasFinal: boolean;       // out/final.mp4 が存在
+  hasMetadata: boolean;    // publish/metadata.json が存在(公開準備の完了印。/short-publish が生成)
+  reviewFiles: string[];   // review/ 直下のファイル名(ソート済み)
+  stages: JobStage[];      // short-create工程レール(short.jsonのstatus由来の進捗)
+};
+
+/** channel/short-formats/<formatId>.json の表示用サマリ(構造の型はUIでは表示のみ) */
+export type ShortFormatSummary = {
+  formatId: string;
+  name?: string;
+  targetDurationSec?: number;
 };
 
 export type SessionInfo = {
@@ -42,13 +64,17 @@ export type ServerMsg =
   | { type: 'pty-data'; sessionId: string; data: string }
   | { type: 'session-status'; sessionId: string; status: 'running' | 'exited'; exitCode?: number }
   | { type: 'sessions-changed' }
-  | { type: 'fs-update'; dir: string; kind: 'system' | 'episode' | 'media' | 'images' }
+  | { type: 'fs-update'; dir: string; kind: 'system' | 'episode' | 'short' | 'media' }
   | { type: 'job-update'; job: JobDetail }
+  | { type: 'job-removed'; jobId: string }
   | { type: 'job-log'; jobId: string; line: string }
   | { type: 'gate-open'; jobId: string; gate: GateRequest }
   | { type: 'rate-limit'; info: RateLimitInfo }
   | { type: 'render-queue'; items: RenderQueueItem[] }
-  | { type: 'youtube-upload'; job: YoutubeUploadJob };
+  | { type: 'youtube-upload'; job: YoutubeUploadJob }
+  // クライアント側(FactoryWS)が合成する接続状態通知。サーバーは送らない。
+  // connected:true は「再接続に成功した」通知でもあるため、購読側はこれを機に一覧を再取得する。
+  | { type: 'ws-status'; connected: boolean };
 
 // ---- ジョブ(ヘッドレスclaude操作)----
 
@@ -65,9 +91,15 @@ export type JobStatus =
 export type JobMode = 'manual' | 'semi' | 'auto';
 
 /** ジョブ作成時の元リクエスト(キュー起動・再試行でプロンプトを再構築するために保持) */
-export type JobRequest = { arg: string; durationSec?: number; episodeId?: string };
+export type JobRequest = { arg: string; durationSec?: number; durationSecMax?: number; episodeId?: string };
 
-export type JobStage = { key: string; label: string; state: 'pending' | 'active' | 'done' };
+export type JobStage = {
+  key: string;
+  label: string;
+  state: 'pending' | 'active' | 'done' | 'queued';
+  startedAt?: number; // epoch ms。工程別所要時間の計測用
+  endedAt?: number;
+};
 
 export type JobSummary = {
   id: string;
@@ -81,8 +113,9 @@ export type JobSummary = {
   error?: string;
   mode: JobMode;   // 実行モード(既定 manual)
   model: string;   // claude --model に渡す値(既定 opus)
-  effort: string;  // claude --effort に渡す値(既定 xhigh)
+  effort: string;  // claude --effort に渡す値(既定 high)
   episodeId?: string; // 関連エピソード(refine等はrequest指定、video-createは題材から解決)
+  shortId?: string; // 関連ショート(short-createはargの epId+formatId から解決)
 };
 
 export type JobDetail = JobSummary & {
@@ -94,6 +127,10 @@ export type JobDetail = JobSummary & {
   request: JobRequest;      // 作成時の元リクエスト
   resultText?: string;      // 最終resultの本文(マーカー除去済み。質問オペの回答表示に使う)
   renderApproved?: boolean; // レンダー前目視確認(render-check)が承認済みか
+  /** レンダーを夜間キューへ委譲した(=ジョブ成功でもレンダー工程は未実行)。キュー成功時にサーバーが解除する */
+  renderQueued?: boolean;
+  /** フェーズ分割ジョブの現在フェーズ(0起点)。undefined=分割導入前の旧ジョブ(単一セッションで完走) */
+  phaseIndex?: number;
 };
 
 export type GateOption = { id: string; label: string; description: string };
@@ -123,6 +160,18 @@ export type OperationDef = {
   stages: string[]; // 制作ラインの工程ラベル(ステージレール描画に使う)
   buildCommand: (arg: string) => string; // 例: (a) => `/video-create ${a}`
   readOnly?: boolean; // true=読み取り専用オペ。spawn時にツール制限を付ける
+  /** フェーズ分割実行の指示文(video-create)。各要素が1セッションの担当範囲。
+   * 定義があるオペは、フェーズ末尾の<done>ごとに新規セッションで次フェーズを起動する
+   * (1セッション肥大によるcache read増とusage浪費を防ぐ。Phase 6設計書 B-1) */
+  phases?: string[];
+  /** phases と同じ長さの配列で、各フェーズが <stage> マーカーとして発行してよい
+   * 工程ラベルの集合。セッションはフェーズ末尾の監査などで担当範囲外のラベルを
+   * 誤発行することがあり(実測 ep001-shoyu: 素材・実装の実作業が「検査」枠に計上)、
+   * 範囲外マーカーは進捗前進に使わない(jobs.ts maybeStage のクランプ)。
+   * 未定義のフェーズ/オペはクランプなし(全ラベル許容) */
+  phaseStages?: string[][];
+  /** true=ファクトリールート(dir='')で実行する操作。チャンネルdirでの起動は拒否される(jobs.tsのガード) */
+  rootLevel?: boolean;
 };
 
 // ---- 夜間レンダーキュー ----
@@ -133,7 +182,8 @@ export type RenderQueueItemStatus = 'waiting' | 'running' | 'done' | 'failed' | 
 export type RenderQueueItem = {
   id: string;              // UUID
   dir: string;             // チャンネルフォルダ名(ジョブと同じ相対表現)
-  epId: string;            // 例 ep001-oda-nobunaga
+  epId: string;            // 例 ep001-oda-nobunaga(kind='short' のときは shortId 例 sh001-xxx)
+  kind?: 'short';          // 省略時はエピソード(後方互換: 既存キューJSONにこのキーは無い)
   status: RenderQueueItemStatus;
   enqueuedAt: string;      // ISO
   startedAt?: string;
@@ -161,12 +211,16 @@ export type YoutubeAuthStatus =
 
 export type YoutubeUploadStatus = 'uploading' | 'setting_thumbnail' | 'done' | 'failed';
 
+/** アップロード対象の種別。永続化JSON互換のため kind キー省略=エピソード(render-queue と同じ流儀) */
+export type UploadKind = 'episode' | 'short';
+
 /** 1回のアップロードジョブ。wshub経由で 'youtube-upload' として配信する */
 export type YoutubeUploadJob = {
   id: string;              // UUID
   dir: string;             // チャンネルフォルダ名
-  epId: string;            // 例 ep001-mola
-  videoFile: string;       // エピソード相対(例 'out/final.mp4')
+  epId: string;            // エピソードID or ショートID(例 ep001-mola / sh001-caesar-top3)
+  kind?: 'short';          // 省略=episode
+  videoFile: string;       // 対象フォルダ相対(例 'out/final.mp4')
   status: YoutubeUploadStatus;
   bytesSent: number;
   bytesTotal: number;
@@ -185,4 +239,60 @@ export type YoutubeMetadata = {
   categoryId: string;
   privacyStatus: 'private' | 'unlisted' | 'public';
   thumbnail?: string;      // エピソード相対パス(例 'publish/thumbnail.png')
+  aiDisclosure?: boolean;      // AI生成コンテンツ開示(containsSyntheticMediaに対応)
+  productionNotes?: string;    // 制作メモ(社内用途。YouTube APIへは送らない)
+  publishAt?: string;          // ISO8601公開予約日時。指定時はprivacyStatusがprivate必須
+};
+
+// ---- アナリティクス還流・サムネABテスト ----
+
+/** 視聴維持率カーブの1点(dimension=elapsedVideoTimeRatio × metric=audienceWatchRatio) */
+export type RetentionPoint = { elapsedRatio: number; watchRatio: number };
+
+/** episodes/<ep>/analytics.json。YouTube Analytics APIの実測値+手動転記(CTR等)。
+ *  チャンネルの src/schemas/analytics.schema.json(additionalProperties:false)と対応。 */
+export type AnalyticsData = {
+  videoId: string;
+  fetchedAt: string;                   // 取得日時(ISO8601)
+  views?: number;
+  estimatedMinutesWatched?: number;
+  averageViewDuration?: number;        // 平均視聴時間(秒)
+  averageViewPercentage?: number;      // 平均視聴率(%)
+  subscribersGained?: number;
+  likes?: number;
+  comments?: number;
+  retentionCurve?: RetentionPoint[];
+  manual?: {
+    impressions?: number;
+    impressionsCtr?: number;           // インプレッションCTR%(YouTube Studioから手動転記)
+  };
+};
+
+/** episodes/<ep>/publish/thumb-test.json。YouTube Studio「テストと比較」の結果の手動記録。 */
+export type ThumbTestData = {
+  winner: 'thumb-1' | 'thumb-2' | 'thumb-3';
+  shares?: Record<string, number>;     // 各案の視聴シェア%(任意)
+  note?: string;                       // 所感(なぜ勝ったかの仮説)
+  recordedAt: string;                  // 記録日(YYYY-MM-DD)
+};
+
+// ---- メトリクスダッシュボード ----
+
+/** チャンネル1件分の制作メトリクス集計(GET /api/metrics)。 */
+export type ChannelMetrics = {
+  dir: string;
+  channelName: string;
+  episodeCount: number;         // episodes/*/episode.json を持つディレクトリ数
+  finalCount: number;           // うち episode.json の status === 'final' の数
+  renderMinutesTotal: number;   // .channel-system.json の metrics[].renderMinutes 合計
+  wallClockHoursTotal: number;  // 同 metrics[].wallClockHours 合計
+  imageGenTotal: number;        // 同 metrics[].imageGenCount 合計
+};
+
+/** 全チャンネル横断の合計(dir・channelNameを除く同名フィールドの合計)。 */
+export type MetricsTotals = Omit<ChannelMetrics, 'dir' | 'channelName'>;
+
+export type MetricsResponse = {
+  channels: ChannelMetrics[];
+  totals: MetricsTotals;
 };

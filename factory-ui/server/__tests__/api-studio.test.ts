@@ -30,6 +30,7 @@ describe('api routes (studio)', () => {
   let jobs: JobManager;
   let studio: StudioManager;
   let studioSpawns: string[];
+  let studioTargets: (string | undefined)[];
   let killed: number;
   let procs: FakeProc[];
   let server: http.Server;
@@ -50,10 +51,12 @@ describe('api routes (studio)', () => {
     };
     jobs = new JobManager(root, spawnFn);
     studioSpawns = [];
+    studioTargets = [];
     killed = 0;
     studio = new StudioManager(root, {
-      spawnFn: (cwd) => {
+      spawnFn: (cwd, targetDir) => {
         studioSpawns.push(cwd);
+        studioTargets.push(targetDir);
         return {
           kill: () => {
             killed++;
@@ -96,6 +99,18 @@ describe('api routes (studio)', () => {
     expect(studioSpawns).toEqual([path.join(root, 'ch1')]);
     const st = (await (await fetch(`${url}/api/studio`)).json()) as { running: boolean; dir?: string };
     expect(st).toMatchObject({ running: true, dir: 'ch1', status: 'ready' });
+  });
+
+  it('POST /studio/start は shortId を shorts/<id> として起動する', async () => {
+    const res = await post('/api/studio/start', { dir: 'ch1', shortId: 'sh001-caesar' });
+    expect(res.status).toBe(200);
+    expect(studioTargets.at(-1)).toBe('shorts/sh001-caesar');
+  });
+
+  it('POST /studio/start は episodeId を episodes/<id> として起動する', async () => {
+    const res = await post('/api/studio/start', { dir: 'ch1', episodeId: 'ep001' });
+    expect(res.status).toBe(200);
+    expect(studioTargets.at(-1)).toBe('episodes/ep001');
   });
 
   it('未知チャンネルは404、dir欠落は400', async () => {

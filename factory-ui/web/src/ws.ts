@@ -1,4 +1,5 @@
 import type { ClientMsg, ServerMsg } from '../../shared/types';
+import { getToken } from './auth';
 
 /**
  * factory-ui サーバーの `/ws`(単一エンドポイント)への WebSocket 接続を管理する。
@@ -31,6 +32,10 @@ export class FactoryWS {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** connect() で true、close() で false。再接続すべきかの意思を表す */
   private wantOpen = false;
+  /** 現在の接続状態。ws-status 合成メッセージの発火判定に使う */
+  private connected = false;
+  /** 一度でも open したか(初回接続では ws-status を流さず、切断/再接続時のみ流す) */
+  private everConnected = false;
 
   constructor(url = defaultWsUrl()) {
     this.url = url;
@@ -54,6 +59,10 @@ export class FactoryWS {
       for (const sessionId of this.attached) {
         this.rawSend({ type: 'attach', sessionId });
       }
+      this.connected = true;
+      // 再接続時のみ通知する(初回接続は通常フローで、購読側はどうせ初期fetchを行う)
+      if (this.everConnected) this.emit({ type: 'ws-status', connected: true });
+      this.everConnected = true;
     };
 
     ws.onmessage = (ev) => {
@@ -68,6 +77,10 @@ export class FactoryWS {
 
     ws.onclose = () => {
       if (this.ws === ws) this.ws = null;
+      if (this.connected) {
+        this.connected = false;
+        this.emit({ type: 'ws-status', connected: false });
+      }
       this.scheduleReconnect();
     };
 
@@ -122,6 +135,11 @@ export class FactoryWS {
     }
   }
 
+  /** クライアント合成メッセージ(ws-status)を購読者へ配る */
+  private emit(msg: ServerMsg): void {
+    for (const cb of this.listeners) cb(msg);
+  }
+
   private rawSend(msg: ClientMsg): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -139,10 +157,13 @@ export class FactoryWS {
   }
 }
 
-/** ブラウザ環境で現在オリジンの `/ws` を組み立てる(dev は vite が :4700 へプロキシ)。 */
+/** ブラウザ環境で現在オリジンの `/ws` を組み立てる(dev は vite が :4700 へプロキシ)。
+ *  upgrade時はヘッダを付けられないため、トークンはクエリで渡す(server/wshub.ts が検証)。 */
 function defaultWsUrl(): string {
   const loc = (globalThis as { location?: Location }).location;
   const proto = loc && loc.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = loc ? loc.host : '127.0.0.1';
-  return `${proto}//${host}/ws`;
+  const token = getToken();
+  const tokenPart = token !== null ? `?token=${encodeURIComponent(token)}` : '';
+  return `${proto}//${host}/ws${tokenPart}`;
 }

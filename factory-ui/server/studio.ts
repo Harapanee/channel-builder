@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -15,16 +16,44 @@ export type StudioProc = {
   onExit(fn: (code: number | null) => void): void;
 };
 
-export type StudioSpawn = (cwd: string, episodeId?: string) => StudioProc;
+export type StudioSpawn = (cwd: string, targetDir?: string, engine?: string) => StudioProc;
+
+/** チャンネルの .channel-system.json から renderEngine を読む。読めなければ remotion 扱い。 */
+export function readRenderEngine(channelPath: string): string {
+  try {
+    const raw = readFileSync(path.join(channelPath, '.channel-system.json'), 'utf8');
+    const engine = JSON.parse(raw)?.renderEngine;
+    return typeof engine === 'string' && engine ? engine : 'remotion';
+  } catch {
+    return 'remotion';
+  }
+}
 
 export type StudioStatus =
   | { running: false }
   | { running: true; dir: string; url: string; status: 'starting' | 'ready' };
 
-const defaultSpawn: StudioSpawn = (cwd, episodeId) => {
-  const args = ['run', 'studio', '--', `--port=${STUDIO_PORT}`, '--no-open'];
-  // 対象エピソードを開く(Rootのdefaultはep000-testのため、propsで上書きする)
-  if (episodeId) args.push(`--props=${JSON.stringify({ episodeDir: `episodes/${episodeId}` })}`);
+const defaultSpawn: StudioSpawn = (cwd, targetDir, engine) => {
+  let args: string[];
+  if (engine === 'hyperframes') {
+    // HyperFramesはRemotion Studioを持たない。プレビューサーバーを同ポートで起動する。
+    // devスクリプト経由ならチャンネルが固定したhyperframesバージョンをそのまま使える
+    const hasDev = (() => {
+      try {
+        const pkg = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+        return typeof pkg?.scripts?.dev === 'string';
+      } catch {
+        return false;
+      }
+    })();
+    args = hasDev
+      ? ['run', 'dev', '--', `--port=${STUDIO_PORT}`, '--no-open']
+      : ['exec', '--yes', 'hyperframes', 'preview', '--', `--port=${STUDIO_PORT}`, '--no-open'];
+  } else {
+    args = ['run', 'studio', '--', `--port=${STUDIO_PORT}`, '--no-open'];
+    // 対象(episodes/<id> または shorts/<id>)を開く(Rootのdefaultはep000-testのため、propsで上書きする)
+    if (targetDir) args.push(`--props=${JSON.stringify({ episodeDir: targetDir })}`);
+  }
   const p = spawn('npm', args, {
     cwd,
     stdio: 'ignore',
@@ -45,7 +74,7 @@ const defaultProbe = async (): Promise<boolean> => {
   }
 };
 
-type Current = { dir: string; episodeId?: string; proc: StudioProc; status: 'starting' | 'ready' };
+type Current = { dir: string; targetDir?: string; proc: StudioProc; status: 'starting' | 'ready' };
 
 /** ポート4710の占有プロセスをkillする(サーバー再起動で孤児化した旧studio対策)。 */
 const defaultKillPort = async (): Promise<void> => {
@@ -71,6 +100,7 @@ export class StudioManager {
   private readonly probeIntervalMs: number;
   private readonly probeTimeoutMs: number;
   private readonly killPort: () => Promise<void>;
+  private readonly engineOf: (dir: string) => string;
 
   constructor(
     private readonly root: string,
@@ -80,9 +110,11 @@ export class StudioManager {
       probeIntervalMs?: number;
       probeTimeoutMs?: number;
       killPort?: () => Promise<void>;
+      engineOf?: (dir: string) => string;
     },
   ) {
     this.spawnFn = opts?.spawnFn ?? defaultSpawn;
+    this.engineOf = opts?.engineOf ?? ((dir) => readRenderEngine(path.join(this.root, dir)));
     this.probe = opts?.probe ?? defaultProbe;
     this.killPort = opts?.killPort ?? defaultKillPort;
     this.probeIntervalMs = opts?.probeIntervalMs ?? 500;
@@ -94,10 +126,18 @@ export class StudioManager {
     return { running: true, dir: this.current.dir, url: STUDIO_URL, status: this.current.status };
   }
 
-  /** 起動して疎通確認後にURLを返す。同一dir+同一エピソードでreadyなら即返す(冪等)。 */
-  async start(dir: string, episodeId?: string): Promise<string> {
-    const same = this.current?.dir === dir && this.current?.episodeId === episodeId;
-    if (same && this.current!.status === 'ready') return STUDIO_URL;
+  /** 起動して疎通確認後にURLを返す。同一dir+同一対象でreadyなら即返す(冪等)。 */
+  async start(dir: string, targetDir?: string): Promise<string> {
+    const engine = this.engineOf(dir);
+    // Remotionのみ、URLにコンポジションIDを含めて対象のコンポジションを開く(HyperFramesは単一エントリ)
+    const url =
+      engine === 'hyperframes'
+        ? STUDIO_URL
+        : targetDir?.startsWith('shorts/')
+          ? `${STUDIO_URL}/Short`
+          : `${STUDIO_URL}/Episode`;
+    const same = this.current?.dir === dir && this.current?.targetDir === targetDir;
+    if (same && this.current!.status === 'ready') return url;
     if (this.current && !same) this.stop();
     if (!this.current) {
       // 4710に管理外のstudio(サーバー再起動前の孤児など)が残っていると、疎通確認が
@@ -111,8 +151,8 @@ export class StudioManager {
           await new Promise((r) => setTimeout(r, this.probeIntervalMs));
         }
       }
-      const proc = this.spawnFn(path.join(this.root, dir), episodeId);
-      const cur: Current = { dir, episodeId, proc, status: 'starting' };
+      const proc = this.spawnFn(path.join(this.root, dir), targetDir, engine);
+      const cur: Current = { dir, targetDir, proc, status: 'starting' };
       this.current = cur;
       // kill以外の自然死(クラッシュ等)でも状態を残さない
       proc.onExit(() => {
@@ -125,7 +165,7 @@ export class StudioManager {
       if (this.current !== cur) throw new Error('studio was stopped or replaced during startup');
       if (await this.probe()) {
         cur.status = 'ready';
-        return STUDIO_URL;
+        return url;
       }
       await new Promise((r) => setTimeout(r, this.probeIntervalMs));
     }

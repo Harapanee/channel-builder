@@ -146,6 +146,24 @@ describe('parseFeedItem', () => {
     expect(parseFeedItem('not json at all')).toBeNull();
     expect(parseFeedItem('')).toBeNull();
   });
+
+  it('サーバーが注入した timestamp(epoch ms)を time に載せる', () => {
+    const stamped = JSON.parse(toolUseRead);
+    stamped.timestamp = 1_752_000_000_000;
+    expect(parseFeedItem(JSON.stringify(stamped))?.time).toBe(1_752_000_000_000);
+  });
+
+  it('CLI 由来の ISO 文字列 timestamp も time に載せる', () => {
+    const stamped = JSON.parse(toolUseRead);
+    stamped.timestamp = '2026-07-13T05:38:38.792Z';
+    expect(parseFeedItem(JSON.stringify(stamped))?.time).toBe(Date.parse('2026-07-13T05:38:38.792Z'));
+  });
+
+  it('timestamp を持たない行(スタンプ導入前のログ)は time なしで表示は続く', () => {
+    const item = parseFeedItem(toolUseRead);
+    expect(item).not.toBeNull();
+    expect(item?.time).toBeUndefined();
+  });
 });
 
 describe('applyFeedItem', () => {

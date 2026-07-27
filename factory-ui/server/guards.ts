@@ -3,6 +3,8 @@
  * 悪意あるWebページからのブラウザ経由攻撃(DNS rebinding / クロスオリジンのドライブバイ)は防げない。
  * WebSocketはCORS対象外・fetchのno-corsも到達するため、Host と Origin のホスト名を検証して
  * claude PTYの入力口が第三者ページから開かれるのを防ぐ。
+ * X-Forwarded-* ヘッダは参照しない(信頼しない) — リバースプロキシ非経由の直接バインド構成であり、
+ * クライアントが任意に詐称できるヘッダを信頼するとこのガード自体が無意味化するため。
  */
 
 const ALLOWED_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);

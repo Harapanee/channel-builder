@@ -38,6 +38,26 @@ export function validateMetadata(raw: unknown): YoutubeMetadata {
     }
     thumbnail = o.thumbnail;
   }
+  let aiDisclosure: boolean | undefined;
+  if (o.aiDisclosure !== undefined) {
+    if (typeof o.aiDisclosure !== 'boolean') throw new Error('invalid: aiDisclosure は boolean が必要です');
+    aiDisclosure = o.aiDisclosure;
+  }
+  let productionNotes: string | undefined;
+  if (o.productionNotes !== undefined) {
+    if (typeof o.productionNotes !== 'string') throw new Error('invalid: productionNotes は文字列が必要です');
+    productionNotes = o.productionNotes;
+  }
+  let publishAt: string | undefined;
+  if (o.publishAt !== undefined) {
+    if (typeof o.publishAt !== 'string' || Number.isNaN(Date.parse(o.publishAt))) {
+      throw new Error('invalid: publishAt はISO8601日時が必要です');
+    }
+    if (privacy !== 'private') {
+      throw new Error("invalid: publishAt 指定時は privacyStatus は 'private' が必要です(YouTubeの公開予約仕様)");
+    }
+    publishAt = o.publishAt;
+  }
   return {
     title: o.title,
     description: o.description,
@@ -45,6 +65,9 @@ export function validateMetadata(raw: unknown): YoutubeMetadata {
     categoryId: o.categoryId,
     privacyStatus: privacy as YoutubeMetadata['privacyStatus'],
     ...(thumbnail !== undefined ? { thumbnail } : {}),
+    ...(aiDisclosure !== undefined ? { aiDisclosure } : {}),
+    ...(productionNotes !== undefined ? { productionNotes } : {}),
+    ...(publishAt !== undefined ? { publishAt } : {}),
   };
 }
 

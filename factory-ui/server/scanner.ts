@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Dirent } from 'node:fs';
-import type { ChannelSummary, EpisodeSummary } from '../shared/types';
-import { buildVideoCreateStages } from './progress';
+import type { ChannelSummary, EpisodeSummary, ShortSummary, ShortFormatSummary } from '../shared/types';
+import { buildVideoCreateStages, buildShortStages } from './progress';
 
 const SYSTEM_FILE = '.channel-system.json';
 
@@ -51,7 +51,12 @@ export async function scanFactory(root: string): Promise<ChannelSummary[]> {
 export async function readChannel(
   root: string,
   dir: string,
-): Promise<{ system: Record<string, unknown>; episodes: EpisodeSummary[] } | null> {
+): Promise<{
+  system: Record<string, unknown>;
+  episodes: EpisodeSummary[];
+  shorts: ShortSummary[];
+  shortFormats: ShortFormatSummary[];
+} | null> {
   // HTTP層がリクエスト値をそのまま渡しても root 外に出られないよう、
   // dir は「単一のパスセグメント」のみ許可する。
   if (!isSingleSegment(dir)) return null;
@@ -87,12 +92,17 @@ export async function readChannel(
       hasFinal,
       hasScript: await exists(path.join(epDir, 'script.md')),
       reviewFiles: await listReviewFiles(path.join(epDir, 'review')),
+      thumbnailFiles: await listThumbnailFiles(path.join(epDir, 'publish')),
+      selectedThumbnail: await readSelectedThumbnail(epDir),
       stages: buildVideoCreateStages({ status, hasPreview, hasFinal }),
     });
   }
 
   episodes.sort((a, b) => (a.episodeId < b.episodeId ? -1 : a.episodeId > b.episodeId ? 1 : 0));
-  return { system, episodes };
+
+  const shorts = await listShorts(channelDir);
+  const shortFormats = await listShortFormats(channelDir);
+  return { system, episodes, shorts, shortFormats };
 }
 
 // --- 内部ヘルパ ---------------------------------------------------------------
@@ -112,12 +122,18 @@ async function readSystem(channelDir: string): Promise<Record<string, unknown> |
   return readJson(path.join(channelDir, SYSTEM_FILE));
 }
 
-/** JSON ファイルを読んでオブジェクトを返す。不在・パース不能・非オブジェクトなら null。 */
+/**
+ * JSON ファイルを読んでオブジェクトを返す。不在(ENOENT)・パース不能・非オブジェクトなら null。
+ * ENOENT以外のfsエラー(EACCES・EMFILE等の一過性/権限エラー)はrethrowする。
+ * 「読めない」を「無い」と同一視すると、負荷時の一過性エラーが誤って404(スキップ)に化けるため
+ * (parse失敗はJSON.parseのSyntaxErrorであり、ここのfs失敗とは別に扱う)。
+ */
 async function readJson(file: string): Promise<Record<string, unknown> | null> {
   let raw: string;
   try {
     raw = await fs.readFile(file, 'utf8');
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     return null;
   }
   try {
@@ -154,6 +170,28 @@ async function listReviewFiles(reviewDir: string): Promise<string[]> {
   }
 }
 
+const THUMBNAIL_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
+/** publish/ 直下の画像ファイル名(ソート済み)。不在なら空配列。 */
+async function listThumbnailFiles(publishDir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(publishDir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile() && THUMBNAIL_EXTS.has(path.extname(e.name).toLowerCase()))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** publish/metadata.json の thumbnail(エピソード相対パス)。不在・不正なら undefined。 */
+async function readSelectedThumbnail(epDir: string): Promise<string | undefined> {
+  const meta = await readJson(path.join(epDir, 'publish', 'metadata.json'));
+  const t = meta?.thumbnail;
+  return typeof t === 'string' ? t : undefined;
+}
+
 async function exists(p: string): Promise<boolean> {
   try {
     await fs.access(p);
@@ -161,6 +199,70 @@ async function exists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * shorts/ 配下を列挙し、各 shorts/<shortId>/short.json からサマリを構築する。
+ * episodes と同じ流儀: short.json 不在・パース不能のフォルダもフラグのみで含める。
+ */
+async function listShorts(channelDir: string): Promise<ShortSummary[]> {
+  const shortsDir = path.join(channelDir, 'shorts');
+  let entries: Dirent[] = [];
+  try {
+    entries = await fs.readdir(shortsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const shorts: ShortSummary[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const shortId = entry.name;
+    const shDir = path.join(shortsDir, shortId);
+    const meta = (await readJson(path.join(shDir, 'short.json'))) ?? {};
+    const status = typeof meta.status === 'string' ? meta.status : undefined;
+    const hasFinal = await exists(path.join(shDir, 'out', 'final.mp4'));
+    const hasMetadata = await exists(path.join(shDir, 'publish', 'metadata.json'));
+    shorts.push({
+      shortId,
+      title: typeof meta.title === 'string' ? meta.title : undefined,
+      formatId: typeof meta.formatId === 'string' ? meta.formatId : undefined,
+      sourceEpisodeId: typeof meta.sourceEpisodeId === 'string' ? meta.sourceEpisodeId : undefined,
+      status,
+      hasScript: await exists(path.join(shDir, 'script.md')),
+      hasFinal,
+      hasMetadata,
+      reviewFiles: await listReviewFiles(path.join(shDir, 'review')),
+      stages: buildShortStages({ status, hasFinal, hasMetadata }),
+    });
+  }
+  shorts.sort((a, b) => (a.shortId < b.shortId ? -1 : a.shortId > b.shortId ? 1 : 0));
+  return shorts;
+}
+
+/** channel/short-formats/*.json を列挙する(パース不能・非objectはスキップ)。 */
+async function listShortFormats(channelDir: string): Promise<ShortFormatSummary[]> {
+  const fmtDir = path.join(channelDir, 'channel', 'short-formats');
+  let entries: Dirent[] = [];
+  try {
+    entries = await fs.readdir(fmtDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const formats: ShortFormatSummary[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+    const meta = await readJson(path.join(fmtDir, entry.name));
+    if (!meta) continue; // 教義(.md)や壊れたJSONは表示対象外
+    formats.push({
+      formatId: typeof meta.formatId === 'string' ? meta.formatId : entry.name.replace(/\.json$/, ''),
+      name: typeof meta.name === 'string' ? meta.name : undefined,
+      targetDurationSec: typeof meta.targetDurationSec === 'number' ? meta.targetDurationSec : undefined,
+    });
+  }
+  formats.sort((a, b) => (a.formatId < b.formatId ? -1 : a.formatId > b.formatId ? 1 : 0));
+  return formats;
 }
 
 function asString(v: unknown): string {

@@ -51,7 +51,18 @@ function StageIcon({ label, index }: { label: string; index: number }) {
  * 円形アイコンノードを水平コネクターで連結し、完了=accent塗り / 現在=accentリング / 未達=border。
  * 状態は色に加えてラベル下のテキスト((進行中)/(完了))でも伝える(quality-floor)。
  */
-export function Stepper({ stages }: { stages: JobStage[] }) {
+export function Stepper({
+  stages,
+  activeLabel = '進行中',
+}: {
+  stages: JobStage[];
+  /**
+   * アクティブ工程に添えるラベル。稼働中ジョブの文脈は既定の「進行中」でよいが、
+   * ジョブが動いていないエピソード/ショート詳細では「次の工程」を渡す
+   * (放置中の対象に「進行中」と出す誤解を避ける)。
+   */
+  activeLabel?: string;
+}) {
   return (
     <div className="stepper" role="list" aria-label="制作ラインの進捗">
       {stages.map((s, i) => (
@@ -69,8 +80,9 @@ export function Stepper({ stages }: { stages: JobStage[] }) {
             </span>
             <span className="stepper-label">
               {s.label}
-              {s.state === 'active' && <span className="stepper-state">(進行中)</span>}
+              {s.state === 'active' && <span className="stepper-state">({activeLabel})</span>}
               {s.state === 'done' && <span className="stepper-state">(完了)</span>}
+              {s.state === 'queued' && <span className="stepper-state">(夜間キュー待ち)</span>}
             </span>
           </div>
         </Fragment>

@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { approveEpisode, curateLibraryEntry, readBible, writeBible } from '../edits';
+import { approveEpisode, approveShortStudioCheck, curateLibraryEntry, readBible, writeBible } from '../edits';
 
 // 対象チャンネル配下のみを、claude を介さずサーバーが直接編集する操作の TDD。
 // フィクスチャは tmp に本物同型のチャンネルを1つ作る(chan-a)。
@@ -234,5 +235,56 @@ describe('edits', () => {
 
   it('readBible: 実在しないチャンネルは throw', async () => {
     await expect(readBible(root, 'no-such')).rejects.toThrow();
+  });
+});
+
+// --- approveShortStudioCheck --------------------------------------------------
+
+describe('approveShortStudioCheck', () => {
+  let root: string;
+
+  function writeShort(shortId: string, status: string): string {
+    const d = path.join(root, 'ch1', 'shorts', shortId);
+    fsSync.mkdirSync(d, { recursive: true });
+    const file = path.join(d, 'short.json');
+    fsSync.writeFileSync(
+      file,
+      JSON.stringify({ shortId, formatId: 'f1', sourceEpisodeId: 'ep1', title: 't', status }, null, 2) + '\n',
+    );
+    return file;
+  }
+
+  beforeEach(async () => {
+    root = fsSync.realpathSync(fsSync.mkdtempSync(path.join(os.tmpdir(), 'edits-short-')));
+    fsSync.mkdirSync(path.join(root, 'ch1'), { recursive: true });
+    fsSync.writeFileSync(
+      path.join(root, 'ch1', '.channel-system.json'),
+      JSON.stringify({ channelId: 'ch1', channelName: 'ch1', status: 'building', systemVersion: '1', approvedEpisodes: [] }),
+    );
+  });
+
+  afterEach(async () => {
+    fsSync.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('implemented → studio_checked に更新する(他キーは保全)', async () => {
+    const file = writeShort('sh001', 'implemented');
+    await approveShortStudioCheck(root, 'ch1', 'sh001');
+    const meta = JSON.parse(fsSync.readFileSync(file, 'utf8'));
+    expect(meta.status).toBe('studio_checked');
+    expect(meta.formatId).toBe('f1');
+  });
+
+  it('implemented 以外は not_ready で拒否', async () => {
+    writeShort('sh001', 'voiced');
+    await expect(approveShortStudioCheck(root, 'ch1', 'sh001')).rejects.toThrow(/^not_ready:/);
+  });
+
+  it('short.json 不在は not_found', async () => {
+    await expect(approveShortStudioCheck(root, 'ch1', 'nope')).rejects.toThrow(/^not_found:/);
+  });
+
+  it('セパレータを含む shortId は invalid', async () => {
+    await expect(approveShortStudioCheck(root, 'ch1', '../ch1')).rejects.toThrow(/^invalid:/);
   });
 });

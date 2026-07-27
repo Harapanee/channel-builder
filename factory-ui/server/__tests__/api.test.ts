@@ -410,9 +410,12 @@ describe('createApiRouter', () => {
     expect(res.status).toBe(200);
     expect(res.body.map((o: { key: string }) => o.key)).toEqual([
       'video-create',
+      'short-create',
+      'short-publish',
       'channel-refine',
       'theme-scout',
       'system-refine',
+      'channel-analyze',
       'ask',
     ]);
     expect(res.body[0].label).toBe('新規動画を制作');
@@ -473,6 +476,28 @@ describe('createApiRouter', () => {
     expect((await request(app).get('/api/jobs/zzz')).status).toBe(404);
   });
 
+  it('GET /api/jobs/:id/log は永続化済みの過去ログを返す(未出力は空、不明idは404)', async () => {
+    const created = await request(app)
+      .post('/api/jobs')
+      .send({ dir: 'ch1', operation: 'theme-scout', arg: '' });
+    const id = created.body.id as string;
+    // ログ未出力(起動直後)→ 空配列
+    const before = await request(app).get(`/api/jobs/${id}/log`);
+    expect(before.status).toBe(200);
+    expect(before.body.lines).toEqual([]);
+    // fake claude が2行出力 → log.jsonl に永続化され、そのまま返る
+    jobProcs[0]!.push(jobInitLine('sid-log', path.join(root, 'ch1')));
+    jobProcs[0]!.push(jobTextLine('作業を開始します'));
+    await new Promise((r) => setTimeout(r, 30));
+    const after = await request(app).get(`/api/jobs/${id}/log`);
+    expect(after.status).toBe(200);
+    expect(after.body.lines).toHaveLength(2);
+    expect(after.body.lines[0]).toContain('sid-log');
+    expect(after.body.lines[1]).toContain('作業を開始します');
+    // 不明id → 404
+    expect((await request(app).get('/api/jobs/zzz/log')).status).toBe(404);
+  });
+
   it('POST /api/jobs/:id/cancel は 204 で cancelled にし、不明idは404', async () => {
     const created = await request(app)
       .post('/api/jobs')
@@ -507,6 +532,30 @@ describe('createApiRouter', () => {
     expect(jobProcs).toHaveLength(2);
     expect(jobProcs[1]!.args).toContain('--resume');
     expect(jobs.get(id)!.status).toBe('running');
+  });
+
+  it('DELETE /api/jobs/:id は終了ジョブを消して204、実行中は409、不明idは404', async () => {
+    const created = await request(app)
+      .post('/api/jobs')
+      .send({ dir: 'ch1', operation: 'theme-scout', arg: '' });
+    const id = created.body.id as string;
+    expect((await request(app).delete(`/api/jobs/${id}`)).status).toBe(409); // running
+    await request(app).post(`/api/jobs/${id}/cancel`);
+    expect((await request(app).delete(`/api/jobs/${id}`)).status).toBe(204);
+    expect((await request(app).get(`/api/jobs/${id}`)).status).toBe(404);
+    expect((await request(app).delete('/api/jobs/nope')).status).toBe(404);
+  });
+
+  it('POST /api/jobs/clear-finished は終了ジョブを一括削除し {cleared:n} を返す(冪等)', async () => {
+    const created = await request(app)
+      .post('/api/jobs')
+      .send({ dir: 'ch1', operation: 'theme-scout', arg: '' });
+    await request(app).post(`/api/jobs/${created.body.id}/cancel`);
+    const res = await request(app).post('/api/jobs/clear-finished');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ cleared: 1 });
+    const again = await request(app).post('/api/jobs/clear-finished');
+    expect(again.body).toEqual({ cleared: 0 });
   });
 
   // ---------------------------------------------------- channels(直接編集)

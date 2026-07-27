@@ -15,7 +15,7 @@ status:  # 状態バッジ専用の機能色(状態の意味にのみ使用。�
   err: "#b91c1c"   # failed
 derived:  # 既存トークンからの導出(新色を増やさない)
   surface-2: "color-mix(in srgb, #f7f8fa 60%, #e2e8f0 40%)"   # hover・選択面
-  text-muted: "color-mix(in srgb, #475569 65%, #ffffff 35%)"  # 非必須メタ(タイムコード等)のみ
+  text-muted: "color-mix(in srgb, #475569 85%, #ffffff 15%)"  # 非必須メタ(タイムコード等)のみ。実効≈#636E80、bg上コントラスト≈4.8:1(AA)
 typography:
   display: "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Segoe UI', sans-serif"
   body: "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Segoe UI', sans-serif"
@@ -59,6 +59,7 @@ signature: "制作ラインのステージレール(調査→台本→…→レ�
 - mono: タイムコード・尺・日時・ジョブID・エピソードID・進捗数値(scale 12/13、tabular-nums)
 - scale: 12=メタ/バッジ、13=UI標準、14=本文、16=読ませる本文(bibleエディタ等)、20=カード見出し、24=セクション題、30=画面題
 - weights: 400本文 / 500ボタン・タブ / 600カード見出し / 700画面題
+- 見出しの割当: h1=30(ダッシュボード画面題)/ h2=24(チャンネル名・詳細画面の題)/ h3=20(セクション題)/ h4=13・600・text-secondary(セクション内の小見出し。ジョブ一覧のステータス群など)。詳細画面の題をh3以下に落とさない(セクション題と同格になり階層が潰れるため)
 
 ## Components
 

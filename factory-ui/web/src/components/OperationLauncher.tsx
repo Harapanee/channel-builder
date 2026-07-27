@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { BacklogCandidate, EpisodeSummary, JobMode } from '../../../shared/types';
 import { createJob, getBacklog, getFileText } from '../api';
 import { JOB_MODE_LABEL } from '../status';
@@ -15,12 +15,18 @@ const TABS: { key: LauncherTab; label: string }[] = [
 const MODELS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
 const EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
 
-const DURATION_PRESETS: { label: string; sec: number | null }[] = [
+// モデル/effortの1行ヒント(選択に迷わないための共通文言。ShortsTabと揃える)
+export const MODEL_HINT = 'モデル: opus=標準(推奨) / sonnet=高速・軽量 / haiku=最軽量 / fable=最上位';
+export const EFFORT_HINT = 'effort: 思考の深さ。high=標準(推奨) / xhigh=最高品質・消費大 / low=高速';
+
+const DURATION_PRESETS: { label: string; sec: number | null; maxSec?: number }[] = [
   { label: 'おまかせ', sec: null },
   { label: '1分', sec: 60 },
   { label: '3分', sec: 180 },
   { label: '5分', sec: 300 },
   { label: '10分', sec: 600 },
+  // maxSec があるプリセットは範囲指定(下限=sec・上限=maxSec)。尺は工程0で範囲内から決定される
+  { label: '8〜15分', sec: 480, maxSec: 900 },
 ];
 
 const MODE_HINTS: Record<JobMode, string> = {
@@ -41,23 +47,38 @@ const inputStyle: CSSProperties = {
 
 /**
  * 新規操作ランチャー(共通コンポーネント)。JobsTab と EpisodeDetail に設置する。
- * タブ: 新規動画(題材おすすめ+尺+モード) / 改善(3欄まとめて送信) / ネタ帳補充 / 質問。
- * フッターでモデル×effortを選ぶ(既定 opus×xhigh)。送信はすべて POST /jobs(キューで順次実行)。
+ * モード切替: 新規動画(題材おすすめ+尺+モード) / 改善(3欄まとめて送信) / ネタ帳補充 / 質問。
+ * フッターでモデル×effortを選ぶ(既定 opus×high)。送信はすべて POST /jobs(キューで順次実行)。
+ *
+ * 既定は折りたたみ(監視情報を上に出すため。DESIGN.md「状態が先・操作が後」)。
+ * defaultOpen=true で開いた状態から始める(ジョブ0件の新品チャンネルなど)。
  */
 export function OperationLauncher({
   dir,
   episodes,
   presetEpisodeId,
+  defaultOpen = false,
+  title = '新規操作を起動',
   onStarted,
 }: {
   dir: string;
   episodes: EpisodeSummary[];
   presetEpisodeId?: string;
+  /** trueで初期展開。あとから true に変わったときも展開する(初回ロード完了後の判定に追従) */
+  defaultOpen?: boolean;
+  title?: string;
   onStarted?: (jobId: string) => void;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  // defaultOpen が後から true になったら開く(閉じる方向へは追従しない=ユーザー操作を上書きしない)
+  const prevDefaultOpen = useRef(defaultOpen);
+  useEffect(() => {
+    if (defaultOpen && !prevDefaultOpen.current) setOpen(true);
+    prevDefaultOpen.current = defaultOpen;
+  }, [defaultOpen]);
   const [tab, setTab] = useState<LauncherTab>(presetEpisodeId ? 'refine' : 'video');
   const [model, setModel] = useState<string>('opus');
-  const [effort, setEffort] = useState<string>('xhigh');
+  const [effort, setEffort] = useState<string>('high');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -65,6 +86,7 @@ export function OperationLauncher({
   // 新規動画
   const [subject, setSubject] = useState('');
   const [presetSec, setPresetSec] = useState<number | null>(null);
+  const [presetMaxSec, setPresetMaxSec] = useState<number | null>(null);
   const [customSec, setCustomSec] = useState('');
   const [mode, setMode] = useState<JobMode>('manual');
   const [candidates, setCandidates] = useState<BacklogCandidate[]>([]);
@@ -111,6 +133,8 @@ export function OperationLauncher({
   const customInvalid =
     customNum !== null && (!Number.isFinite(customNum) || customNum < 10 || customNum > 3600);
   const durationSec = customNum ?? presetSec ?? undefined;
+  // 秒数の直接指定があるときは範囲プリセットを無効化(単一値が優先)
+  const durationSecMax = customNum !== null ? undefined : presetMaxSec ?? undefined;
 
   const canSubmit = (() => {
     if (starting) return false;
@@ -137,6 +161,7 @@ export function OperationLauncher({
           arg: subject.trim(),
           mode,
           durationSec: durationSec ?? undefined,
+          durationSecMax,
         });
         setSubject('');
         setNotice('新規動画の制作ジョブを起動しました');
@@ -176,11 +201,17 @@ export function OperationLauncher({
   }
 
   return (
-    <section
-      className="panel"
-      style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}
-    >
-      <h3>新規操作を起動</h3>
+    <section className="panel" style={{ padding: '16px' }}>
+      <details
+        className="collapse"
+        open={open}
+        onToggle={(e) => setOpen(e.currentTarget.open)}
+      >
+        <summary>
+          <h3 style={{ display: 'inline' }}>{title}</h3>
+          <span className="collapse-hint">新規動画・改善・ネタ帳補充・質問</span>
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {TABS.map((t) => (
           <button
@@ -228,7 +259,7 @@ export function OperationLauncher({
           )}
           <details className="collapse" onToggle={(e) => e.currentTarget.open && loadBacklogText()}>
             <summary>
-              <h3 style={{ display: 'inline' }}>ネタ帳を見る</h3>
+              <h4 style={{ display: 'inline' }}>ネタ帳を見る</h4>
               <span className="collapse-hint">channel/backlog.md の全文</span>
             </summary>
             {backlogError ? (
@@ -248,10 +279,11 @@ export function OperationLauncher({
                 <button
                   key={p.label}
                   type="button"
-                  className={`btn ${presetSec === p.sec && customSec.trim() === '' ? 'btn-primary' : 'btn-ghost'}`}
-                  aria-pressed={presetSec === p.sec && customSec.trim() === ''}
+                  className={`btn ${presetSec === p.sec && presetMaxSec === (p.maxSec ?? null) && customSec.trim() === '' ? 'btn-primary' : 'btn-ghost'}`}
+                  aria-pressed={presetSec === p.sec && presetMaxSec === (p.maxSec ?? null) && customSec.trim() === ''}
                   onClick={() => {
                     setPresetSec(p.sec);
+                    setPresetMaxSec(p.maxSec ?? null);
                     setCustomSec('');
                   }}
                 >
@@ -371,7 +403,7 @@ export function OperationLauncher({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <button type="button" className="btn btn-primary" disabled={!canSubmit} onClick={launch}>
-          {tab === 'refine' ? 'まとめて送信' : '起動'}
+          {starting ? (tab === 'refine' ? '送信中…' : '起動中…') : tab === 'refine' ? 'まとめて送信' : '起動'}
         </button>
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span className="mono">モデル</span>
@@ -393,9 +425,16 @@ export function OperationLauncher({
             ))}
           </select>
         </label>
-        {error && <span style={{ color: 'var(--status-err)' }}>{error}</span>}
-        {notice && !error && <span style={{ color: 'var(--status-ok)' }}>{notice}</span>}
+        <span aria-live="polite">
+          {error && <span style={{ color: 'var(--status-err)' }}>{error}</span>}
+          {notice && !error && <span style={{ color: 'var(--status-ok)' }}>{notice}</span>}
+        </span>
       </div>
+      <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+        {MODEL_HINT} / {EFFORT_HINT}
+      </span>
+        </div>
+      </details>
     </section>
   );
 }

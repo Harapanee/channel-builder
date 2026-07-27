@@ -1,11 +1,10 @@
 import { EventEmitter } from 'node:events';
+import type fs from 'node:fs';
 import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 
-export type FsUpdate = { dir: string; kind: 'system' | 'episode' | 'media' | 'images' };
+export type FsUpdate = { dir: string; kind: 'system' | 'episode' | 'short' | 'media' };
 
-const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
-const IMAGE_ROOTS = new Set(['assets', 'episodes', 'scratchpad_gen']);
 const DEBOUNCE_MS = 300;
 
 /**
@@ -28,8 +27,36 @@ export function classify(rel: string): FsUpdate | null {
     if (rest[2] === 'out' && ext === '.mp4') return { dir, kind: 'media' };
     if (rest[2] === 'review') return { dir, kind: 'media' };
   }
-  if (IMAGE_EXTS.has(ext) && IMAGE_ROOTS.has(rest[0]!)) return { dir, kind: 'images' };
+  if (rest[0] === 'shorts' && rest.length >= 3) {
+    if (rest.length === 3 && rest[2] === 'short.json') return { dir, kind: 'short' };
+    if (rest[2] === 'out' && ext === '.mp4') return { dir, kind: 'media' };
+    if (rest[2] === 'review') return { dir, kind: 'media' };
+  }
+  // 画像は分類しない(fd枯渇対策 2026-07-16。「画像」タブはタブを開いたときのAPI取得のみ)
   return null;
+}
+
+/**
+ * chokidar の ignored 述語。classify() が拾わないファイルは監視から外し、fdを消費しない
+ * (chokidar v4+ はfsevents非対応で、macOSではファイル1個=fd1個のkqueue監視になる。
+ * 素材wav/png等まで監視するとfdがプロセス上限(約10,240)に達し spawn EBADF で
+ * ジョブ起動が失敗する — 2026-07-15に実際に発生)。
+ * ディレクトリは新規ファイル検出に必要なので監視を続ける。stats未確定の段階では
+ * 除外しない(chokidarはstats付きで再評価する)。
+ */
+export function makeIgnored(root: string): (p: string, stats?: fs.Stats) => boolean {
+  return (p, stats) => {
+    if (
+      p.includes(`${path.sep}node_modules`) ||
+      p.includes(`${path.sep}.git`) ||
+      p.includes(`${path.sep}factory-ui${path.sep}`) ||
+      p.endsWith(`${path.sep}factory-ui`)
+    ) {
+      return true;
+    }
+    if (!stats || stats.isDirectory()) return false;
+    return classify(path.relative(root, p)) === null;
+  };
 }
 
 /**
@@ -44,11 +71,7 @@ export class FactoryWatcher extends EventEmitter {
   constructor(private readonly root: string) {
     super();
     this.watcher = chokidar.watch(root, {
-      ignored: (p) =>
-        p.includes(`${path.sep}node_modules`) ||
-        p.includes(`${path.sep}.git`) ||
-        p.includes(`${path.sep}factory-ui${path.sep}`) ||
-        p.endsWith(`${path.sep}factory-ui`),
+      ignored: makeIgnored(root),
       ignoreInitial: true,
       depth: 6,
     });

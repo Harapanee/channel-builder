@@ -1,4 +1,5 @@
 import type {
+  AnalyticsData,
   BacklogCandidate,
   ChannelSummary,
   EpisodeSummary,
@@ -6,29 +7,70 @@ import type {
   JobDetail,
   JobMode,
   JobSummary,
+  MetricsResponse,
   OperationDef,
   RenderQueueItem,
   SessionInfo,
+  ShortFormatSummary,
+  ShortSummary,
   SkillInfo,
+  ThumbTestData,
+  UploadKind,
   VoiceEntry,
   YoutubeAuthStatus,
   YoutubeUploadJob,
 } from '../../shared/types';
+import { clearToken, getToken } from './auth';
 
 /**
  * REST API(Task 7)向けの型付きフェッチャ集。
  * ここに定義した関数名は Task 12 が直接依存するため変更しないこと。
  *
  * `:dir` を含むパスは必ず encodeURIComponent する(日本語チャンネル名フォルダに対応するため)。
+ *
+ * 全 `/api/*` はトークン認証必須(Task 3)。fetchJson が Authorization: Bearer ヘッダを自動添付する。
+ * factory-ui自身のトークン不備の401(WWW-Authenticate: realm="factory-ui" 付き)を受けたら
+ * トークンをクリアし `factory-ui-auth-required` を発火してアプリ側に全画面ゲートを出させる。
+ * ドメイン401(YouTubeのneeds_reauth / no_auth 等。ヘッダ無し)は通常のエラーとしてthrowし、
+ * 呼び出し元のcatch(パネル内バナー等)に委ねる。
  */
 
 export type FactoryResponse = { name: string; channels: ChannelSummary[] };
-export type ChannelResponse = { system: Record<string, unknown>; episodes: EpisodeSummary[] };
+export type ChannelResponse = {
+  system: Record<string, unknown>;
+  episodes: EpisodeSummary[];
+  shorts: ShortSummary[];
+  shortFormats: ShortFormatSummary[];
+};
 export type ImagesResponse = { images: ImageEntry[] };
 export type VoicesResponse = { voices: VoiceEntry[] };
 
+/** Authorization: Bearer ヘッダをマージした Headers を返す(トークン未設定なら無添付)。 */
+function authHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  const token = getToken();
+  if (token !== null) headers.set('Authorization', `Bearer ${token}`);
+  return headers;
+}
+
+/**
+ * factory-ui認証の401(WWW-Authenticate: realm="factory-ui" 付き)ならトークンを破棄し、
+ * 全画面ゲートを出すためのイベントを発火する。ヘッダの無い401はドメイン401
+ * (YouTubeのneeds_reauth / no_auth 等)なので何もしない(fetchJsonが通常throwする)。
+ */
+function handleUnauthorized(res: Response): void {
+  if (
+    res.status === 401 &&
+    (res.headers.get('WWW-Authenticate')?.includes('realm="factory-ui"') ?? false)
+  ) {
+    clearToken();
+    window.dispatchEvent(new Event('factory-ui-auth-required'));
+  }
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch(url, { ...init, headers: authHeaders(init?.headers) });
+  handleUnauthorized(res);
   if (!res.ok) {
     // サーバーは失敗時 {error: string} を返す。原因を握りつぶさず表示に含める
     let reason = '';
@@ -55,6 +97,11 @@ export function getFactory(): Promise<FactoryResponse> {
   return fetchJson<FactoryResponse>('/api/factory');
 }
 
+/** GET /api/metrics — チャンネル別+合計の制作メトリクス(ダッシュボード統計セクション用)。 */
+export function getMetrics(): Promise<MetricsResponse> {
+  return fetchJson<MetricsResponse>('/api/metrics');
+}
+
 /** GET /api/channels/:dir */
 export function getChannel(dir: string): Promise<ChannelResponse> {
   return fetchJson<ChannelResponse>(channelPath(dir));
@@ -63,7 +110,8 @@ export function getChannel(dir: string): Promise<ChannelResponse> {
 /** GET /api/channels/:dir/file?path=(.md/.json/.txt のみ) */
 export async function getFileText(dir: string, path: string): Promise<string> {
   const url = `${channelPath(dir, '/file')}?path=${encodeURIComponent(path)}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: authHeaders() });
+  handleUnauthorized(res);
   if (!res.ok) {
     throw new Error(`GET ${url} -> ${res.status}`);
   }
@@ -73,9 +121,12 @@ export async function getFileText(dir: string, path: string): Promise<string> {
 /**
  * GET /api/channels/:dir/media?path= の URL を組み立てるだけ(fetch はしない)。
  * <video src=...> / <img src=...> / <audio src=...> にそのまま渡す用途。
+ * これらのタグにはヘッダを付けられないため、トークンはクエリで渡す。
  */
 export function mediaUrl(dir: string, path: string): string {
-  return `${channelPath(dir, '/media')}?path=${encodeURIComponent(path)}`;
+  const token = getToken();
+  const tokenPart = token !== null ? `&token=${encodeURIComponent(token)}` : '';
+  return `${channelPath(dir, '/media')}?path=${encodeURIComponent(path)}${tokenPart}`;
 }
 
 /** GET /api/channels/:dir/images?limit= */
@@ -131,7 +182,7 @@ export function restartSession(id: string): Promise<SessionInfo> {
  */
 export type OperationMeta = Omit<OperationDef, 'buildCommand'>;
 
-/** POST /api/jobs のリクエストボディ。arg以外は省略時サーバー既定(manual / opus / xhigh)。 */
+/** POST /api/jobs のリクエストボディ。arg以外は省略時サーバー既定(manual / opus / high)。 */
 export type CreateJobBody = {
   dir: string;
   operation: string;
@@ -140,6 +191,8 @@ export type CreateJobBody = {
   model?: string;
   effort?: string;
   durationSec?: number;
+  /** durationSec と併せて範囲指定(下限=durationSec・上限=durationSecMax)。単一値指定なら省略 */
+  durationSecMax?: number;
   episodeId?: string;
 };
 
@@ -161,6 +214,11 @@ export function getJob(id: string): Promise<JobDetail> {
   return fetchJson<JobDetail>(`/api/jobs/${encodeURIComponent(id)}`);
 }
 
+/** GET /api/jobs/:id/log — 過去ログ(WS購読前の分。log.jsonl の末尾最大2000行)。 */
+export function getJobLog(id: string): Promise<{ lines: string[] }> {
+  return fetchJson<{ lines: string[] }>(`/api/jobs/${encodeURIComponent(id)}/log`);
+}
+
 /** POST /api/jobs — ジョブを新規作成し、作成されたサマリ(201)を返す。 */
 export function createJob(body: CreateJobBody): Promise<JobSummary> {
   return fetchJson<JobSummary>('/api/jobs', {
@@ -170,7 +228,7 @@ export function createJob(body: CreateJobBody): Promise<JobSummary> {
   });
 }
 
-/** POST /api/jobs/:id/cancel — 実行中ジョブへ中断要求(204)。 */
+/** POST /api/jobs/:id/cancel — 実行中/確認待ち/待機中(queued)ジョブへ中断要求(204)。queuedは未実行のままcancelledになる。 */
 export async function cancelJob(id: string): Promise<void> {
   await fetchJson<void>(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 }
@@ -192,6 +250,25 @@ export function resumeJob(id: string): Promise<JobDetail> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
+}
+
+/** POST /api/jobs/:id/mode — 走行中ジョブの実行モードを切替(200=JobDetail)。終了済みは409。 */
+export function setJobMode(id: string, mode: JobMode): Promise<JobDetail> {
+  return fetchJson<JobDetail>(`/api/jobs/${encodeURIComponent(id)}/mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+}
+
+/** DELETE /api/jobs/:id — 終了ジョブを削除(204)。実行中・待機中は409。 */
+export async function deleteJob(id: string): Promise<void> {
+  await fetchJson<void>(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** POST /api/jobs/clear-finished — 終了済み(中断・失敗・完了)の一括削除(200 {cleared:n}、冪等)。 */
+export function clearFinishedJobs(): Promise<{ cleared: number }> {
+  return fetchJson<{ cleared: number }>('/api/jobs/clear-finished', { method: 'POST' });
 }
 
 /** GET /api/channels/:dir/backlog — ネタ帳の「候補」一覧(おすすめ=順位昇順)。未作成は空。 */
@@ -220,12 +297,30 @@ export async function startRenderQueue(): Promise<void> {
   });
 }
 
-/** POST /api/render-queue/enqueue — 手動登録(201=item)。render_ready未満/重複は409。 */
-export function enqueueRenderQueue(dir: string, epId: string): Promise<RenderQueueItem> {
+/** POST /api/render-queue/enqueue — 手動登録(201=item)。render_ready未満(short は studio_checked 未満)/重複は409。 */
+export function enqueueRenderQueue(dir: string, epId: string, kind?: 'short'): Promise<RenderQueueItem> {
   return fetchJson<RenderQueueItem>('/api/render-queue/enqueue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dir, epId }),
+    body: JSON.stringify(kind ? { dir, epId, kind } : { dir, epId }),
+  });
+}
+
+/** POST /api/render-queue/clear-finished — 終了済み(done/failed/canceled)の一括削除(200 {cleared:n}、冪等)。 */
+export function clearRenderQueueFinished(): Promise<{ cleared: number }> {
+  return fetchJson<{ cleared: number }>('/api/render-queue/clear-finished', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/** POST /api/render-queue/:id/start — waiting1本だけを単発レンダー開始(204)。実行中/非waitingは409。 */
+export async function startRenderQueueItem(id: string): Promise<void> {
+  await fetchJson<void>(`/api/render-queue/${encodeURIComponent(id)}/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   });
 }
 
@@ -247,6 +342,15 @@ export async function cancelRenderQueueItem(id: string): Promise<void> {
  */
 export async function approveEpisode(dir: string, epId: string): Promise<void> {
   await fetchJson<void>(channelPath(dir, `/episodes/${encodeURIComponent(epId)}/approve`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/** POST /api/channels/:dir/shorts/:shortId/studio-checked — ショートのStudio確認を承認する(204)。 */
+export async function approveShortStudioCheck(dir: string, shortId: string): Promise<void> {
+  await fetchJson<void>(channelPath(dir, `/shorts/${encodeURIComponent(shortId)}/studio-checked`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
@@ -300,6 +404,15 @@ export async function startStudio(dir: string, episodeId?: string): Promise<{ ur
   });
 }
 
+/** POST /api/studio/start — ショート対象(shorts/<shortId>)で Studio を起動し、疎通後にURLを返す。 */
+export async function startStudioShort(dir: string, shortId: string): Promise<{ url: string }> {
+  return fetchJson<{ url: string }>('/api/studio/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir, shortId }),
+  });
+}
+
 /** POST /api/studio/stop — Studio を停止(204)。 */
 export async function stopStudio(): Promise<void> {
   await fetchJson<void>('/api/studio/stop', {
@@ -325,9 +438,15 @@ export function getYoutubeAuthUrl(dir: string): Promise<{ url: string }> {
   });
 }
 
-/** GET /api/youtube/videos?channel=&ep= — out/のmp4候補一覧。 */
-export function getYoutubeVideos(dir: string, epId: string): Promise<{ files: { file: string; size: number }[] }> {
-  return fetchJson(`/api/youtube/videos?channel=${encodeURIComponent(dir)}&ep=${encodeURIComponent(epId)}`);
+/** GET /api/youtube/videos?channel=&ep=&kind= — out/のmp4候補一覧。 */
+export function getYoutubeVideos(
+  dir: string,
+  id: string,
+  kind: UploadKind = 'episode',
+): Promise<{ files: { file: string; size: number }[] }> {
+  return fetchJson(
+    `/api/youtube/videos?channel=${encodeURIComponent(dir)}&ep=${encodeURIComponent(id)}&kind=${kind}`,
+  );
 }
 
 /** POST /api/youtube/upload — アップロード開始(201=ジョブ)。重複409/未連携401。 */
@@ -335,6 +454,7 @@ export function startYoutubeUpload(body: {
   channel: string;
   epId: string;
   videoFile: string;
+  kind?: UploadKind;
   force?: boolean;
 }): Promise<YoutubeUploadJob> {
   return fetchJson<YoutubeUploadJob>('/api/youtube/upload', {
@@ -366,4 +486,53 @@ export async function putYoutubeClient(raw: unknown): Promise<void> {
 /** DELETE /api/youtube/client — クライアントJSONを削除(204、冪等)。 */
 export async function deleteYoutubeClient(): Promise<void> {
   await fetchJson<void>('/api/youtube/client', { method: 'DELETE' });
+}
+
+// ---- アナリティクス還流・サムネABテスト API(Task 7) ------------------------
+
+/** POST /api/youtube/analytics/fetch — YouTube Analyticsから実測値を取得しanalytics.jsonへ保存(200)。
+ *  未アップロードは404、スコープ不足/再連携要は401。 */
+export function fetchYoutubeAnalytics(channel: string, epId: string): Promise<AnalyticsData> {
+  return fetchJson<AnalyticsData>('/api/youtube/analytics/fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, epId }),
+  });
+}
+
+/** GET /api/channels/:dir/episodes/:epId/analytics — 保存済みのanalytics.json(未取得は404)。 */
+export function getAnalytics(dir: string, epId: string): Promise<AnalyticsData> {
+  return fetchJson<AnalyticsData>(channelPath(dir, `/episodes/${encodeURIComponent(epId)}/analytics`));
+}
+
+/** PUT /api/channels/:dir/episodes/:epId/analytics/manual — CTR・インプレッションの手動転記(204)。
+ *  analytics.json未取得(先に分析取得が必要)は404。 */
+export async function putAnalyticsManual(
+  dir: string,
+  epId: string,
+  patch: { impressions?: number; impressionsCtr?: number },
+): Promise<void> {
+  await fetchJson<void>(channelPath(dir, `/episodes/${encodeURIComponent(epId)}/analytics/manual`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** GET /api/channels/:dir/episodes/:epId/thumb-test — 保存済みのサムネAB結果(未記録は404)。 */
+export function getThumbTest(dir: string, epId: string): Promise<ThumbTestData> {
+  return fetchJson<ThumbTestData>(channelPath(dir, `/episodes/${encodeURIComponent(epId)}/thumb-test`));
+}
+
+/** PUT /api/channels/:dir/episodes/:epId/thumb-test — サムネAB結果を記録(204)。winner不正/sharesの不正キーは400。 */
+export async function putThumbTest(
+  dir: string,
+  epId: string,
+  body: { winner: string; shares?: Record<string, number>; note?: string },
+): Promise<void> {
+  await fetchJson<void>(channelPath(dir, `/episodes/${encodeURIComponent(epId)}/thumb-test`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }

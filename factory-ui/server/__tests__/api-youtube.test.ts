@@ -41,6 +41,14 @@ function makeRoot(): string {
     path.join(ep, 'publish', 'metadata.json'),
     JSON.stringify({ title: 't', description: 'd', tags: [], categoryId: '24' }),
   );
+  const sh = path.join(root, 'ch-a', 'shorts', 'sh001-test');
+  fs.mkdirSync(path.join(sh, 'out'), { recursive: true });
+  fs.mkdirSync(path.join(sh, 'publish'), { recursive: true });
+  fs.writeFileSync(path.join(sh, 'out', 'final.mp4'), Buffer.alloc(64));
+  fs.writeFileSync(
+    path.join(sh, 'publish', 'metadata.json'),
+    JSON.stringify({ title: 'st', description: 'sd', tags: [], categoryId: '24' }),
+  );
   return root;
 }
 
@@ -50,6 +58,7 @@ const fakeApi: YoutubeApi = {
   getChannelTitle: async () => 'ch-title',
   upload: async () => 'vid-1',
   setThumbnail: async () => {},
+  fetchAnalytics: async () => ({ metrics: {}, retentionCurve: [] }),
 };
 
 describe('YouTube API ルート', () => {
@@ -118,6 +127,37 @@ describe('YouTube API ルート', () => {
     expect(list.body.jobs).toHaveLength(1);
   });
 
+  it('upload: metadata.jsonのaiDisclosure/publishAtがapi.uploadのparamsまで透過する(注: youtube-googleは方針によりaiDisclosureを送信に使わず常にfalseを送る)', async () => {
+    const captured: { aiDisclosure?: boolean; publishAt?: string }[] = [];
+    const capturingApi: YoutubeApi = {
+      ...fakeApi,
+      upload: async (p) => {
+        captured.push({ aiDisclosure: p.meta.aiDisclosure, publishAt: p.meta.publishAt });
+        return 'vid-2';
+      },
+    };
+    const m = new YoutubeManager(root, () => capturingApi);
+    const app = makeApp(m, root);
+    fs.writeFileSync(
+      path.join(root, 'ch-a', 'episodes', 'ep001', 'publish', 'metadata.json'),
+      JSON.stringify({
+        title: 't',
+        description: 'd',
+        tags: [],
+        categoryId: '24',
+        aiDisclosure: true,
+        publishAt: '2026-07-20T09:00:00+09:00',
+      }),
+    );
+    await m.handleCallback('c1', 'ch-a');
+    const res = await request(app)
+      .post('/api/youtube/upload')
+      .send({ channel: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    expect(res.status).toBe(201);
+    await new Promise<void>((resolve) => m.on('update', (j) => j.status === 'done' && resolve()));
+    expect(captured).toEqual([{ aiDisclosure: true, publishAt: '2026-07-20T09:00:00+09:00' }]);
+  });
+
   it('upload: metadata不在は404相当のnot_found、Content-Type必須(415)', async () => {
     const m = new YoutubeManager(root, () => fakeApi);
     await m.handleCallback('c1', 'ch-a');
@@ -132,6 +172,71 @@ describe('YouTube API ルート', () => {
       .set('Content-Type', 'text/plain')
       .send('x');
     expect(raw.status).toBe(415);
+  });
+
+  it('videos: kind=short は shorts/配下のmp4を返し、不正kindは400', async () => {
+    const app = makeApp(new YoutubeManager(root, () => fakeApi), root);
+    const res = await request(app).get('/api/youtube/videos?channel=ch-a&ep=sh001-test&kind=short');
+    expect(res.status).toBe(200);
+    expect(res.body.files).toEqual([{ file: 'out/final.mp4', size: 64 }]);
+
+    const bad = await request(app).get('/api/youtube/videos?channel=ch-a&ep=sh001-test&kind=movie');
+    expect(bad.status).toBe(400);
+  });
+
+  it('upload: kind=short は shorts/<id>/publish/upload-result.json へ記録し、jobにkindが載る', async () => {
+    const m = new YoutubeManager(root, () => fakeApi);
+    const app = makeApp(m, root);
+    await m.handleCallback('c1', 'ch-a');
+    const body = { channel: 'ch-a', epId: 'sh001-test', videoFile: 'out/final.mp4', kind: 'short' };
+
+    const created = await request(app).post('/api/youtube/upload').send(body);
+    expect(created.status).toBe(201);
+    expect(created.body.kind).toBe('short');
+
+    await new Promise<void>((resolve) => m.on('update', (j) => j.status === 'done' && resolve()));
+    const resultPath = path.join(root, 'ch-a', 'shorts', 'sh001-test', 'publish', 'upload-result.json');
+    expect(JSON.parse(fs.readFileSync(resultPath, 'utf8')).videoId).toBe('vid-1');
+
+    // 再投稿は409(エピソードと同じ二重投稿ガード)
+    expect((await request(app).post('/api/youtube/upload').send(body)).status).toBe(409);
+
+    // 不正なkindは400
+    const bad = await request(app)
+      .post('/api/youtube/upload')
+      .send({ ...body, kind: 'movie' });
+    expect(bad.status).toBe(400);
+  });
+
+  it('upload: 同名IDのエピソードとショートは互いを二重投稿とみなさない', async () => {
+    // 同じID 'dup' をepisodes/とshorts/の両方に置く
+    for (const base of ['episodes', 'shorts']) {
+      const d = path.join(root, 'ch-a', base, 'dup');
+      fs.mkdirSync(path.join(d, 'out'), { recursive: true });
+      fs.mkdirSync(path.join(d, 'publish'), { recursive: true });
+      fs.writeFileSync(path.join(d, 'out', 'final.mp4'), Buffer.alloc(64));
+      fs.writeFileSync(
+        path.join(d, 'publish', 'metadata.json'),
+        JSON.stringify({ title: base, description: 'd', tags: [], categoryId: '24' }),
+      );
+    }
+    const m = new YoutubeManager(root, () => fakeApi);
+    const app = makeApp(m, root);
+    await m.handleCallback('c1', 'ch-a');
+
+    const ep = await request(app)
+      .post('/api/youtube/upload')
+      .send({ channel: 'ch-a', epId: 'dup', videoFile: 'out/final.mp4' });
+    expect(ep.status).toBe(201);
+    expect(ep.body.kind).toBeUndefined(); // 省略=episode
+    await new Promise<void>((resolve) => m.on('update', (j) => j.status === 'done' && resolve()));
+
+    const sh = await request(app)
+      .post('/api/youtube/upload')
+      .send({ channel: 'ch-a', epId: 'dup', videoFile: 'out/final.mp4', kind: 'short' });
+    expect(sh.status).toBe(201); // エピソード側の成功記録に引きずられない
+    await new Promise<void>((resolve) => m.on('update', (j) => j.kind === 'short' && j.status === 'done' && resolve()));
+    expect(fs.existsSync(path.join(root, 'ch-a', 'shorts', 'dup', 'publish', 'upload-result.json'))).toBe(true);
   });
 
   it('youtube未配線(deps省略)でも既存ルートは壊れない・youtube系は404', async () => {
@@ -190,19 +295,24 @@ describe('クライアントJSON設置API', () => {
     expect((await request(app).delete('/api/youtube/client')).status).toBe(204);
   });
 
-  it('PUT保存後、プロバイダ経由のstatusがno_clientでなくなる(ホットリロード結線)', async () => {
-    // 実プロバイダ(loadYoutubeApi)で結線した場合の統合確認
-    const { loadYoutubeApi } = await import('../youtube-google');
-    const m = new YoutubeManager(root, () => loadYoutubeApi(root, 'http://127.0.0.1:4700/api/youtube/callback'));
-    const app = makeApp(m, root);
-    expect((await request(app).get('/api/youtube/status?channel=ch-a')).body).toEqual({
-      connected: false,
-      reason: 'no_client',
-    });
-    await request(app).put('/api/youtube/client').send(VALID);
-    expect((await request(app).get('/api/youtube/status?channel=ch-a')).body).toEqual({
-      connected: false,
-      reason: 'no_token', // クライアントは認識された(次はチャンネル連携)
-    });
-  });
+  it(
+    'PUT保存後、プロバイダ経由のstatusがno_clientでなくなる(ホットリロード結線)',
+    async () => {
+      // 実プロバイダ(loadYoutubeApi)で結線した場合の統合確認
+      const { loadYoutubeApi } = await import('../youtube-google');
+      const m = new YoutubeManager(root, () => loadYoutubeApi(root, 'http://127.0.0.1:4700/api/youtube/callback'));
+      const app = makeApp(m, root);
+      expect((await request(app).get('/api/youtube/status?channel=ch-a')).body).toEqual({
+        connected: false,
+        reason: 'no_client',
+      });
+      await request(app).put('/api/youtube/client').send(VALID);
+      expect((await request(app).get('/api/youtube/status?channel=ch-a')).body).toEqual({
+        connected: false,
+        reason: 'no_token', // クライアントは認識された(次はチャンネル連携)
+      });
+    },
+    // googleapisの実ロード(約1.2秒)がデフォルト5000msタイムアウトに接近し稀に落ちる既知フレーク対策
+    15000,
+  );
 });
