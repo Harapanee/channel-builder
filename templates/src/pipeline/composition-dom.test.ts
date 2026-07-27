@@ -23,10 +23,25 @@ function makeProject(): { root: string; comp: string } {
       #root{position:relative;width:1920px;height:1080px}
       .clip{position:absolute;inset:0}
       .bg{width:100%;height:100%;object-fit:cover}
+      .css-bg{position:absolute;inset:0;background-image:url(assets/places/reef.png)}
+      .outside-bg{position:absolute;inset:0;background-image:url(file:///hf-test-outside-root/x.png)}
     </style></head><body>
     <div id="root" data-composition-id="t" data-start="0" data-duration="12" data-width="1920" data-height="1080">
       <div class="clip scene" id="c1" data-start="0" data-duration="6" data-track-index="1"></div>
       <div class="clip scene" id="c2" data-start="6" data-duration="6" data-track-index="1"></div>
+      <div class="clip scene" id="c3" data-start="6" data-duration="6" data-track-index="1">
+        <div class="css-bg"></div>
+      </div>
+      <div class="clip scene" id="c4" data-start="6" data-duration="6" data-track-index="1">
+        <svg viewBox="0 0 100 100"><image href="assets/places/reef.png" width="100" height="100"/></svg>
+      </div>
+      <div class="clip scene" id="c5" data-start="6" data-duration="6" data-track-index="1">
+        <img src="./assets/places/reef.png" class="bg">
+      </div>
+      <div class="clip scene" id="c6" data-start="6" data-duration="6" data-track-index="1">
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <div class="outside-bg"></div>
+      </div>
       <div class="subtitle clip" id="s1" data-start="0" data-duration="6" data-track-index="40">字幕</div>
     </div>
     <script>
@@ -46,7 +61,7 @@ test("JSで挿入されたimgを評価済みDOMから収集できる", async () 
   const dom = await collectCompositionDom(comp, root);
 
   assert.equal(dom.durationSec, 12);
-  assert.equal(dom.clips.length, 3);
+  assert.equal(dom.clips.length, 7);
 
   const c1 = dom.clips.find((c) => c.id === "c1");
   assert.ok(c1);
@@ -87,4 +102,38 @@ test("injectBase: <head> が無ければ <html> の直後に head ごと入れ�
 test("injectBase: <html> も無ければ文書先頭に入れる", () => {
   const out = injectBase(`<div id="root"></div>`, "file:///a/");
   assert.equal(out, `<head><base href="file:///a/"></head><div id="root"></div>`);
+});
+
+test("CSS background-image / SVG image / ./相対パス をすべて素材として収集する", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+  const srcsOf = (id: string) => dom.clips.find((c) => c.id === id)!.images.map((i) => i.src);
+
+  assert.deepEqual(srcsOf("c3"), ["assets/places/reef.png"], "background-image が拾えていない");
+  assert.deepEqual(srcsOf("c4"), ["assets/places/reef.png"], "SVG <image> が拾えていない");
+  assert.deepEqual(srcsOf("c5"), ["assets/places/reef.png"], "./ 付き相対パスが正規化されていない");
+});
+
+test("img 以外の出所は naturalW=0 / objectFit空 になり規則9の対象外になる", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+  const bg = dom.clips.find((c) => c.id === "c3")!.images[0];
+  assert.equal(bg.naturalW, 0);
+  assert.equal(bg.objectFit, "");
+
+  const img = dom.clips.find((c) => c.id === "c5")!.images[0];
+  assert.equal(img.naturalW, 1);
+  assert.equal(img.objectFit, "cover");
+});
+
+test("data: URI とプロジェクト外の絶対URLは素材として数えない", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+
+  // c6 は data: URI の img と、ルート外を指す background-image を持つ
+  const c6 = dom.clips.find((c) => c.id === "c6")!;
+  assert.deepEqual(c6.images, [], `除外されるべき src が残っている: ${JSON.stringify(c6.images)}`);
+
+  const all = dom.clips.flatMap((c) => c.images.map((i) => i.src));
+  assert.ok(all.every((s) => s.startsWith("assets/")), `ルート相対でない src がある: ${all.join(", ")}`);
 });

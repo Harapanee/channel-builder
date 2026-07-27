@@ -136,20 +136,60 @@ export async function collectCompositionDom(
           return (h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0")).slice(0, 12);
         }
 
+        // 素材の収集は要素の種類ではなく「ブラウザが解決した絶対URL」を一次情報にする。
+        // <img> 決め打ちだと background-image / SVG <image> / "./" 相対が取れず、
+        // 実素材で作った映像が「素材ゼロ」と判定されてしまうため(実測で確認済み)。
+        var BASE = document.baseURI;
+        function toRel(u) {
+          if (!u) return "";
+          var abs;
+          try { abs = new URL(u, BASE).href; } catch (e) { return ""; }
+          if (abs.indexOf(BASE) !== 0) return "";  // data: と外部URLはここで落ちる
+          var rel = abs.slice(BASE.length);
+          try { return decodeURIComponent(rel); } catch (e) { return rel; }
+        }
+        function cssUrls(v) {
+          if (!v || v === "none") return [];
+          var out = [], re = /url\\((['"]?)(.*?)\\1\\)/g, m;
+          while ((m = re.exec(v)) !== null) out.push(m[2]);
+          return out;
+        }
+        function imagesIn(clipEl) {
+          var out = [];
+          var els = [clipEl].concat([...clipEl.querySelectorAll("*")]);
+          for (var el of els) {
+            var tag = el.tagName.toLowerCase();
+            if (tag === "img") {
+              var cs = getComputedStyle(el);
+              out.push({
+                src: toRel(el.currentSrc || el.getAttribute("src") || ""),
+                naturalW: el.naturalWidth, naturalH: el.naturalHeight,
+                objectFit: cs.objectFit, objectPosition: cs.objectPosition
+              });
+              continue;
+            }
+            if (tag === "image") {  // SVG <image>。実寸は取れないので規則9の対象外になる
+              out.push({
+                src: toRel(el.getAttribute("href") || el.getAttribute("xlink:href") || ""),
+                naturalW: 0, naturalH: 0, objectFit: "", objectPosition: ""
+              });
+              continue;
+            }
+            var s = getComputedStyle(el);
+            var urls = cssUrls(s.backgroundImage)
+              .concat(cssUrls(s.maskImage), cssUrls(s.webkitMaskImage), cssUrls(s.borderImageSource));
+            for (var u of urls) {
+              out.push({ src: toRel(u), naturalW: 0, naturalH: 0, objectFit: "", objectPosition: "" });
+            }
+          }
+          return out.filter(function (x) { return x.src !== ""; });
+        }
+
         var root = document.querySelector("[data-composition-id]");
         var durationSec = parseFloat(root?.getAttribute("data-duration") || "0");
 
         var clips = [...document.querySelectorAll(".clip")].map((c) => {
-          var images = [...c.querySelectorAll("img")].map((i) => {
-            var cs = getComputedStyle(i);
-            return {
-              src: i.getAttribute("src") || "",
-              naturalW: i.naturalWidth,
-              naturalH: i.naturalHeight,
-              objectFit: cs.objectFit,
-              objectPosition: cs.objectPosition,
-            };
-          });
+          var images = imagesIn(c);
           var trackRaw = c.getAttribute("data-track-index");
           return {
             id: c.id || null,
