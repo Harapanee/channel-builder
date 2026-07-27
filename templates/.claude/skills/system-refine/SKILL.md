@@ -24,6 +24,7 @@ description: 工場OS層(video-createパイプライン・エージェント定�
 5. **テンプレートへ同期**(`~/.claude/skills/channel-builder/templates/`):
    - **IDENTICAL区分のファイル**(パイプライン・スキーマ・共有コンポーネント・README.md等): SRCからそのままコピー
    - **VARIANT区分のファイル**(video-create/channel-refine SKILL.md・エージェント定義の一部): テンプレ側は汎用化版なので**上書きコピーせず**、同等の編集をテンプレ版に適用する。チャンネル固有文字列(話者名・人物名・チャンネル名)を持ち込まない
+   - **レンダーエンジンの非対称に注意**: テンプレの本編工程は**HyperFrames既定**である。このFactoryがRemotion経路(`.channel-system.json` の `renderEngine` が `hyperframes` でない)の場合、video-create の工程5以降 / `scene-implementer.md` / `visual-director.md` への改善を**テンプレのHF版へそのまま移さない** — Remotion固有の手順(shots.json・registry・render-stills 等)でテンプレのHF記述を上書きすると、次に生まれるチャンネルが壊れる。エンジン非依存の部分(工程0〜4と11・審査基準・報告形式・定量規則)だけを還元し、エンジン依存の改善は還元せずCHANGELOGに「Remotion経路固有のためテンプレ未還元」と明記してユーザーの判断を仰ぐ
    - **新ファイルを追加した場合**: `scripts/check-template-sync.mjs` のマニフェスト(IDENTICAL/VARIANTリスト)にも追加する
 6. **channel-builderへ反映**: `~/.claude/skills/channel-builder` は独立したgitリポジトリ(GitHub private)。手順3-5でこのディレクトリに加えた変更をコミットしてpushする:
    ```
