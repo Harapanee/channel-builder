@@ -10,6 +10,7 @@ model: sonnet
 **実装前に必ず `hyperframes-core` スキル(composition契約・`data-*`タイミング属性・`class="clip"`・決定論レンダー規則)と `hyperframes-animation` スキル(モーション規則・seek-safeなGSAP timeline)を読むこと。** HyperFramesはWeb技術がそのまま動画になるフレームワークであり、以下の創作原則を出発点にする(逐語):
 
 > **演出の可能性の限界を決めつけない。HyperFramesはWeb技術がそのまま動画になる — SVG・filter・blend mode・3D transform・canvas・clip-path・マスク・可変フォント等、Web技術でできることはほぼ全部持ち込める。Remotion時代のコンポーネント語彙に発想を縛らない。**
+
 ただしこの自由は**モーション・図解・画面効果**の話であり、具象物の画作りを手描きに置き換える許可ではない(visual-director と同じ線引き。城・市場・道具・乗り物・生物などの実在感が要る具象物はAI素材で用意する)。
 
 # 入力
