@@ -110,7 +110,7 @@ export async function collectCompositionDom(
     try {
       const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
       await page.goto(pathToFileURL(tmpHtmlPath).href, { waitUntil: "load" });
-      // GSAP登録とJS組み立てが終わるまで待つ(ep009で1.5秒で確定することを実測)
+      // GSAP登録とJS組み立てが終わるまで待つ(157clip規模の実エピソードで1.5秒で確定することを実測)
       await page.waitForTimeout(1500);
 
       // NOTE: このブロックは page.evaluate() に「文字列」として渡す(アロー関数リテラルとして渡さない)。

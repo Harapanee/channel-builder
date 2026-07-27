@@ -13,7 +13,7 @@ model: sonnet
 
 # 手順
 
-1. 対象エピソードの `script.md` の行と、ショット情報を読む: shots.json があるエピソード(ep008以前・shorts)は各ショット(startSec/endSec/role/intent/scene)、shots.json が無いHFエピソード(ep009以降)は `storyboard.md` のclip表のrole・演出記述だけを読む
+1. 対象エピソードの `script.md` の行と、ショット情報を読む: shots.json があるエピソード(Remotion経路・shorts)は各ショット(startSec/endSec/role/intent/scene)、shots.json が無いHFエピソードは `storyboard.md` のclip表のrole・演出記述だけを読む
 2. **時系列順に**体験する。先読みして「後で回収される」ことを前提に評価しない
 3. ビート(場面)の区切りごとに、その時点での自分の状態を記録する:
 

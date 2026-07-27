@@ -184,11 +184,11 @@ test("規則7: 過去epと同じシグネチャがあればADVISE", () => {
     durationSec: 600,
     clips: [clip("c1", ["clip", "scene"], [], "sig-old"), clip("c2", ["clip", "scene"], [], "sig-new")],
   };
-  const past = new Map([["sig-old", ["ep008-cheetah"]]]);
+  const past = new Map([["sig-old", ["ep001-sample"]]]);
   const f = evaluateAdviseRules(dom, RULES, past).filter((x) => x.rule === "zero-carryover");
   assert.equal(f.length, 1);
   assert.match(f[0].message, /c1/);
-  assert.match(f[0].message, /ep008-cheetah/);
+  assert.match(f[0].message, /ep001-sample/);
 });
 
 test("規則8: 様式clipの比率超過はADVISE", () => {
