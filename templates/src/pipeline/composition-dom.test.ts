@@ -86,7 +86,7 @@ test("同じ構造のclipは同じsignature・違う構造は違うsignature", a
   const s1 = dom.clips.find((c) => c.id === "s1")!;
   assert.notEqual(c1.signature, c2.signature); // c1はimgを持つ
   assert.notEqual(c1.signature, s1.signature);
-  assert.match(c1.signature, /^[0-9a-f]{12}$/);
+  assert.match(c1.signature, /^[0-9a-f]{12}:$/);
 });
 
 test("injectBase: <head> があればその直後に入れる", () => {
@@ -147,4 +147,51 @@ test("clip配下のクラスを descendantClasses に集める", async () => {
 
   const c2 = dom.clips.find((c) => c.id === "c2")!;
   assert.deepEqual(c2.descendantClasses, []);
+});
+
+/** 同一DOM・異なるモーションの2clipを持つプロジェクト(GSAPはCDN依存なのでフェイクを置く) */
+function makeMotionProject(): { root: string; comp: string } {
+  const root = mkdtempSync(path.join(tmpdir(), "hf motion "));
+  const comp = path.join(root, "composition.html");
+  writeFileSync(
+    comp,
+    `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+    <div id="root" data-composition-id="t" data-start="0" data-duration="12" data-width="1920" data-height="1080">
+      <div class="clip scene" id="c1" data-start="0" data-duration="4" data-track-index="1"><div class="char">A</div></div>
+      <div class="clip scene" id="c2" data-start="4" data-duration="4" data-track-index="1"><div class="char">B</div></div>
+      <div class="clip scene" id="c3" data-start="8" data-duration="4" data-track-index="1"><div class="char">C</div></div>
+    </div>
+    <script>
+      function tween(vars, dur, sel) {
+        return { vars: vars, duration: function () { return dur; },
+                 targets: function () { return [document.querySelector(sel)]; } };
+      }
+      window.__timelines = { t: { getChildren: function () { return [
+        tween({ opacity: 1, ease: "power2.out", duration: 1 }, 1, "#c1 .char"),
+        tween({ x: 100, ease: "sine.inOut", duration: 2 }, 2, "#c2 .char"),
+        tween({ opacity: 1, ease: "power2.out", duration: 1 }, 1, "#c3 .char")
+      ]; } } };
+    </script>
+    </body></html>`
+  );
+  return { root, comp };
+}
+
+test("同一DOM構造でもモーションが違えば別シグネチャになる", async () => {
+  const { root, comp } = makeMotionProject();
+  const dom = await collectCompositionDom(comp, root);
+  const c1 = dom.clips.find((c) => c.id === "c1")!;
+  const c2 = dom.clips.find((c) => c.id === "c2")!;
+  const c3 = dom.clips.find((c) => c.id === "c3")!;
+
+  assert.notEqual(c1.signature, c2.signature, "動きが違うのに同一シグネチャ");
+  assert.equal(c1.signature, c3.signature, "動きも構造も同じなら同一シグネチャであるべき");
+  assert.match(c1.signature, /^[0-9a-f]{12}:[0-9a-f]{12}$/);
+});
+
+test("__timelines が無いcompositionではモーション部が空になる(後方互換)", async () => {
+  const { root, comp } = makeProject();
+  const dom = await collectCompositionDom(comp, root);
+  const c1 = dom.clips.find((c) => c.id === "c1")!;
+  assert.match(c1.signature, /^[0-9a-f]{12}:$/);
 });

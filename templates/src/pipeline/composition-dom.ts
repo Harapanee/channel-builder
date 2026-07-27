@@ -31,7 +31,7 @@ export type ClipInfo = {
   startSec: number;
   durationSec: number;
   images: ImageUse[];
-  /** 構造シグネチャ(タグ名+クラス列のみ。テキストは含めない) */
+  /** 構造シグネチャ(タグ+クラス)とモーション指紋を連結したもの: "<構造>:<モーション>" */
   signature: string;
 };
 
@@ -187,10 +187,66 @@ export async function collectCompositionDom(
           return out.filter(function (x) { return x.src !== ""; });
         }
 
+        // GSAPの制御用キー。これらを除いた残りが「何をアニメさせたか」になる
+        var GSAP_CONTROL = {
+          delay:1, duration:1, ease:1, overwrite:1, parent:1, repeat:1, repeatDelay:1,
+          yoyo:1, yoyoEase:1, immediateRender:1, startAt:1, stagger:1, paused:1,
+          id:1, data:1, inherit:1, lazy:1, callbackScope:1, keyframes:1, runBackwards:1,
+          onComplete:1, onStart:1, onUpdate:1, onRepeat:1, onReverseComplete:1
+        };
+        function easeName(e) {
+          if (!e) return "none";
+          if (typeof e === "string") return e;
+          if (typeof e === "function") return e.name || "custom";
+          return String(e.name || "custom");
+        }
+        /**
+         * clipごとのモーション指紋。構造(タグ+クラス)だけのシグネチャでは、
+         * 同じDOMに違う動きを付けた演出が「1演出」に潰れて量産扱いされるため、
+         * アニメプロパティ・ease・尺を指紋にして構造と連結する。
+         * GSAPが読めない/tweenが無い場合は空文字を返し、従来挙動へ縮退する。
+         */
+        function motionHashes(clipEls) {
+          var idx = new Map();
+          for (var n = 0; n < clipEls.length; n++) idx.set(clipEls[n], n);
+          var acc = clipEls.map(function () { return []; });
+          var tls = window.__timelines || {};
+          for (var key of Object.keys(tls)) {
+            var tl = tls[key];
+            if (!tl || typeof tl.getChildren !== "function") continue;
+            var kids;
+            try { kids = tl.getChildren(true, true, true) || []; } catch (e) { continue; }
+            for (var t of kids) {
+              if (!t || typeof t.targets !== "function") continue;
+              var props = Object.keys(t.vars || {})
+                .filter(function (p) { return !GSAP_CONTROL[p]; })
+                .sort()
+                .join(",");
+              var dur = 0;
+              try { dur = Math.round((t.duration() || 0) * 10) / 10; } catch (e) { dur = 0; }
+              var fp = props + "|" + easeName(t.vars && t.vars.ease) + "|" + dur;
+              var tgs;
+              try { tgs = t.targets() || []; } catch (e) { continue; }
+              for (var g of tgs) {
+                if (!g || typeof g.closest !== "function") continue;
+                var owner = g.closest(".clip");
+                if (!owner || !idx.has(owner)) continue;
+                acc[idx.get(owner)].push(fp);
+              }
+            }
+          }
+          return acc.map(function (list) {
+            return list.length ? hash12([...new Set(list)].sort().join(";")) : "";
+          });
+        }
+
         var root = document.querySelector("[data-composition-id]");
         var durationSec = parseFloat(root?.getAttribute("data-duration") || "0");
 
-        var clips = [...document.querySelectorAll(".clip")].map((c) => {
+        var clipEls = [...document.querySelectorAll(".clip")];
+        var motion = motionHashes(clipEls);
+
+        var clips = clipEls.map((c, ci) => {
           var images = imagesIn(c);
           var trackRaw = c.getAttribute("data-track-index");
           return {
@@ -201,7 +257,7 @@ export async function collectCompositionDom(
             startSec: parseFloat(c.getAttribute("data-start") || "0"),
             durationSec: parseFloat(c.getAttribute("data-duration") || "0"),
             images,
-            signature: hash12(structureOf(c).slice(0, 200).join(">")),
+            signature: hash12(structureOf(c).slice(0, 200).join(">")) + ":" + motion[ci],
           };
         });
 
