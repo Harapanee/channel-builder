@@ -3,11 +3,12 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectCompositionDom } from "./composition-dom";
+import { collectCompositionDom, injectBase } from "./composition-dom";
 
 /** JSでimgを組み立てるcomposition(実物と同じ作り)を一時プロジェクトに用意する */
 function makeProject(): { root: string; comp: string } {
-  const root = mkdtempSync(path.join(tmpdir(), "hf-dom-"));
+  // 空白を含むディレクトリ名にする(base href のエスケープが効いていることの実証)
+  const root = mkdtempSync(path.join(tmpdir(), "hf dom "));
   mkdirSync(path.join(root, "assets", "places"), { recursive: true });
   // 1x1 の透明PNG(naturalWidth/Height を確定させるため実ファイルを置く)
   const png = Buffer.from(
@@ -71,4 +72,19 @@ test("同じ構造のclipは同じsignature・違う構造は違うsignature", a
   assert.notEqual(c1.signature, c2.signature); // c1はimgを持つ
   assert.notEqual(c1.signature, s1.signature);
   assert.match(c1.signature, /^[0-9a-f]{12}$/);
+});
+
+test("injectBase: <head> があればその直後に入れる", () => {
+  const out = injectBase(`<!DOCTYPE html><html><head><title>x</title></head><body></body></html>`, "file:///a/");
+  assert.match(out, /<head><base href="file:\/\/\/a\/"><title>/);
+});
+
+test("injectBase: <head> が無ければ <html> の直後に head ごと入れる", () => {
+  const out = injectBase(`<!DOCTYPE html><html><body><div id="root"></div></body></html>`, "file:///a/");
+  assert.match(out, /<html><head><base href="file:\/\/\/a\/"><\/head><body>/);
+});
+
+test("injectBase: <html> も無ければ文書先頭に入れる", () => {
+  const out = injectBase(`<div id="root"></div>`, "file:///a/");
+  assert.equal(out, `<head><base href="file:///a/"></head><div id="root"></div>`);
 });

@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { chromium } from "playwright-core";
 
 export type ImageUse = {
@@ -37,8 +38,28 @@ export type CompositionDom = {
   clips: ClipInfo[];
 };
 
+/**
+ * <base> タグを挿入する。
+ * <head> はHTML5では省略可能なので、無い場合もフォールバックして必ず挿入する
+ * (実装者が自由な形のHTMLを書いても検査が実行エラーで落ちないようにするため)。
+ * 置換文字列に $ が含まれても壊れないよう、関数形式の replace を使う。
+ */
+export function injectBase(raw: string, baseHref: string): string {
+  const tag = `<base href="${baseHref}">`;
+  if (/<head([^>]*)>/i.test(raw)) return raw.replace(/<head([^>]*)>/i, (_m, attrs) => `<head${attrs}>${tag}`);
+  if (/<html([^>]*)>/i.test(raw)) return raw.replace(/<html([^>]*)>/i, (_m, attrs) => `<html${attrs}><head>${tag}</head>`);
+  return `<head>${tag}</head>${raw}`;
+}
+
+/**
+ * 1回の check:visual で最大4つのcomposition(現行ep+過去ep3本)を開くため、
+ * npx の解決を毎回走らせない。プロセス内でのみ有効。
+ */
+let cachedChromePath: string | null = null;
+
 /** hyperframes が管理する Chrome の実行パスを得る */
 export function resolveChromePath(projectRoot: string): string {
+  if (cachedChromePath !== null) return cachedChromePath;
   const out = execFileSync(
     "npx",
     ["--yes", "hyperframes@0.7.68", "browser", "path"],
@@ -53,6 +74,7 @@ export function resolveChromePath(projectRoot: string): string {
       "hyperframes browser path が実行パスを返しませんでした。`npx hyperframes browser ensure` を先に実行してください"
     );
   }
+  cachedChromePath = line;
   return line;
 }
 
@@ -62,12 +84,10 @@ export async function collectCompositionDom(
 ): Promise<CompositionDom> {
   const chromePath = resolveChromePath(projectRoot);
 
-  // ルート基準の相対パス(assets/...)を解決させるため <base> を注入する
-  const raw = readFileSync(compositionPath, "utf8");
-  const html = raw.replace(/<head([^>]*)>/i, `<head$1><base href="file://${projectRoot}/">`);
-  if (html === raw) {
-    throw new Error(`<head> が見つかりません: ${compositionPath}`);
-  }
+  // ルート基準の相対パス(assets/...)を解決させるため <base> を注入する。
+  // pathToFileURL でURL化するのは、パスに空白・#・? が含まれても壊れないようにするため。
+  const rootUrl = pathToFileURL(projectRoot).href.replace(/\/?$/, "/");
+  const html = injectBase(readFileSync(compositionPath, "utf8"), rootUrl);
 
   // NOTE: page.setContent() は使わない(brief記載のコードから変更)。
   // 理由: page.setContent() で流し込んだ文書のoriginは file:// にならず、Chromeが
@@ -87,7 +107,7 @@ export async function collectCompositionDom(
     const browser = await chromium.launch({ executablePath: chromePath });
     try {
       const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-      await page.goto(`file://${tmpHtmlPath}`, { waitUntil: "load" });
+      await page.goto(pathToFileURL(tmpHtmlPath).href, { waitUntil: "load" });
       // GSAP登録とJS組み立てが終わるまで待つ(ep009で1.5秒で確定することを実測)
       await page.waitForTimeout(1500);
 
