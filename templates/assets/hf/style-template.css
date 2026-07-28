@@ -115,12 +115,45 @@
 .bw { position: absolute; z-index: 11; }
 .bw > .speech-bubble { position: relative; left: auto; top: auto; transform: none; width: 100%; min-height: 0; padding: 24px 28px; }
 
+/* 吹き出し本体と修飾子。hf-helpers.js の bubble() は
+   `speech-bubble` + 任意の `tail-right` / `shout` を1要素に付与する。
+   2026-07-28 まで .bw > .speech-bubble の位置上書きしか定義が無く、
+   形状・尻尾・叫び調がどのチャンネルでも描画されなかったため新設した。 */
+.speech-bubble {
+  position: relative; display: inline-block; max-width: 720px;
+  /* padding は上の .bw > .speech-bubble(詳細度が上)と同値。食い違わせると
+     bubble() 経由の要素だけ別の余白になる */
+  padding: 24px 28px;
+  border: 3px solid var(--ch-ink); border-radius: 24px;
+  background: var(--ch-paper); color: var(--ch-ink);
+  font-family: var(--ch-font); font-size: 40px; line-height: 1.5;
+}
+/* 尻尾。既定は左寄り(::after)、.tail-right で右寄りへ */
+.speech-bubble::after {
+  content: ""; position: absolute; bottom: -22px; left: 56px; width: 0; height: 0;
+  border-left: 20px solid transparent; border-right: 20px solid transparent;
+  border-top: 24px solid var(--ch-ink);
+}
+.speech-bubble.tail-right::after { left: auto; right: 56px; }
+/* 叫び調。角丸をやめ、二重枠と太字で強める。
+   clip-path は使わない — 擬似要素もクリップするため尻尾(::after)が消える */
+.speech-bubble.shout {
+  border-radius: 0; border-width: 5px; font-weight: 700; font-size: 52px;
+  box-shadow: 0 0 0 4px var(--ch-paper), 0 0 0 7px var(--ch-ink);
+}
+
 /* 章カード: 全画面ではなく1枚の紙として立てる(背面の舞台が縁から見える) */
 .cc-wrap { position: absolute; inset: 0; z-index: 30; perspective: 1800px; }
 .chapter-card.cc-sheet { inset: 54px; border: 7px solid var(--ch-ink); border-radius: 18px;
   filter: drop-shadow(5px 8px 0 rgba(27,26,23,.2)); }
 .chapter-card.cc-sheet .title { font-size: 102px; -webkit-text-stroke-width: 1px; }
 .chapter-card.cc-sheet .underline { width: 700px; }
+/* 章カードの小見出し。hf-helpers.js の chapterCard() が生成するが
+   2026-07-28 まで定義が無く無スタイルだった */
+.chapter-card .kicker {
+  font-family: var(--ch-font); font-size: 32px; letter-spacing: .24em;
+  color: var(--ch-ink); opacity: .7;
+}
 
 /* 字幕: .clip{inset:0} が字幕の箱を全画面に伸ばすので、下端のバーへ再アンカーする。
    z-index は章カード(30)と紙の粒子(60)の間 = 章カードに字幕が隠れない */

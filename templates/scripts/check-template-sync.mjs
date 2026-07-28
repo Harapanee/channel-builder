@@ -240,6 +240,18 @@ try {
       .renderEngine || "remotion";
 } catch {}
 
+// HF部品の意図的な不採用。そのチャンネルが「この仕組みを運用しない」と決めた場合に
+// .channel-system.json の hfOptOut: string[] へパスを列挙すると、そのファイルは
+// 未受領でも乖離でもNGにしない(CORE_IDENTICAL の coreOverrides と同じ思想)。
+// 例: 視覚多様性検査(check-composition.ts 一式)を廃止したチャンネル。
+// 「テンプレ側に存在すること」の検査だけは opt-out できない(scaffold元のため)。
+let hfOptOut = [];
+try {
+  hfOptOut =
+    JSON.parse(fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8"))
+      .hfOptOut ?? [];
+} catch {}
+
 for (const f of HF_IDENTICAL) {
   const a = path.join(SRC, f);
   const b = path.join(TPL, f);
@@ -248,8 +260,12 @@ for (const f of HF_IDENTICAL) {
     continue;
   }
   if (renderEngine !== "hyperframes") continue; // Remotionチャンネルでは検査しない
+  if (hfOptOut.includes(f)) continue; // 意図的な不採用を宣言済み
   if (!fs.existsSync(a))
-    fail(`HF_IDENTICAL未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
+    fail(
+      `HF_IDENTICAL未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要。` +
+        `意図的に運用しないなら .channel-system.json の hfOptOut に追加)`
+    );
   else if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8"))
     fail(`HF_IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
 }
