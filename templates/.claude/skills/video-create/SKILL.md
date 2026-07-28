@@ -94,6 +94,8 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 
 ## 7. 素材取得
 
+**起動タイミング(壁時計の短縮)**: 10分超で工程5-6を多相で回す場合、**Phase 1(全体設計)が終わった時点で確実に要る素材(スパイン・モチーフの実体・章の既定舞台)は発注できる**。clip表の完成を待たず、**Phase 2(章並列のclip表執筆)と同一ターンで asset-generator を並行起動する**。clip表の確定後に判明した追加ぶんだけを2周目で発注する。
+
 各ショットの素材を bible §10 の優先順位で調達:
 
 1. library.json の既存素材(assetIdで参照)
@@ -107,7 +109,19 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 
 ## 8. シーン実装 → `composition.html`
 
-**scene-implementerエージェントへ委譲**(HF規約5点・三層規則・技術規則・音声/字幕配線はエージェント定義に内蔵。実装前に `hyperframes-core` / `hyperframes-animation` スキルを読ませる。メインセッションが演出コードを書かない — シーン実装は演出の質を最終決定する工程であり、エージェント定義のモデル固定が品質のモデル非依存を担保する)。成果物は `episodes/<epId>/composition.html`(storyboard.md のclip表を実装し、`assets/hf/<slug>-style.css` を link)。
+**まずメインセッションが骨格を機械生成する**(エージェントに作らせない):
+
+```
+npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50,cL51-cL108,cL109-cL166"
+```
+
+`timing.json` から clipセクション・字幕・プリミックス音声の配線・素材テーブル(storyboard.md の使用素材列 → library.json → PNGのアルファから不透明bboxを実測)・共通ヘルパー(`assets/hf/hf-helpers.js`)・章グループの `SPLICE` マーカー・未実装clipのフォールバックまでを生成する。**この時点で `npm run check` が通る**(未実装clip数が warning に出るだけ)。`--groups` は storyboard.md の章割に合わせる。
+
+**これにより章グループを最初から並列で起動できる**(骨格を1体のエージェントに作らせると、後続グループがその完了まで待つ)。
+
+**共通ヘルパーは書き直させない**: `assets/hf/hf-helpers.js` が素材配置(`pic` / `stage`)・紙の名札(`plate`)・木札(`placard`)・吹き出し(`bubble`)・章カード(`chapterCard`)・手描き線(`draw` / `pointer` / `cutArrow` / `blob` / `xMark`)・光と粒(`skyGlow` / `shafts` / `motes`)・シード付きPRNG(`prng`)を持つ。回固有の部品だけを実装させる。
+
+**次に scene-implementerエージェントへ委譲**(各グループの成果物は `SCENES.cLxx = (g,D)=>{...}` の代入だけを書いたJSフラグメントとし、メインセッションが `SPLICE` マーカー行へ差し込む。composition.html への同時書き込みを避ける)(HF規約5点・三層規則・技術規則・音声/字幕配線はエージェント定義に内蔵。実装前に `hyperframes-core` / `hyperframes-animation` スキルを読ませる。メインセッションが演出コードを書かない — シーン実装は演出の質を最終決定する工程であり、エージェント定義のモデル固定が品質のモデル非依存を担保する)。成果物は `episodes/<epId>/composition.html`(storyboard.md のclip表を実装し、`assets/hf/<slug>-style.css` を link)。
 
 - **10分超は章グループ並列で起動してよい**(visual-directorと同じ分担。共有様式・スパイン演出は実装オーナー1グループ、他は同じ見え方を再現)
 - メインセッションの監査観点:

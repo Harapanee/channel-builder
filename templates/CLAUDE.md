@@ -28,6 +28,7 @@
 - `npm run dev` — HyperFramesプレビュー(本編。必ずbackgroundで起動)
 - `npm run check` — 視覚多様性検査 + HF check(本編。レンダー前の機械ゲート)
 - `npm run snapshot -- --at <秒,...> -o <出力先>` — 指定時刻の実フレーム取得(レビュー・実装確認の視覚検証用)
+- `npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> [--groups "cL01-cL50,..."]` — composition.html の骨格を timing.json から機械生成(clip/字幕/音声配線/素材テーブル/共通ヘルパー/SPLICEマーカー)。**工程8の最初に実行し、章グループを最初から並列で走らせる**
 - `npm run render` — HyperFramesレンダー(本編)
 - **HyperFrames CLI は必ず上記のnpmスクリプト経由で叩く**(`npx hyperframes ...` を直接叩かない)。CLIのページ遷移予算は既定10秒固定で、clip数・DOMノードの多い長尺compositionでは実装が正しくても `check_runtime_failure: Navigation timeout` になる。npmスクリプトと `scripts/render-episode.sh` が `PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS=90000` を渡した状態で呼ぶ
 - `npm run check:visual -- episodes/<epId>` — 視覚多様性検査のみ

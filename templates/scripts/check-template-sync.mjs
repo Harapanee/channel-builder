@@ -110,6 +110,8 @@ const IDENTICAL = [
 // テンプレ側には必ず存在しなければならない(scaffold元なので欠落は常にNG)。
 const HF_IDENTICAL = [
   "hyperframes.json",
+  "assets/hf/hf-helpers.js",
+  "src/pipeline/scaffold-composition.ts",
   "src/pipeline/composition-dom.ts",
   "src/pipeline/composition-dom.test.ts",
   "src/pipeline/visual-rules-hf.ts",

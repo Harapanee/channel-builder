@@ -56,3 +56,77 @@
   font-family: var(--ch-font); font-size: 32px; color: var(--ch-ink); z-index: 20; }
 .title-card { position: absolute; inset: 0; display: flex; align-items: center;
   justify-content: center; font-family: var(--ch-font); z-index: 20; }
+
+/* ==========================================================================
+   hf-helpers.js が使う構造クラス(2026-07-28 system-refine で常設化)
+   ここに置く理由: CSS変数(--ch-*)を持つのがこのファイルであり、
+   エピソードごとに同じ50行を <style> へ書き写す作業をなくすため。
+   見た目の値(色・書体)は上のカラー契約に従う。位置・重なりだけをここで決める。
+   ========================================================================== */
+
+/* clip と素材の土台 */
+.world { position: absolute; inset: 0; }
+.sp { position: absolute; object-fit: contain; z-index: 3; }
+.layer { position: absolute; }
+.tile { position: absolute; }
+.svgl { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 5; }
+.dim { position: absolute; inset: 0; z-index: 1; }
+
+/* 紙の粒子(静止ノイズタイル。決定論=フレームごとに動かさない) */
+.grain { position: absolute; inset: 0; z-index: 60; mix-blend-mode: multiply; opacity: .06;
+  pointer-events: none; background-repeat: repeat; background-size: 320px 320px;
+  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='7'/%3E%3C/filter%3E%3Crect width='320' height='320' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+/* 光・空気 */
+.vig { position: absolute; left: 0; right: 0; background: var(--ch-paper); z-index: 8; }
+.glow { position: absolute; inset: 0; z-index: 2; mix-blend-mode: screen; pointer-events: none; }
+.shaft { position: absolute; mix-blend-mode: screen; z-index: 2; pointer-events: none; }
+.mote { position: absolute; border-radius: 50%; mix-blend-mode: screen; z-index: 6; }
+
+/* 平たい影(紙・木札・板・カードに必ず付ける) */
+.fs { filter: drop-shadow(3px 5px 0 rgba(27,26,23,.18)); }
+
+/* 紙の名札・注記カード */
+.plate { position: absolute; z-index: 9; filter: drop-shadow(3px 5px 0 rgba(27,26,23,.18)); }
+.plate-bg { position: absolute; inset: 0; background: var(--ch-paper);
+  border: 5px solid var(--ch-ink); border-radius: 9px 12px 8px 11px; box-sizing: border-box; filter: url(#rough); }
+.plate-tx { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  text-align: center; font-family: var(--ch-font); color: var(--ch-ink);
+  box-sizing: border-box; padding: 4px 12px; line-height: 1.2; }
+
+/* 木札(全編同一意匠) */
+.placard { position: absolute; z-index: 9; filter: drop-shadow(3px 5px 0 rgba(27,26,23,.18)); }
+.pl-board { position: absolute; inset: 0; background: linear-gradient(#8C6A44,#7A5A38);
+  border: 7px solid var(--ch-ink); border-radius: 10px; box-sizing: border-box; filter: url(#rough); }
+.pl-g { position: absolute; left: 7%; width: 86%; height: 3px; background: rgba(60,40,22,.42); filter: url(#rough); }
+.pl-pin { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: var(--ch-warn);
+  left: 50%; margin-left: -13px; top: -9px; z-index: 3; box-shadow: 0 3px 0 rgba(27,26,23,.35); }
+.pl-pin i { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: .9; left: 5px; top: 4px; }
+.pl-tx { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  text-align: center; color: var(--ch-paper); font-family: var(--ch-font); z-index: 4; line-height: 1.2; }
+.stake { position: absolute; background: linear-gradient(#7A5A38,#5E4429); border: 5px solid var(--ch-ink);
+  box-sizing: border-box; clip-path: polygon(0 0,100% 0,100% 74%,50% 100%,0 74%); }
+
+/* 画鋲(紙・帯・額縁の留め具) */
+.pin { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: var(--ch-ink); z-index: 9; }
+.pin i { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--ch-paper); left: 5px; top: 5px; }
+
+/* 吹き出しラッパ(位置決めをwrapperへ逃がしGSAP transformと衝突させない) */
+.bw { position: absolute; z-index: 11; }
+.bw > .speech-bubble { position: relative; left: auto; top: auto; transform: none; width: 100%; min-height: 0; padding: 24px 28px; }
+
+/* 章カード: 全画面ではなく1枚の紙として立てる(背面の舞台が縁から見える) */
+.cc-wrap { position: absolute; inset: 0; z-index: 30; perspective: 1800px; }
+.chapter-card.cc-sheet { inset: 54px; border: 7px solid var(--ch-ink); border-radius: 18px;
+  filter: drop-shadow(5px 8px 0 rgba(27,26,23,.2)); }
+.chapter-card.cc-sheet .title { font-size: 102px; -webkit-text-stroke-width: 1px; }
+.chapter-card.cc-sheet .underline { width: 700px; }
+
+/* 字幕: .clip{inset:0} が字幕の箱を全画面に伸ばすので、下端のバーへ再アンカーする。
+   z-index は章カード(30)と紙の粒子(60)の間 = 章カードに字幕が隠れない */
+.sub-inner { display: inline-block; }
+.subtitle.clip { opacity: 1; overflow: visible; top: auto; left: 0; right: 0; bottom: 72px;
+  width: fit-content; height: auto; max-width: 82%; margin: 0 auto; z-index: 45; }
+
+/* クレジットは caption-zone の予約帯(y0=.82)より上へ。既定の 64.8px だと機械ゲートが error を出す */
+.credit-line { bottom: 230px; }

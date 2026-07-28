@@ -20,6 +20,23 @@ cd "$(dirname "$0")/.."
 # 呼び出し元が明示指定していればそちらを尊重する。
 export PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS="${PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS:-90000}"
 
+# HyperFrames が最初に見つけた ffmpeg を使うため、PATH 先頭に host と別アーキテクチャの
+# ビルド(Apple Silicon 上の x86_64 Homebrew 等)があると "FFmpeg cannot start" で
+# レンダーが落ちる。ホストと同じアーキテクチャで、実際に -version が通るものを選ぶ。
+if [ -z "${HYPERFRAMES_FFMPEG_PATH:-}" ]; then
+  _arch=$(uname -m)
+  for _c in /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg /usr/bin/ffmpeg "$(command -v ffmpeg 2>/dev/null)"; do
+    [ -x "$_c" ] || continue
+    "$_c" -version >/dev/null 2>&1 || continue
+    if command -v file >/dev/null 2>&1 && ! file -b "$_c" | grep -q "$_arch"; then continue; fi
+    export HYPERFRAMES_FFMPEG_PATH="$_c"
+    _p=$(dirname "$_c")
+    [ -x "$_p/ffprobe" ] && export HYPERFRAMES_FFPROBE_PATH="$_p/ffprobe"
+    break
+  done
+  [ -n "${HYPERFRAMES_FFMPEG_PATH:-}" ] && echo "ffmpeg: $HYPERFRAMES_FFMPEG_PATH ($_arch)" >&2
+fi
+
 epId=$(basename "$EP")
 # shorts/ 配下は縦型コンポジション(Short)+ショート用シーン捜索先に切替える
 case "$EP" in
