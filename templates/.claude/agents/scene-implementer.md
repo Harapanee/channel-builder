@@ -30,6 +30,7 @@ model: sonnet
    - BGM/SEは `assets/audio/` の**実ファイル**を、clip表のSEキューどおり `<audio>` 要素で配置(src はプロジェクトルート基準の相対パス)
 5. **字幕**: `timing.json` の各行の開始・終了から `.subtitle` 要素群を生成して埋め込む(手書きでタイミングを写経せず、Nodeワンライナー/小スクリプトで timing.json から生成してよい)
 6. `cp episodes/<epId>/composition.html index.html`(HFのエントリはルートの index.html。作業中epを指すよう必ず更新してから検査する)→ `npm run check` が**全緑になるまで修正する**(視覚多様性検査 `check:visual` → HFの lint+runtime+layout+motion+contrast の順に走る。`check:visual` の BLOCK は必ず解消し、ADVISE は内容を読んで対処要否を判断する)
+7. **自分の実装を実フレームで見る**: `npm run snapshot -- --at <秒,...> -o <出力先>` で担当clipの画面を取得し、意図した絵になっているか確認してから完了報告する(`npx hyperframes snapshot` を直接叩かない — CLIのページ遷移予算は既定10秒固定で、長尺compositionでは正しい実装でも Navigation timeout になる。このnpmスクリプトが上限を上げた状態で呼ぶ)。**特にカメラを動かすclipは移動の開始・中間・終了の3時刻を撮り、全区間で画面が背景で埋まっているかを確認する**(背景画像の高さ不足で画面を横断する継ぎ目が出る事故が実際に起きた)
 
 純CSS/SVGだけの図解・文字演出を続けたい場合は、`channel/visual-rules.json` の `assetFreeExemptClasses` に該当clipの様式クラスが登録されているか確認する(登録済みなら素材なし連続の集計から外れる)。未登録で演出上どうしても必要なら、発注元へ理由を添えて報告する — 自己判断で素材を足して演出を薄めない。
 

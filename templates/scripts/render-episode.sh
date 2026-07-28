@@ -13,6 +13,13 @@ EP="${1:?usage: render-episode.sh <episodeDir> [outName]}"
 OUT="${2:-preview}"
 cd "$(dirname "$0")/.."
 
+# HyperFrames CLI(check / render / snapshot)のページ遷移予算は既定10秒固定で、
+# clip数・DOMノード数の多い長尺compositionでは超過して check_runtime_failure /
+# Navigation timeout になる(実測: 164clip・6700ノード・2600tweenで再現。素材が正しくても落ちる)。
+# 遷移待ちは domcontentloaded なので健全なページなら1秒台で返り、上限を上げても遅くならない。
+# 呼び出し元が明示指定していればそちらを尊重する。
+export PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS="${PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS:-90000}"
+
 epId=$(basename "$EP")
 # shorts/ 配下は縦型コンポジション(Short)+ショート用シーン捜索先に切替える
 case "$EP" in
