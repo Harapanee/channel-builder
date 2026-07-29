@@ -65,7 +65,37 @@ if [ -f "$EPDIR/composition.html" ]; then
   if [ -z "$latest" ]; then printf '{"ok":false,"reason":"no_output","qaExit":1}\n' > "$STATUS"; exit 1; fi
   cp "$latest" "$OUTDIR/$OUT.mp4"
   dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUTDIR/$OUT.mp4" 2>/dev/null || echo 0)
-  printf '{"out":"%s","ok":true,"durationSec":%s,"qaExit":0}\n' "$OUTDIR/$OUT.mp4" "${dur%.*}" > "$STATUS"
+
+  # --- Mechanical QA(HF経路)---
+  # 2026-07-29 新設。それまでこの分岐は QA を一度も実行せず `qaExit:0` を
+  # ハードコードで書いていた(=検査せずに合格と記録していた)。その結果、
+  # bible §11 の【不変規則】「ラウドネス基準 -14 LUFS」が誰にも検査されず素通りし、
+  # Pilot の完成mp4が -11.8 LUFS(ナレーション単体 -14.7 に対し BGM/SE が +2.9 LU)で
+  # 上がっていたのを人手で発見した。同じ見落としを繰り返さないよう機械化する。
+  qa_exit=0
+  qa_notes=""
+  lufs=$(ffmpeg -hide_banner -nostats -i "$OUTDIR/$OUT.mp4" -af ebur128=framelog=quiet -f null - 2>&1 \
+    | awk '/Integrated loudness/{f=1} f&&/I:/{print $2; exit}')
+  if [ -z "$lufs" ]; then
+    qa_exit=1; qa_notes="loudness_unmeasurable"
+    echo "QA NG: ラウドネスを測定できませんでした" >&2
+  else
+    # bible §11: 基準 -14 LUFS。製作上の許容は ±1.0 LU
+    if awk -v v="$lufs" 'BEGIN{exit !(v > -13.0 || v < -15.0)}'; then
+      qa_exit=1; qa_notes="loudness_out_of_spec"
+      echo "QA NG: 統合ラウドネス ${lufs} LUFS が基準 -14 LUFS ±1.0 を外れています(bible §11 不変規則)" >&2
+      echo "       ナレーションが主役か・BGM/SEが大きすぎないかを確認してください" >&2
+    else
+      echo "QA OK: 統合ラウドネス ${lufs} LUFS(基準 -14 ±1.0)"
+    fi
+  fi
+
+  printf '{"out":"%s","ok":%s,"durationSec":%s,"qaExit":%s,"lufs":"%s","qaNotes":"%s"}\n' \
+    "$OUTDIR/$OUT.mp4" "$([ "$qa_exit" -eq 0 ] && echo true || echo false)" "${dur%.*}" "$qa_exit" "$lufs" "$qa_notes" > "$STATUS"
+  if [ "$qa_exit" -ne 0 ]; then
+    echo "NG(HF): $OUTDIR/$OUT.mp4 は出力されましたが QA に落ちています" >&2
+    exit 1
+  fi
   echo "OK(HF): $OUTDIR/$OUT.mp4 (${dur}s)"
   exit 0
 fi
