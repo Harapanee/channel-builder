@@ -8,6 +8,11 @@
  *  - HF_IDENTICAL: HyperFrames経路のファイル。renderEngine が "hyperframes" のチャンネルでのみ完全一致必須
  *  - テンプレ全域でチャンネル固有文字列(禁止語)が混入していないこと
  *
+ * 意図的な不採用の宣言(.channel-system.json):
+ *  - templateOptOut: 工程・部品ごと廃止したファイル(SRC側の検査を免除)
+ *  - hfOptOut:       HF部品の不採用
+ *  - coreOverrides:  コアコンポーネントの再スキン
+ *
  * 実行: node scripts/check-template-sync.mjs   (差異があれば exit 1)
  */
 import fs from "node:fs";
@@ -222,10 +227,25 @@ const fail = (msg) => {
   failures++;
 };
 
+let channelSystem = {};
+try {
+  channelSystem = JSON.parse(
+    fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8")
+  );
+} catch {}
+
+// 工程・部品の意図的な廃止。そのチャンネルが「この仕組みを運用しない」と決めた場合に
+// .channel-system.json の templateOptOut: string[] へパスを列挙すると、そのファイルは
+// SRC側で未受領でも乖離でもNGにしない(hfOptOut / coreOverrides と同じ思想)。
+// 例: 台本審査・準拠レビューのエージェントを廃止したチャンネル。
+// 「テンプレ側に存在すること」の検査だけは opt-out できない(scaffold元のため)。
+const templateOptOut = channelSystem.templateOptOut ?? [];
+
 for (const f of IDENTICAL) {
   const a = path.join(SRC, f);
   const b = path.join(TPL, f);
   if (!fs.existsSync(b)) fail(`IDENTICAL欠落: ${f}`);
+  else if (templateOptOut.includes(f)) continue; // 意図的な廃止を宣言済み
   else if (!fs.existsSync(a))
     fail(`IDENTICAL未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
   else if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8"))
@@ -233,24 +253,14 @@ for (const f of IDENTICAL) {
 }
 
 // レンダーエンジン(既定 remotion)。HF_IDENTICAL の要否を決める
-let renderEngine = "remotion";
-try {
-  renderEngine =
-    JSON.parse(fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8"))
-      .renderEngine || "remotion";
-} catch {}
+const renderEngine = channelSystem.renderEngine || "remotion";
 
 // HF部品の意図的な不採用。そのチャンネルが「この仕組みを運用しない」と決めた場合に
 // .channel-system.json の hfOptOut: string[] へパスを列挙すると、そのファイルは
 // 未受領でも乖離でもNGにしない(CORE_IDENTICAL の coreOverrides と同じ思想)。
 // 例: 視覚多様性検査(check-composition.ts 一式)を廃止したチャンネル。
 // 「テンプレ側に存在すること」の検査だけは opt-out できない(scaffold元のため)。
-let hfOptOut = [];
-try {
-  hfOptOut =
-    JSON.parse(fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8"))
-      .hfOptOut ?? [];
-} catch {}
+const hfOptOut = channelSystem.hfOptOut ?? [];
 
 for (const f of HF_IDENTICAL) {
   const a = path.join(SRC, f);
@@ -270,12 +280,7 @@ for (const f of HF_IDENTICAL) {
     fail(`HF_IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
 }
 
-let coreOverrides = [];
-try {
-  coreOverrides =
-    JSON.parse(fs.readFileSync(path.join(SRC, ".channel-system.json"), "utf8"))
-      .coreOverrides ?? [];
-} catch {}
+const coreOverrides = channelSystem.coreOverrides ?? [];
 
 for (const f of CORE_IDENTICAL) {
   const a = path.join(SRC, f);
@@ -284,6 +289,7 @@ for (const f of CORE_IDENTICAL) {
     fail(`CORE欠落(テンプレ側): ${f}`);
     continue;
   }
+  if (templateOptOut.includes(f)) continue; // 意図的な廃止を宣言済み
   if (!fs.existsSync(a)) {
     fail(`CORE未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
     continue;
@@ -298,6 +304,7 @@ for (const f of CORE_IDENTICAL) {
 
 for (const f of VARIANT) {
   if (!fs.existsSync(path.join(TPL, f))) fail(`VARIANT欠落: ${f}`);
+  else if (templateOptOut.includes(f)) continue; // 意図的な廃止を宣言済み
   else if (
     !VARIANT_TEMPLATE_ONLY.includes(f) &&
     !fs.existsSync(path.join(SRC, f))
