@@ -52,6 +52,14 @@ if [ -f "$EPDIR/composition.html" ]; then
   mkdir -p "$OUTDIR"
   rm -f "$STATUS"
   cp "$EPDIR/composition.html" index.html || { printf '{"ok":false,"reason":"copy_composition_failed","qaExit":1}\n' > "$STATUS"; exit 1; }
+  # --- 音声の配線ゲート(レンダー前)---
+  # 2026-08-01 新設。ep012 は audio-cues.json が未生成で <audio src> がナレーション素を
+  # 指したまま、全編BGM/SEなしでレンダー・承認・コミットまで通った。HF本編のレンダーは
+  # 実測で1本100分。無音のまま焼くのが最も高くつく無駄なので、焼く前に止める。
+  if ! npx tsx src/pipeline/check-audio.ts "$EPDIR" > "$OUTDIR/check-audio-$OUT.log" 2>&1; then
+    cat "$OUTDIR/check-audio-$OUT.log" >&2
+    printf '{"ok":false,"reason":"audio_check_failed","qaExit":1}\n' > "$STATUS"; exit 1
+  fi
   if ! npx --yes hyperframes@0.7.68 check --timeout 60000 > "$OUTDIR/check-$OUT.log" 2>&1; then
     printf '{"ok":false,"reason":"check_failed","qaExit":1}\n' > "$STATUS"; exit 1
   fi
@@ -74,6 +82,16 @@ if [ -f "$EPDIR/composition.html" ]; then
   # 上がっていたのを人手で発見した。同じ見落としを繰り返さないよう機械化する。
   qa_exit=0
   qa_notes=""
+
+  # --- 空フレーム検出(レンダー後QA)---
+  # 2026-08-01 新設。ep012 cL53 は「紙地しか描かれていないclip」を3.6秒ぶん出力したが、
+  # check(lint/runtime/layout/motion/contrast)も既存QAも1つも赤にならなかった。
+  # clip内の生成順が原因でコードとしては正常に走るため、出力を見る検査でしか止まらない。
+  if ! npx tsx src/pipeline/qa-flat-frames.ts "$EPDIR" "$OUT" > "$OUTDIR/qa-frames-$OUT.log" 2>&1; then
+    cat "$OUTDIR/qa-frames-$OUT.log" >&2
+    qa_exit=1; qa_notes="blank_clips"
+  fi
+
   lufs=$(ffmpeg -hide_banner -nostats -i "$OUTDIR/$OUT.mp4" -af ebur128=framelog=quiet -f null - 2>&1 \
     | awk '/Integrated loudness/{f=1} f&&/I:/{print $2; exit}')
   if [ -z "$lufs" ]; then

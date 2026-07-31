@@ -32,3 +32,9 @@ assets/characters/*/candidates/
 assets/characters/*/raw/
 .channel-refine-approved
 channel/youtube-oauth.json
+
+# review stills / ツール生成のプレビュー画像(いずれも src/pipeline/render-stills.ts や
+# HyperFrames CLI が再生成できる生成物。追跡すると1エピソードで100枚規模を抱え込む)
+**/review/stills/
+.thumbnails/
+.g2preview/

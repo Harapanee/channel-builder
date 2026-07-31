@@ -37,6 +37,10 @@
 - `npm run render:test:short` — ショートのテストレンダー(**Remotion**)
 - `npm run tts episodes/<epId>` — 台本→音声+timing.json(自己検証・ラウドネス正規化つき。最終行に pause_after_sec を明示するとその秒数の無音尾が付く=アウトロ尺の確保用)
 - `npm run tts episodes/<epId> -- --readings-only` — 誤読プリチェック(audio_queryのみ・数十秒。合成前にreading-checkerへ)
+- `npm run audio-mix episodes/<epId>` — audio-cues.json(ナレーション+BGM+SE)から `narration/master.mp3` を焼く。**この工程を飛ばすとBGMもSEも鳴らない**(工程8.4)
+- `npm run check:audio episodes/<epId>` — 音声の配線検査(cues有無・`<audio src>`がmasterか・焼き直し漏れ・BGMが実際に乗っているか)。render-episode.sh のレンダー前ゲートでもある
+- `npm run check:assets episodes/<epId> [--strict]` — storyboardの「使用素材」列と composition の実装の突合(既定は報告のみ)
+- `npm run qa:frames episodes/<epId> [out名]` — レンダー後の空フレーム検出(何も描かれていないclipを輝度stdで見つける)。render-episode.sh に内蔵
 - `npm run validate episodes/<epId>` — shots.json契約検証(shotId一意性・bgmTracks含む)【Remotion経路(shots.json を持つ既存ep・shorts)専用。HF ep は shots.json を持たず `npm run check` で検査する】
 - `npx tsx src/pipeline/gen-image.ts ...` — AI画像生成(**直接叩かずasset-generatorエージェント経由**。codex CLI主経路+evolinkフォールバック、`--provider codex|evolink`で強制可)
 - `npx tsx src/pipeline/remove-bg.ts <in> <out>` — 背景除去(緑=クロマキー/白=flood-fill自動判別)

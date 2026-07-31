@@ -151,6 +151,15 @@ async function main() {
   const master = ["narration/master.mp3", "narration/narration.wav"]
     .find((p) => fs.existsSync(path.join(epDir, p)));
   if (!master) fail(`${epDir}/narration/ に master.mp3 も narration.wav も無い`);
+  // ★無警告でフォールバックしない。ep012 はここで narration.wav が黙って配線され、
+  //   BGM/SEを乗せる工程を飛ばしたまま check緑 → レンダー → 承認まで通った。
+  if (master.endsWith("narration.wav")) {
+    console.warn(
+      `WARN: narration/master.mp3 が無いので narration.wav を配線しました。**この状態ではBGMもSEも鳴りません**。\n` +
+        `      audio-cues.json を用意 → npm run audio-mix ${path.relative(ROOT, epDir)} → <audio src> を master.mp3 へ差し替えること。\n` +
+        `      npm run check:audio ${path.relative(ROOT, epDir)} がレンダー前ゲートとしてこれを検査します。`
+    );
+  }
 
   // 素材テーブル
   const libPath = path.join(ROOT, "assets", "library.json");

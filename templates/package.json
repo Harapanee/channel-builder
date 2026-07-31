@@ -23,7 +23,11 @@
     "validate:metadata": "tsx src/pipeline/validate-metadata.ts",
     "lint:script": "tsx src/pipeline/lint-script.ts",
     "validate:ledger": "tsx src/pipeline/validate-ledger.ts",
-    "finalize": "tsx src/pipeline/finalize-episode.ts"
+    "finalize": "tsx src/pipeline/finalize-episode.ts",
+    "audio-mix": "tsx src/pipeline/audio-mix.ts",
+    "check:audio": "tsx src/pipeline/check-audio.ts",
+    "check:assets": "tsx src/pipeline/check-storyboard-assets.ts",
+    "qa:frames": "tsx src/pipeline/qa-flat-frames.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

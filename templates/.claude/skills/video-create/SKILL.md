@@ -131,6 +131,18 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
   - **テンプレ量産でないこと**: 単一factory/ヘルパーの文言差替え変種群は1演出と数える。実効演出数が定量規則を満たさなければ差し戻し
 - → status: "implemented"
 
+## 8.4 音声ミックス(ナレーション+BGM+SE を1本に焼く)
+
+**この工程を飛ばすとBGMもSEも一切鳴らない。** 工程として書かれていなかった時期に、あるエピソードが全編無音のまま check緑 → レンダー → 承認 → コミットまで通った(2026-08-01 の /system-refine で工程化)。
+
+1. `episodes/<epId>/audio-cues.json` を用意する。契約は `{ total, narration, bgm[], se[] }`、キューは `{ id, src, start, volume, duration?, mediaStart? }`
+   - **SE**: storyboard の clip表「SE」列が正本。scene-implementer が `window.__G*_SE_CUES` に機械可読な台帳を出していればそれを使う
+   - **BGM**: storyboard の「BGM」節(全編の敷き方・停止/復帰・章ごとの増減・フェード)が正本。`audio-mix` にフェード機能は無いので、包絡線は 0.4秒刻みの区間に割って volume で階段状に再現する(素材側は `mediaStart` を連続させれば波形は途切れない)
+   - 音源は `assets/audio/LICENSES.md` に記録のあるものだけ
+2. `npm run audio-mix episodes/<epId>` — SE音量を素材ごとの実測ラウドネスから -22 LUFS へ揃え、`narration/master.mp3` を焼く
+3. composition.html の `<audio id="master" src>` を **`narration/master.mp3`** へ差し替える(scaffold は master.mp3 が無ければ narration.wav を配線して警告を出す)
+4. `npm run check:audio episodes/<epId>` が緑になること(工程9とレンダー前ゲートでも自動で走る)
+
 ## 8.5 プレビュー早期確認(レンダリング前・推奨)
 
 実装完了後、**レンダリングを焼く前に** HyperFrames プレビューでユーザーが確認できる:
@@ -148,7 +160,9 @@ npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localho
 
 ```
 cp episodes/<epId>/composition.html index.html   # HFのエントリはルートのindex.html。作業中epを指すよう必ず更新する
-npm run check   # check:visual(視覚多様性)→ HF lint+runtime+layout+motion+contrast
+npm run check                                    # check:visual(視覚多様性)→ HF lint+runtime+layout+motion+contrast
+npm run check:audio episodes/<epId>              # 音声の配線(cues/master/BGMが実際に乗っているか)
+npm run check:assets episodes/<epId>             # 絵コンテの使用素材と実装の突合
 ```
 
 `check:visual` は評価済みDOMを読み、ユニーク画像密度・同一素材上限・連続する素材なしclip・AI比率・尺をBLOCK判定し、実効演出数(テンプレ量産)・ゼロ持ち越し・様式clip比率・縦長素材のフレーミングをADVISEで報告する。設定は `channel/visual-rules.json`(無いチャンネルはSKIP)。
@@ -156,6 +170,8 @@ npm run check   # check:visual(視覚多様性)→ HF lint+runtime+layout+motion
 composition.html の実行時エラー・レイアウト事故・モーション/コントラスト不足を、レンダー1周を消費せずに検出する。
 
 - **check の NG は修正して再実行(修正ループは最大3周。3周で残るNGはユーザーへエスカレーション)**
+- **check:audio の NG はレンダーを起動しない**(`scripts/render-episode.sh` も同じゲートを持つ)
+- **check:assets は既定では報告のみ(exit 0)**。BLOCK 行は「実装が素材を使わず図形で代用している」か「絵コンテがコード描画のclipに素材名を書いている」のどちらかなので、**メインセッションが1件ずつ判定して、実装か絵コンテのどちらかを直す**。既存の食い違いを一掃したチャンネルは `--strict` でゲートへ格上げできる
 
 全て緑になったら → status: "prechecked"
 
@@ -202,6 +218,11 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 ## 夜間レンダー(サーバー実行 — このスキルの工程外)
 
 寝る前に Factory UI の「夜間レンダー開始」を押すと、サーバーが承認済み(render_ready)エピソードを全チャンネル横断・1本ずつ `scripts/render-episode.sh episodes/<epId> final` で直列レンダーする(Infinityゲート・Mechanical QA・caffeinate・自動再挑戦は同スクリプトに内蔵)。成功時はサーバーが機械的に episode.json `status: "final"`・metrics の renderMinutes・git commit を行う。
+
+HF経路のレンダーは**前後にゲート**を持つ:
+- レンダー前 `check-audio` — 音が配線されていなければ焼かない(HF本編は実測で1本100分。無音のまま焼くのが最も高い無駄)
+- レンダー後 `qa-flat-frames` — 何も描かれていないclipがあれば `qaNotes:"blank_clips"` で赤にする
+- レンダー後 ラウドネスQA — bible §11 の -14 LUFS ±1.0 を外れれば赤にする
 
 QA落ち・レンダー失敗は朝の Factory UI に赤表示される → 日中に通常ジョブ(途中再開)で修正 → 工程9(検査)から再確認 → 再承認 or UIの「再キュー」で再投入。
 

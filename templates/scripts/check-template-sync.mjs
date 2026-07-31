@@ -122,6 +122,14 @@ const HF_IDENTICAL = [
   "src/pipeline/visual-rules-hf.ts",
   "src/pipeline/visual-rules-hf.test.ts",
   "src/pipeline/check-composition.ts",
+  // 2026-08-01 追加(ep012 の無音・白画面・素材逸脱の再発防止)
+  "src/pipeline/audio-mix.ts",
+  "src/pipeline/check-audio.ts",
+  "src/pipeline/check-audio.test.ts",
+  "src/pipeline/check-storyboard-assets.ts",
+  "src/pipeline/check-storyboard-assets.test.ts",
+  "src/pipeline/qa-flat-frames.ts",
+  "src/pipeline/qa-flat-frames.test.ts",
 ];
 
 // コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。
