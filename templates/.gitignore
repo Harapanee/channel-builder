@@ -34,7 +34,13 @@ assets/characters/*/raw/
 channel/youtube-oauth.json
 
 # review stills / ツール生成のプレビュー画像(いずれも src/pipeline/render-stills.ts や
-# HyperFrames CLI が再生成できる生成物。追跡すると1エピソードで100枚規模を抱え込む)
-**/review/stills/
+# probe-frames / HyperFrames CLI が再生成できる生成物。追跡すると1エピソードで100枚規模を抱え込む)
+# 2026-08-01: 実測で ep010-sloth の review/ だけで 72MB(フレーム画像)あり、
+# 既に追跡済みのエピソード(ep011/ep012)は review/ と _wip/ を1件も追跡していない。
+# 慣習を機械化して、次のエピソードから迷いを無くす。
+**/review/
+**/_wip/
+snapshots/
+**/publish/_thumb-old-*/
 .thumbnails/
 .g2preview/
