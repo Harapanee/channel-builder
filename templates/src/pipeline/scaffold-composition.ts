@@ -98,12 +98,52 @@ function assetIdsFromStoryboard(sbPath: string): string[] {
   return [...ids].sort();
 }
 
-function parseGroups(spec: string | undefined, clipIds: string[]): { label: string; from: string; to: string }[] {
+/**
+ * 章グループ(SPLICEマーカーの範囲)を決める。
+ *
+ * 明示範囲(`cL01-cL50,cL51-cL108,...`)は **全clipをちょうど1回ずつ覆っていること**を検証する。
+ * 2026-08-01 追加: それまで無検証だったため、範囲に穴があると誰も実装しないclipが
+ * fallback表示のままレンダーまで通っていた(scaffold の警告は console だけ)。
+ */
+export function parseGroups(spec: string | undefined, clipIds: string[]): { label: string; from: string; to: string }[] {
   if (spec && /cL\d+\s*-\s*cL\d+/.test(spec)) {
-    return spec.split(",").map((s, i) => {
+    const groups = spec.split(",").map((s, i) => {
       const [from, to] = s.trim().split(/\s*-\s*/);
       return { label: `G${i + 1}`, from, to };
     });
+
+    const index = new Map(clipIds.map((id, i) => [id, i]));
+    const unknown = groups.flatMap((g) => [g.from, g.to]).filter((id) => !index.has(id));
+    if (unknown.length > 0) {
+      throw new Error(`--groups に存在しないclipIdがあります: ${[...new Set(unknown)].join(", ")}`);
+    }
+    for (const g of groups) {
+      if (index.get(g.from)! > index.get(g.to)!) {
+        throw new Error(`--groups の範囲が逆向きです: ${g.from}-${g.to}`);
+      }
+    }
+    const owner = new Map<string, string>();
+    const overlapped: string[] = [];
+    for (const g of groups) {
+      for (let i = index.get(g.from)!; i <= index.get(g.to)!; i++) {
+        const id = clipIds[i];
+        if (owner.has(id)) overlapped.push(id);
+        else owner.set(id, g.label);
+      }
+    }
+    if (overlapped.length > 0) {
+      throw new Error(
+        `--groups の範囲が重なっています(同じclipを2グループが実装することになります): ${[...new Set(overlapped)].join(", ")}`
+      );
+    }
+    const uncovered = clipIds.filter((id) => !owner.has(id));
+    if (uncovered.length > 0) {
+      throw new Error(
+        `--groups がどのグループにも入れていないclipがあります: ${uncovered.join(", ")}` +
+          " — 覆われないclipは誰も実装せず、fallback表示のままレンダーされます"
+      );
+    }
+    return groups;
   }
   const n = Math.max(1, parseInt(spec ?? "3", 10) || 3);
   const size = Math.ceil(clipIds.length / n);
@@ -327,4 +367,7 @@ window.__timelines["${compId}"] = tl;
   console.log(`  次: 各グループの scene-implementer が SPLICE マーカー行へ SCENES.cLxx を差し込む`);
 }
 
-main().catch((e) => fail(String(e?.stack ?? e)));
+/* テストから import したときは走らせない(basename 完全一致でCLI起動だけを判定する) */
+if (process.argv[1] && path.basename(process.argv[1]) === "scaffold-composition.ts") {
+  main().catch((e) => fail(String(e?.stack ?? e)));
+}

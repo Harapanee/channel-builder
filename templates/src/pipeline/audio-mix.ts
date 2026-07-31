@@ -53,6 +53,18 @@ export const TARGET_SE_LUFS = -22;
 export const SHORT_SE_OFFSET = 3.5;
 /** 素材を持ち上げる方向はクリップを避けるため頭打ちにする */
 export const MAX_SE_GAIN = 1.0;
+/**
+ * 総和後に挟むリミッタの上限(線形)。-1.5 dBFS = 10^(-1.5/20)。
+ *
+ * なぜ要るか(実測):
+ *   `amix ... normalize=0` は各キューを素直に足すので、ナレーション+BGM+SEが重なると
+ *   0dBFS を越え得る。完成mp4のトゥルーピークは ep010 -0.9 / ep012 -0.5 /
+ *   **ep011 +0.2 dBFS(デジタルクリップ)** で、レンダー後QAはラウドネス(-14 LUFS)しか
+ *   見ていなかったため誰も気付かなかった。
+ *   mp3/AACの符号化で1dB程度オーバーシュートするため、master 側は -1.5 dBFS で抑える
+ *   (実測: -1.0 指定のリミッタを通した ep011 master は -1.3 dBFS になった)。
+ */
+export const LIMITER_CEILING_LINEAR = 0.841;
 
 /** 実測ラウドネスから目標へ合わせるゲインを求める(純粋関数) */
 export function gainForLufs(measuredLufs: number, targetLufs = TARGET_SE_LUFS): number {
@@ -80,8 +92,11 @@ export function buildMixArgs(spec: AudioCues, outFile: string): string[] {
     );
   });
   const labels = cues.map((_, i) => `[a${i}]`).join("");
-  /* normalize=0: 各キューは volume で調整済みなので分割せず総和する。apad で尺いっぱいまで無音延長 */
-  const mix = `${labels}amix=inputs=${cues.length}:normalize=0:dropout_transition=0,apad[m]`;
+  /* normalize=0: 各キューは volume で調整済みなので分割せず総和する。apad で尺いっぱいまで無音延長。
+     総和の後ろに alimiter を置いてピークを抑える(level=disabled にしないと自動で持ち上がる) */
+  const mix =
+    `${labels}amix=inputs=${cues.length}:normalize=0:dropout_transition=0,apad,` +
+    `alimiter=limit=${LIMITER_CEILING_LINEAR}:level=disabled[m]`;
   return [
     "-y", "-v", "error",
     ...inputs,
@@ -89,6 +104,20 @@ export function buildMixArgs(spec: AudioCues, outFile: string): string[] {
     "-map", "[m]", "-t", spec.total.toFixed(3),
     "-ar", "48000", "-ac", "2", "-b:a", "192k", outFile,
   ];
+}
+
+/**
+ * composition.html の `<audio id="master">` の src を、焼き上げた master.mp3 へ向ける(純粋関数)。
+ *
+ * なぜツール側でやるか:
+ *   工程8.4 はここだけ手作業だった。scaffold は master.mp3 が無ければ narration.wav を
+ *   配線するので、差し替えを忘れると **BGMもSEも鳴らないまま正常系に見える** —
+ *   ep012 の無音事故とまったく同じ入口がもう1つ残っていた。
+ */
+export function patchMasterSrc(html: string, masterRelPath: string): string {
+  return html.replace(/<audio[^>]*\bid="master"[^>]*>/, (tag) =>
+    tag.replace(/(\ssrc=")([^"]*)(")/, `$1${masterRelPath}$3`)
+  );
 }
 
 /* ----------------------------- 以下 CLI(I/O) ----------------------------- */
@@ -120,7 +149,12 @@ function normalizeSeGain(spec: AudioCues, cuesPath: string): void {
     const { lufs, method } = measureLufs(src);
     const vol = gainForLufs(lufs);
     gains.set(src, vol);
-    console.log(`  ${path.basename(src).padEnd(24)} I=${lufs.toFixed(1).padStart(6)} LUFS (${method})  vol=${vol}`);
+    /* 頭打ちに当たった素材は目標ラウドネスに届かない = 本編で埋もれる。黙って通さない */
+    const clamped = 10 ** ((TARGET_SE_LUFS - lufs) / 20) > MAX_SE_GAIN;
+    console.log(
+      `  ${path.basename(src).padEnd(24)} I=${lufs.toFixed(1).padStart(6)} LUFS (${method})  vol=${vol}` +
+        (clamped ? `  ← WARN: 素材が小さく ${TARGET_SE_LUFS} LUFS に届きません(頭打ち)。素材の差し替えを検討` : "")
+    );
   }
   let changed = 0;
   for (const cue of spec.se) {
@@ -158,7 +192,19 @@ function main(): void {
   console.log(
     `OK: ${outFile} — narration + BGM ${spec.bgm.length}区間 + SE ${spec.se.length}件 → ${spec.total.toFixed(2)}s`
   );
-  console.log(`   composition.html の <audio src> がこの master を指しているか npm run check:audio で確認すること`);
+
+  /* composition の <audio src> をここで master へ向ける(工程8.4に残っていた唯一の手作業)。
+     忘れると narration.wav のまま = BGMもSEも鳴らないのに正常系に見える(ep012の事故) */
+  const compositionPath = path.join(epDir, "composition.html");
+  if (existsSync(compositionPath)) {
+    const before = readFileSync(compositionPath, "utf8");
+    const after = patchMasterSrc(before, path.relative(process.cwd(), outFile));
+    if (after !== before) {
+      writeFileSync(compositionPath, after);
+      console.log(`   composition.html の <audio id="master"> を ${path.relative(process.cwd(), outFile)} へ差し替えました`);
+    }
+  }
+  console.log(`   配線の最終確認: npm run check:audio ${path.relative(process.cwd(), epDir)}`);
 }
 
 /* テストから import したときは走らせない */

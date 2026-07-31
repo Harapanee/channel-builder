@@ -31,6 +31,8 @@ description: このチャンネルの新規エピソード動画を制作する�
 シーン実装だけで281分かかった(真に並列なら最長グループの137分)。
 メインセッションが「並列で実装します」と宣言してから1本ずつ呼ぶ事故が実際に起きているため、
 **発注前に「このメッセージに Agent tool_use をいくつ入れるか」を数えてから発行する**。
+**遵守は機械で測れる**: `npm run usage -- --session <sessionId>` が「1メッセージ1本」の件数・同時に走った最大本数・
+所要の総和/経過を出す。工程12でこれを確認し、全部が1本ずつなら次回の是正対象として記録する。
 
 **コンテキスト規律(usage削減の中核)**: 履歴の肥大はusageとレート制限に直結する。
 
@@ -140,6 +142,11 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 - **10分超は章グループ並列で起動する**(visual-directorと同じ分担。共有様式・スパイン演出は実装オーナー1グループ、他は同じ見え方を再現)。
   骨格は上の scaffold で機械生成済みなのでグループ間に依存は無い — **全グループを1つのメッセージにまとめて同時発行する**(冒頭原則の「並列起動の実行形」)。
   直列にすると壁時計はグループ数ぶん積み上がる(実測例: 114分・30分・137分の3グループを直列に回して281分。並列なら137分)
+- **グループの粒度は「章」ではなく「clip数」で切る — 1グループ 40〜50clip を上限の目安とする**。
+  1体のエージェントのコストは**ターン数のほぼ2乗**で効く(cache readは毎ターン全コンテキストに課金され、コンテキストはターン数に比例して伸びるため)。
+  実測例: 最大グループは 200ターン・平均23万tok・**単独 $57**。同じ量を3体に割れば読み込み分は概算で 1/3 になる。
+  壁時計も最遅グループに律速されるので、**グループ間のclip数を ±20%以内に均す**(章境界はグループ境界に合わせなくてよい。共有様式のオーナーだけ決めておけばよい)。
+  `--groups` は全clipをちょうど1回ずつ覆うこと(覆い漏れ・重なりは scaffold が exit 2 で止める)
 - メインセッションの監査観点:
   - **`npm run check` 緑の報告(出力つき)**(HF: lint+runtime+layout+motion+contrast)
   - **ゼロ持ち越し**: 過去ep composition.html からの場面演出の流用が0件であること(過去エピソード由来の場面演出が1件でも混入していたら差し戻し)
@@ -151,12 +158,11 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 
 **この工程を飛ばすとBGMもSEも一切鳴らない。** 工程として書かれていなかった時期に、あるエピソードが全編無音のまま check緑 → レンダー → 承認 → コミットまで通った(2026-08-01 の /system-refine で工程化)。
 
-1. `episodes/<epId>/audio-cues.json` を用意する。契約は `{ total, narration, bgm[], se[] }`、キューは `{ id, src, start, volume, duration?, mediaStart? }`
-   - **SE**: storyboard の clip表「SE」列が正本。scene-implementer が `window.__G*_SE_CUES` に機械可読な台帳を出していればそれを使う
-   - **BGM**: storyboard の「BGM」節(全編の敷き方・停止/復帰・章ごとの増減・フェード)が正本。`audio-mix` にフェード機能は無いので、包絡線は 0.4秒刻みの区間に割って volume で階段状に再現する(素材側は `mediaStart` を連続させれば波形は途切れない)
-   - 音源は `assets/audio/LICENSES.md` に記録のあるものだけ
-2. `npm run audio-mix episodes/<epId>` — SE音量を素材ごとの実測ラウドネスから -22 LUFS へ揃え、`narration/master.mp3` を焼く
-3. composition.html の `<audio id="master" src>` を **`narration/master.mp3`** へ差し替える(scaffold は master.mp3 が無ければ narration.wav を配線して警告を出す)
+1. `npm run audio-cues episodes/<epId>` — **SEキューを composition の台帳から機械生成する**(手で書かない)。
+   scene-implementer が出す `window.__G<n>_SE_CUES` が入力。台帳が無い/素材が見つからない場合はここで止まるので、実装へ差し戻す
+2. **BGM を書き足す**。`audio-cues.json` の `bgm[]` だけは機械では起こせない — storyboard の「BGM」節(全編の敷き方・停止/復帰・章ごとの増減・フェード)が正本。
+   ミックスにフェード機能は無いので、包絡線は 0.4秒刻みの区間に割って volume で階段状に再現する(素材側は `mediaStart` を連続させれば波形は途切れない)。音源は `assets/audio/LICENSES.md` に記録のあるものだけ
+3. `npm run audio-mix episodes/<epId>` — SE音量を素材ごとの実測ラウドネスから -22 LUFS へ揃え、リミッタ(-1.5 dBFS)を通して `narration/master.mp3` を焼き、**composition.html の `<audio id="master" src>` をこの master へ差し替える**(2026-08-01 からツール側で行う。以前はここが唯一の手作業で、無音事故と同じ入口だった)
 4. `npm run check:audio episodes/<epId>` が緑になること(工程9とレンダー前ゲートでも自動で走る)
 
 ## 8.5 プレビュー早期確認(レンダリング前・推奨)
@@ -183,7 +189,11 @@ npm run check:assets episodes/<epId>             # 絵コンテの使用素材�
 
 `check:visual` は評価済みDOMを読み、ユニーク画像密度・同一素材上限・連続する素材なしclip・AI比率・尺をBLOCK判定し、実効演出数(テンプレ量産)・ゼロ持ち越し・様式clip比率・縦長素材のフレーミングをADVISEで報告する。設定は `channel/visual-rules.json`(無いチャンネルはSKIP)。
 
-composition.html の実行時エラー・レイアウト事故・モーション/コントラスト不足を、レンダー1周を消費せずに検出する。
+composition.html の実行時エラー・レイアウト事故・モーション/コントラスト不足・**未実装clipの残り**を、レンダー1周を消費せずに検出する。
+`npm run check` は `scripts/render-episode.sh` のレンダー前ゲートと**同一の検査**である(2026-08-01に等価化)。
+
+**実フレームでの確認も日中に済ませる**(推奨): `npm run probe episodes/<epId> -- --at <秒,...> -o episodes/<epId>/review/frames`。
+レンダー結果と一致するフレームが数秒/枚で取れる(輝度stdの機械判定+コンタクトシートつき)。
 
 - **check の NG は修正して再実行(修正ループは最大3周。3周で残るNGはユーザーへエスカレーション)**
 - **check:audio の NG はレンダーを起動しない**(`scripts/render-episode.sh` も同じゲートを持つ)
@@ -224,7 +234,7 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 
 **承認後の完了処理(このジョブの終点。レンダーはしない):**
 
-- `npm run finalize episodes/<epId> -- --hours <実測時間> --images <画像生成数>` を実行する
+- `npm run usage -- --since <制作開始日>` で実測コストと並列度を確認し、`npm run finalize episodes/<epId> -- --hours <実測時間> --images <画像生成数> --cost <costUsd>` を実行する
   (status更新・metrics追記・backlog消し込み・git commit を一括実行。手作業で個別に行わない)
 - キュー登録の確認: Factory UI 経由(ヘッドレス)ならゲート承認時にサーバーが自動登録済み。**対話セッションの場合のみ** `curl -s -X POST http://127.0.0.1:4700/api/render-queue/enqueue -H 'Content-Type: application/json' -d '{"dir":"<チャンネルフォルダ名>","epId":"<epId>"}'` で登録する(サーバー未起動で失敗したら、Factory UI のエピソード詳細から「夜間レンダーキューへ」を押すようユーザーへ案内)
 - ここで `<done>` を出して終了する。**status "final" は夜のレンダー成功時にサーバーが書く**(このジョブでは書かない)

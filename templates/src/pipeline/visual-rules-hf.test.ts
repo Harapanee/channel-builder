@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ClipInfo, CompositionDom } from "./composition-dom";
-import { evaluateAdviseRules, evaluateBlockRules, sceneClipsOf, type LibraryEntry, type VisualRules } from "./visual-rules-hf";
+import { evaluateAdviseRules, evaluateBlockRules, findUnimplementedClips, sceneClipsOf, type LibraryEntry, type VisualRules } from "./visual-rules-hf";
 
 function clip(
   id: string,
@@ -359,4 +359,38 @@ test("規則3: 免除クラス未設定なら従来どおりの範囲を報告�
   assert.equal(f.length, 1);
   assert.match(f[0].message, /3連続/);
   assert.match(f[0].message, /c2〜c4/);
+});
+
+test("未実装clip: SCENES に代入の無いclipをBLOCKとして返す", () => {
+  const html = `<html><body>
+    <section class="clip scene" id="cL01" data-start="0" data-duration="3"></section>
+    <section class="clip scene" id="cL02" data-start="3" data-duration="3"></section>
+    <section class="clip scene" id="cL03" data-start="6" data-duration="3"></section>
+    <script>
+      const SCENES = {};
+      SCENES.cL01 = function (g, D) {};
+      SCENES["cL02"] = (g, D) => {};
+      const __built = hfBuild(SCENES, fallbackScene);
+    </script>
+  </body></html>`;
+
+  assert.deepEqual(findUnimplementedClips(html), ["cL03"]);
+});
+
+test("未実装clip: SCENES/hfBuild を使わない composition では検査しない(他チャンネル互換)", () => {
+  const html = `<html><body>
+    <section class="clip scene" id="cL01" data-start="0" data-duration="3"></section>
+    <script>/* 手書きの composition。SCENES 規約を使っていない */</script>
+  </body></html>`;
+
+  assert.deepEqual(findUnimplementedClips(html), []);
+});
+
+test("未実装clip: 全clipが実装済みなら空", () => {
+  const html = `<html><body>
+    <section class="clip scene" id="cL01" data-start="0" data-duration="3"></section>
+    <script>const SCENES = {}; SCENES.cL01 = function (g, D) {}; hfBuild(SCENES, fallbackScene);</script>
+  </body></html>`;
+
+  assert.deepEqual(findUnimplementedClips(html), []);
 });

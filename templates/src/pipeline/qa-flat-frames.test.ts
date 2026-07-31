@@ -80,3 +80,21 @@ test("parseClipSpans: composition.html の clip 行を開始秒順に読む", ()
     { id: "cL02", startSec: 5.133, durationSec: 3.162 },
   ]);
 });
+
+test("標本1つしか取れない短いclipは指摘しない(フェード途中の誤検知を避ける)", () => {
+  const clips: ClipSpan[] = [{ id: "cShort", startSec: 10, durationSec: 0.4 }];
+  const samples: FrameSample[] = [{ timeSec: 10, lumaStd: 0.5 }];
+
+  assert.deepEqual(findBlankClips(clips, samples), []);
+});
+
+test("2標本以上が空なら短いclipでも指摘する", () => {
+  const clips: ClipSpan[] = [{ id: "cL53", startSec: 10, durationSec: 1.2 }];
+  const samples: FrameSample[] = [
+    { timeSec: 10, lumaStd: 0.5 },
+    { timeSec: 10.5, lumaStd: 0.7 },
+    { timeSec: 11, lumaStd: 0.6 },
+  ];
+
+  assert.equal(findBlankClips(clips, samples).length, 1);
+});

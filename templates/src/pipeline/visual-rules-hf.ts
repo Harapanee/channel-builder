@@ -271,3 +271,35 @@ export function evaluateAdviseRules(
 
   return findings;
 }
+
+/**
+ * 未実装clip(scaffold のフォールバックのまま残っているclip)を返す。
+ *
+ * なぜ必要か:
+ *   `scaffold-composition.ts` は timing.json の全行ぶんの空clipを生成し、SCENES に
+ *   代入の無いclipは `fallbackScene`(clipIdの文字を薄く出すだけ)で描画する。これは
+ *   実装途中でも `npm run check` を通すための足場だが、**そのまま焼いても誰も赤にしない**。
+ *   scaffold は `__built.missing` を console.warn するだけで、check も qa-flat-frames も
+ *   （文字とgrainが描かれるので輝度stdが閾値を超え）通してしまう。章グループの範囲指定に
+ *   穴があったときも同じ形で素通りする。
+ *
+ * 適用範囲:
+ *   scaffold 規約(SCENES + hfBuild)を使っている composition のみ。手書き composition や
+ *   他チャンネルの別実装を誤検知しないよう、規約が見つからないときは検査しない。
+ */
+export function findUnimplementedClips(html: string): string[] {
+  const usesScaffoldContract = /\bSCENES\s*=\s*\{/.test(html) && /\bhfBuild\s*\(/.test(html);
+  if (!usesScaffoldContract) return [];
+
+  const implemented = new Set<string>();
+  for (const m of html.matchAll(/SCENES\s*(?:\.\s*(\w+)|\[\s*["'](\w+)["']\s*\])\s*=/g)) {
+    implemented.add(m[1] ?? m[2]);
+  }
+
+  const missing: string[] = [];
+  for (const tag of html.match(/<section[^>]*class="clip[^"]*"[^>]*>/g) ?? []) {
+    const id = /\sid="([^"]+)"/.exec(tag)?.[1];
+    if (id && !implemented.has(id)) missing.push(id);
+  }
+  return missing;
+}

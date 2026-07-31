@@ -8,12 +8,14 @@
  *
  * exit: 0 = OK または ADVISEのみ / 1 = BLOCKあり / 2 = 実行エラー
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { collectCompositionDom } from "./composition-dom";
 import {
   evaluateAdviseRules,
   evaluateBlockRules,
+  findUnimplementedClips,
   isCountedAsset,
   sceneClipsOf,
   type Finding,
@@ -96,6 +98,36 @@ function loadLibrary(): LibraryEntry[] {
   }
 }
 
+/**
+ * 過去epのシグネチャのキャッシュ。
+ *
+ * なぜ要るか(実測): この検査は毎回「過去3本+現行」の計4compositionをブラウザで
+ * 開き直していた。完成尺のcompositionは1本のロードだけで16〜32秒かかるので、
+ * `npm run check` の固定コストが1〜2分ぶら下がる。checkは実装エージェント × 章グループ数 ×
+ * 反復回数ぶん走るため、ここが素の待ち時間として積み上がっていた。
+ * 過去epのcomposition.htmlは確定済み(変わらない)なので、内容ハッシュをキーに保存してよい。
+ */
+const SIGNATURE_CACHE_PATH = path.join(projectRoot, ".cache", "visual-signatures.json");
+
+type SignatureCache = Record<string, { hash: string; signatures: string[] }>;
+
+function loadSignatureCache(): SignatureCache {
+  try {
+    return JSON.parse(readFileSync(SIGNATURE_CACHE_PATH, "utf8")) as SignatureCache;
+  } catch {
+    return {};
+  }
+}
+
+function saveSignatureCache(cache: SignatureCache): void {
+  try {
+    mkdirSync(path.dirname(SIGNATURE_CACHE_PATH), { recursive: true });
+    writeFileSync(SIGNATURE_CACHE_PATH, JSON.stringify(cache, null, 1) + "\n");
+  } catch {
+    /* キャッシュは高速化のためだけのもの。書けなくても検査は続ける */
+  }
+}
+
 async function collectPastSignatures(
   currentDir: string,
   rules: VisualRules
@@ -104,19 +136,34 @@ async function collectPastSignatures(
     .filter((p) => path.dirname(p) !== currentDir)
     .slice(-PAST_EPISODE_LIMIT);
   const map = new Map<string, string[]>();
+  const cache = loadSignatureCache();
+  let cacheChanged = false;
+  let hits = 0;
+
   for (const comp of targets) {
     const epId = path.basename(path.dirname(comp));
     try {
-      const dom = await collectCompositionDom(comp, projectRoot);
-      for (const c of sceneClipsOf(dom, rules)) {
-        const list = map.get(c.signature) ?? [];
+      const hash = createHash("sha1").update(readFileSync(comp)).digest("hex");
+      let signatures = cache[epId]?.hash === hash ? cache[epId].signatures : null;
+      if (signatures) {
+        hits++;
+      } else {
+        const dom = await collectCompositionDom(comp, projectRoot);
+        signatures = sceneClipsOf(dom, rules).map((c) => c.signature);
+        cache[epId] = { hash, signatures };
+        cacheChanged = true;
+      }
+      for (const signature of signatures) {
+        const list = map.get(signature) ?? [];
         if (!list.includes(epId)) list.push(epId);
-        map.set(c.signature, list);
+        map.set(signature, list);
       }
     } catch (e) {
       console.warn(`WARN: 過去ep ${epId} のシグネチャ収集に失敗したため持ち越し検査から除外します: ${(e as Error).message}`);
     }
   }
+  if (cacheChanged) saveSignatureCache(cache);
+  if (hits > 0) console.log(`過去epシグネチャ: ${hits}/${targets.length} 本をキャッシュから復元(ブラウザ起動を省略)`);
   return map;
 }
 
@@ -151,6 +198,23 @@ async function main(): Promise<void> {
   const past = await collectPastSignatures(episodeDir, rules);
   const blocks = evaluateBlockRules(dom, loadLibrary(), rules);
   const advises = evaluateAdviseRules(dom, rules, past);
+
+  // 未実装clip(scaffoldのフォールバックのまま)は BLOCK。
+  // 2026-08-01 追加: それまで scaffold の console.warn しか気付く手段が無く、
+  // 章グループの範囲指定に穴があってもレンダーまで通っていた。
+  const unimplemented = findUnimplementedClips(
+    readFileSync(path.join(episodeDir, "composition.html"), "utf8")
+  );
+  if (unimplemented.length > 0) {
+    blocks.push({
+      level: "BLOCK",
+      rule: "unimplemented-clips",
+      message:
+        `${unimplemented.length} clip が未実装です(scaffold のフォールバック表示のまま): ` +
+        `${unimplemented.slice(0, 12).join(", ")}${unimplemented.length > 12 ? " ..." : ""}` +
+        " — 章グループの範囲指定に穴が無いか、担当グループの実装漏れが無いか確認してください",
+    });
+  }
 
   report(blocks);
   report(advises);

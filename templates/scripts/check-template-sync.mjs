@@ -96,6 +96,9 @@ const IDENTICAL = [
   "src/pipeline/validate-metadata.ts",
   "src/pipeline/validate-ledger.ts",
   "src/pipeline/finalize-episode.ts",
+  // 2026-08-01 追加(コスト・並列度の実測。全経路で使う)
+  "src/pipeline/usage-report.ts",
+  "src/pipeline/usage-report.test.ts",
   "src/schemas/metadata.schema.json",
   "src/schemas/episode-ledger.schema.json",
   "src/schemas/thumb-test.schema.json",
@@ -133,6 +136,11 @@ const HF_IDENTICAL = [
   // 2026-08-01 追加(snapshot が完成尺の composition で動かない問題の恒久対策)
   "src/pipeline/probe-frames.ts",
   "src/pipeline/probe-frames.test.ts",
+  // 2026-08-01 追加(章グループ被覆の検証・SEキューの機械生成・ミックスの契約テスト)
+  "src/pipeline/scaffold-composition.test.ts",
+  "src/pipeline/audio-mix.test.ts",
+  "src/pipeline/build-audio-cues.ts",
+  "src/pipeline/build-audio-cues.test.ts",
 ];
 
 // コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。

@@ -13,6 +13,7 @@ const OK: AudioFacts = {
   masterFresherThanCues: true,
   p10WindowDb: -44.8,
   medianWindowDb: -19.4,
+  peakDb: -1.8,
 };
 
 test("evaluateAudio: 正しく配線されていれば指摘なし", () => {
@@ -104,4 +105,15 @@ test("buildMixArgs: ナレーションを先頭に、全キューを amix でひ
   ]);
   assert.equal(args[args.length - 1], "out.mp3");
   assert.equal(args[args.indexOf("-t", args.indexOf("-map")) + 1], "10.000");
+});
+
+test("evaluateAudio: master のピークが天井を超えていたら焼き直させる", () => {
+  // 実測: ep011 の完成mp4は +0.2 dBFS(デジタルクリップ)。ラウドネス(-14 LUFS)は
+  // 基準内だったため、レンダー後QAは緑のまま通していた。
+  const codes = evaluateAudio({ ...OK, peakDb: -0.2 }).map((f) => f.code);
+  assert.deepEqual(codes, ["master_peak_hot"]);
+});
+
+test("evaluateAudio: ピークに余裕があれば指摘しない", () => {
+  assert.deepEqual(evaluateAudio({ ...OK, peakDb: -1.3 }), []);
 });

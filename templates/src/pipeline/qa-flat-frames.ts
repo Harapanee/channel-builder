@@ -35,6 +35,13 @@ export const SUBTITLE_ZONE_TOP = 0.82;
 export const BLANK_STD_THRESHOLD = 1.5;
 /** clip の標本のうち空フレームがこの割合以上ならそのclipを指摘する */
 export const BLANK_CLIP_COVERAGE = 0.6;
+/**
+ * 指摘に必要な最低標本数。
+ * 0.5秒間隔なので尺1秒未満のclipは標本1つになり、白フェードの途中に当たっただけで
+ * 100%空と判定され得る。実際に捕まえたい事故(ep012 cL53)は3.6秒=7標本なので、
+ * 2標本を下限にしても検出力は落ちない。
+ */
+export const MIN_BLANK_SAMPLES = 2;
 /** サンプリング間隔(秒) */
 export const SAMPLE_INTERVAL_SEC = 0.5;
 /** 解析解像度(字幕帯を落とした 1920x886 を縮めた比率) */
@@ -81,6 +88,7 @@ export function findBlankClips(
     const mine = samples.filter((s) => s.timeSec >= clip.startSec && s.timeSec < end);
     if (mine.length === 0) continue;
     const blank = mine.filter((s) => s.lumaStd < stdThreshold);
+    if (blank.length < MIN_BLANK_SAMPLES) continue;
     if (blank.length / mine.length < coverage) continue;
     findings.push({
       clipId: clip.id,

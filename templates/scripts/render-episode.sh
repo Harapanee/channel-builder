@@ -60,7 +60,13 @@ if [ -f "$EPDIR/composition.html" ]; then
     cat "$OUTDIR/check-audio-$OUT.log" >&2
     printf '{"ok":false,"reason":"audio_check_failed","qaExit":1}\n' > "$STATUS"; exit 1
   fi
-  if ! npx --yes hyperframes@0.7.68 check --timeout 60000 > "$OUTDIR/check-$OUT.log" 2>&1; then
+  # --- 実装の検査(レンダー前)---
+  # 2026-08-01 修正: ここは以前 `hyperframes check` を直接叩いており、npm run check が
+  # 持つ **check:visual(視覚多様性)と --caption-zone が抜けていた**。工程9で緑にしたものと
+  # 夜間ゲートが別物になり、工程9以降の変更で入った字幕帯違反はそのまま焼かれていた。
+  # 検査条件の正本は package.json の "check" 1か所に寄せる。
+  if ! npm run --silent check > "$OUTDIR/check-$OUT.log" 2>&1; then
+    cat "$OUTDIR/check-$OUT.log" >&2
     printf '{"ok":false,"reason":"check_failed","qaExit":1}\n' > "$STATUS"; exit 1
   fi
   ok=0
@@ -89,18 +95,33 @@ if [ -f "$EPDIR/composition.html" ]; then
   # clip内の生成順が原因でコードとしては正常に走るため、出力を見る検査でしか止まらない。
   if ! npx tsx src/pipeline/qa-flat-frames.ts "$EPDIR" "$OUT" > "$OUTDIR/qa-frames-$OUT.log" 2>&1; then
     cat "$OUTDIR/qa-frames-$OUT.log" >&2
-    qa_exit=1; qa_notes="blank_clips"
+    qa_exit=1; qa_notes="${qa_notes:+$qa_notes,}blank_clips"
   fi
 
-  lufs=$(ffmpeg -hide_banner -nostats -i "$OUTDIR/$OUT.mp4" -af ebur128=framelog=quiet -f null - 2>&1 \
-    | awk '/Integrated loudness/{f=1} f&&/I:/{print $2; exit}')
+  # ラウドネスとトゥルーピークを1パスで測る(2026-08-01 peak を追加)
+  ebu=$(ffmpeg -hide_banner -nostats -i "$OUTDIR/$OUT.mp4" -af ebur128=framelog=quiet:peak=true -f null - 2>&1)
+  lufs=$(echo "$ebu" | awk '/Integrated loudness/{f=1} f&&/I:/{print $2; exit}')
+  peak=$(echo "$ebu" | awk '/True peak/{f=1} f&&/Peak:/{print $2; exit}')
+
+  # 実クリップ(0dBFS超え)は赤にする。ep011 の完成mp4は +0.2 dBFS で出荷されていたが、
+  # ラウドネスは基準内だったため誰も気付かなかった。余裕不足(-1.0〜0.0)は警告に留める。
+  if [ -n "$peak" ]; then
+    if awk -v v="$peak" 'BEGIN{exit !(v > 0.0)}'; then
+      qa_exit=1; qa_notes="${qa_notes:+$qa_notes,}peak_clipping"
+      echo "QA NG: トゥルーピーク ${peak} dBFS(0dBFS超え=クリップ)。npm run audio-mix で焼き直してください" >&2
+    elif awk -v v="$peak" 'BEGIN{exit !(v > -1.0)}'; then
+      echo "QA WARN: トゥルーピーク ${peak} dBFS(推奨は -1.0 dBFS 以下)" >&2
+    else
+      echo "QA OK: トゥルーピーク ${peak} dBFS"
+    fi
+  fi
   if [ -z "$lufs" ]; then
-    qa_exit=1; qa_notes="loudness_unmeasurable"
+    qa_exit=1; qa_notes="${qa_notes:+$qa_notes,}loudness_unmeasurable"
     echo "QA NG: ラウドネスを測定できませんでした" >&2
   else
     # bible §11: 基準 -14 LUFS。製作上の許容は ±1.0 LU
     if awk -v v="$lufs" 'BEGIN{exit !(v > -13.0 || v < -15.0)}'; then
-      qa_exit=1; qa_notes="loudness_out_of_spec"
+      qa_exit=1; qa_notes="${qa_notes:+$qa_notes,}loudness_out_of_spec"
       echo "QA NG: 統合ラウドネス ${lufs} LUFS が基準 -14 LUFS ±1.0 を外れています(bible §11 不変規則)" >&2
       echo "       ナレーションが主役か・BGM/SEが大きすぎないかを確認してください" >&2
     else
@@ -108,8 +129,8 @@ if [ -f "$EPDIR/composition.html" ]; then
     fi
   fi
 
-  printf '{"out":"%s","ok":%s,"durationSec":%s,"qaExit":%s,"lufs":"%s","qaNotes":"%s"}\n' \
-    "$OUTDIR/$OUT.mp4" "$([ "$qa_exit" -eq 0 ] && echo true || echo false)" "${dur%.*}" "$qa_exit" "$lufs" "$qa_notes" > "$STATUS"
+  printf '{"out":"%s","ok":%s,"durationSec":%s,"qaExit":%s,"lufs":"%s","peakDbfs":"%s","qaNotes":"%s"}\n' \
+    "$OUTDIR/$OUT.mp4" "$([ "$qa_exit" -eq 0 ] && echo true || echo false)" "${dur%.*}" "$qa_exit" "$lufs" "$peak" "$qa_notes" > "$STATUS"
   if [ "$qa_exit" -ne 0 ]; then
     echo "NG(HF): $OUTDIR/$OUT.mp4 は出力されましたが QA に落ちています" >&2
     exit 1

@@ -43,6 +43,15 @@ export const DURATION_TOLERANCE_SEC = 0.5;
 export const SILENCE_FLOOR_DB = -60;
 /** 無音窓(-inf)を数値として扱うときの下限 */
 export const SILENT_WINDOW_DB = -200;
+/**
+ * master のトゥルーピークの天井(dBFS)。
+ *
+ * 実測: 完成mp4のピークは ep010 -0.9 / ep012 -0.5 / **ep011 +0.2(デジタルクリップ)**。
+ * レンダー後QAは統合ラウドネス(-14 LUFS ±1.0)しか見ておらず、3本とも緑で通っていた。
+ * mp3/AACの符号化で1dB程度オーバーシュートするので、master 側は -1.0 で止める
+ * (audio-mix のリミッタは -1.5 dBFS を狙うので、正常に焼けていれば必ず余裕がある)。
+ */
+export const MASTER_PEAK_CEILING_DB = -1.0;
 
 export interface AudioFinding {
   code: string;
@@ -73,6 +82,8 @@ export interface AudioFacts {
   p10WindowDb: number;
   /** 参考: 0.1秒窓 RMS の中央値(dB) */
   medianWindowDb: number;
+  /** master のトゥルーピーク(dBFS) */
+  peakDb: number;
 }
 
 /** 事実から契約違反を判定する(純粋関数 — I/Oを持たない) */
@@ -116,6 +127,14 @@ export function evaluateAudio(facts: AudioFacts): AudioFinding[] {
       message:
         `master.mp3 の尺 ${facts.masterDurationSec.toFixed(3)}s が <audio data-duration> ` +
         `${facts.audioDurationSec.toFixed(3)}s と一致しません`,
+    });
+  }
+  if (facts.hasMaster && Number.isFinite(facts.peakDb) && facts.peakDb > MASTER_PEAK_CEILING_DB) {
+    out.push({
+      code: "master_peak_hot",
+      message:
+        `master.mp3 のトゥルーピークが ${facts.peakDb.toFixed(1)} dBFS で、天井 ${MASTER_PEAK_CEILING_DB} dBFS を超えています。` +
+        "ナレーション+BGM+SEの総和がクリップしています — npm run audio-mix で焼き直してください(リミッタが入ります)",
     });
   }
   if (facts.hasMaster && facts.p10WindowDb < SILENCE_FLOOR_DB) {
@@ -163,6 +182,18 @@ export function windowRmsDb(file: string): number[] {
   return out;
 }
 
+/** ファイルのトゥルーピーク(dBFS)。測れなければ NaN */
+export function truePeakDb(file: string): number {
+  const r = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", "-nostats", "-i", file, "-af", "ebur128=framelog=quiet:peak=true", "-f", "null", "-"],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+  );
+  const m = /Peak:\s+(-?[\d.]+|-inf)\s+dBFS/.exec(r.stderr ?? "");
+  if (!m) return NaN;
+  return m[1] === "-inf" ? SILENT_WINDOW_DB : Number(m[1]);
+}
+
 /** 昇順の分位点(0..1) */
 export function percentile(xs: number[], q: number): number {
   if (xs.length === 0) return NaN;
@@ -195,13 +226,15 @@ function main(): void {
         : hasMaster,
     p10WindowDb: percentile(windows, 0.1),
     medianWindowDb: percentile(windows, 0.5),
+    peakDb: hasMaster ? truePeakDb(masterPath) : NaN,
   };
 
   const findings = evaluateAudio(facts);
   console.log(
     `音声の配線検査: src=${facts.audioSrc ?? "(なし)"} / master ${
       facts.hasMaster ? `${facts.masterDurationSec.toFixed(2)}s` : "なし"
-    } / 音の床 p10=${facts.p10WindowDb.toFixed(1)}dB(中央値 ${facts.medianWindowDb.toFixed(1)}dB)`
+    } / 音の床 p10=${facts.p10WindowDb.toFixed(1)}dB(中央値 ${facts.medianWindowDb.toFixed(1)}dB)` +
+      ` / ピーク ${Number.isFinite(facts.peakDb) ? facts.peakDb.toFixed(1) : "?"}dBFS(天井 ${MASTER_PEAK_CEILING_DB})`
   );
   if (findings.length === 0) {
     console.log("OK: ナレーション+BGM+SEのミックスが正しく配線されています");

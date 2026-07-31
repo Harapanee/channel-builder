@@ -1,6 +1,6 @@
 /**
  * 工程12の完了処理を一括実行する(判断を含まない事務処理のみ)。
- *   npm run finalize episodes/<epId> -- --hours 3.5 --images 12 [--dry-run]
+ *   npm run finalize episodes/<epId> -- --hours 3.5 --images 12 [--cost 180] [--dry-run]
  * 出力: net-source素材一覧(人間ゲート提示用) + 実行した更新のログ
  */
 import fs from 'node:fs';
@@ -15,12 +15,14 @@ const flag = (name: string): string | undefined => {
 };
 const dryRun = args.includes('--dry-run');
 if (!epDir || !fs.existsSync(path.join(epDir, 'episode.json'))) {
-  console.error('usage: npm run finalize episodes/<epId> -- --hours <n> --images <n> [--dry-run]');
+  console.error('usage: npm run finalize episodes/<epId> -- --hours <n> --images <n> [--cost <usd>] [--dry-run]');
   process.exit(2);
 }
 const epId = path.basename(epDir);
 const hours = flag('hours') !== undefined ? Number(flag('hours')) : null;
 const images = flag('images') !== undefined ? Number(flag('images')) : null;
+// API換算コスト(npm run usage -- --json の costUsd)。次の是正の入力になる実測値
+const costUsd = flag('cost') !== undefined ? Number(flag('cost')) : null;
 
 // 1) net-source素材一覧(ゲートcontext用)— このエピソードに関わる項目を抽出
 const lib = JSON.parse(fs.readFileSync('assets/library.json', 'utf8'));
@@ -40,9 +42,22 @@ if (netSource.length === 0) {
 // 2) metrics追記
 const sysPath = '.channel-system.json';
 const sys = JSON.parse(fs.readFileSync(sysPath, 'utf8'));
+// metrics のキーは episodeId が正本。過去に epId で書かれた行が混在しており、
+// episodeId だけを見る重複判定では同じepが2行に増えていた(2026-08-01 修正)。
 sys.metrics = sys.metrics ?? [];
-if (!sys.metrics.some((m: { episodeId: string }) => m.episodeId === epId)) {
-  sys.metrics.push({ episodeId: epId, wallClockHours: hours, imageGenCount: images, renderMinutes: null });
+type Metric = { episodeId?: string; epId?: string; [k: string]: unknown };
+const existing = sys.metrics.find((m: Metric) => (m.episodeId ?? m.epId) === epId);
+if (existing) {
+  if (existing.epId) {
+    existing.episodeId = epId;
+    delete existing.epId;
+  }
+  existing.wallClockHours = hours ?? existing.wallClockHours ?? null;
+  existing.imageGenCount = images ?? existing.imageGenCount ?? null;
+  if (costUsd !== null) existing.costUsd = costUsd;
+  if (existing.renderMinutes === undefined) existing.renderMinutes = null;
+} else {
+  sys.metrics.push({ episodeId: epId, wallClockHours: hours, imageGenCount: images, costUsd, renderMinutes: null });
 }
 
 // 3) backlog消し込み
@@ -65,7 +80,7 @@ const prevStatus = ep.status;
 ep.status = 'render_ready';
 
 console.log('\n## 実行内容');
-console.log(`- metrics追記: ${epId} (hours=${hours}, images=${images})`);
+console.log(`- metrics追記: ${epId} (hours=${hours}, images=${images}, costUsd=${costUsd})`);
 console.log(`- backlog消し込み: ${backlogChanged ? '更新' : '該当行なし'}`);
 console.log(`- episode.json: status ${prevStatus} → render_ready`);
 if (dryRun) {
@@ -78,10 +93,23 @@ if (backlogChanged) fs.writeFileSync(backlogPath, backlog);
 fs.writeFileSync(epJsonPath, JSON.stringify(ep, null, 2) + '\n');
 
 // 5) git commit
+// assets/ を必ず含める。2026-08-01 修正: それまで add 対象が「台帳+epDir」だけで、
+// 工程7で生成・承認した素材(assets/characters/... と assets/library.json への追記)が
+// 毎回コミットされずに作業ツリーへ溜まっていた(実測: library.json 未コミット +1282行、
+// 未追跡の素材ディレクトリ20件以上)。素材はエピソードの成果物であり、失うと再生成になる。
 const ledgerPath = 'channel/episode-ledger.json';
+const libraryPath = 'assets/library.json';
 execFileSync(
   'git',
-  ['add', sysPath, epJsonPath, ...(backlogChanged ? [backlogPath] : []), ...(fs.existsSync(ledgerPath) ? [ledgerPath] : []), epDir],
+  [
+    'add',
+    sysPath,
+    epJsonPath,
+    ...(backlogChanged ? [backlogPath] : []),
+    ...(fs.existsSync(ledgerPath) ? [ledgerPath] : []),
+    ...(fs.existsSync(libraryPath) ? [libraryPath, 'assets'] : []),
+    epDir,
+  ],
   { stdio: 'inherit' },
 );
 execFileSync('git', ['commit', '-m', `chore(${epId}): 承認完了・render_ready(finalize-episode)`], { stdio: 'inherit' });

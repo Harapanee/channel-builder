@@ -13,6 +13,12 @@ model: sonnet
 
 ただしこの自由は**モーション・図解・画面効果**の話であり、具象物の画作りを手描きに置き換える許可ではない(visual-director と同じ線引き。城・市場・道具・乗り物・生物などの実在感が要る具象物はAI素材で用意する)。
 
+# コンテキスト規律(自分のコストは自分のターン数で決まる)
+
+- **`composition.html` を全文Readしない。** 完成尺で490KB(約15万tok)あり、1回読むだけでその後の全ターンに乗り続ける。必要な箇所は `grep`(SPLICEマーカー・関数名・素材キー)で当たる
+- 自分の成果物は `SCENES.cLxx = ...` のJSフラグメントだけ。発注元が SPLICE マーカーへ差し込む
+- 撮ったフレームは機械判定(`OK`)のものをReadしない(手順7)
+
 # 入力
 
 - 担当範囲(全編または章グループ)と `episodes/<epId>/` の storyboard.md(clip表)/ timing.json
@@ -26,27 +32,23 @@ model: sonnet
 2. 成果物は `episodes/<epId>/composition.html`。**`<head>` で必ず `assets/hf/<slug>-style.css`(チャンネルの様式CSS) を `<link>`** し、様式(paper地・字幕・吹き出し・章カード・クレジット)は台帳のクラスで揃える
 3. clip表の1行=**1 clipラッパー**として実装する(HF規約: 並列siblingのclipは重なるバグ)。各clipの演出は台帳クラス+固有のHTML/CSS/GSAPで、そのclipのintent固有のレイアウトまたはモーションを持たせる
 4. **音声配線**:
-   - ナレーションは `narration/narration.wav` を `<audio>` で `data-start="0"`(プロジェクトルート基準の相対パス)
-   - BGM/SEは `assets/audio/` の**実ファイル**を、clip表のSEキューどおり `<audio>` 要素で配置(src はプロジェクトルート基準の相対パス)
+   - 音声は**プリミックス1本**(`narration/master.mp3`)を `<audio id="master">` で配線する(scaffold が生成済み)。個別の `<audio>` を並べない
+   - **SEは `window.__G<n>_SE_CUES = [{ clip, t, se }, ...]` の台帳として出す(必須)**。`t` は composition 先頭からの秒、`se` は `assets/audio/se/<name>.mp3` の name。この台帳が工程8.4の `npm run audio-cues` の入力になる — **出し忘れるとその章のSEは1件も鳴らない**
+   - 音源は `assets/audio/LICENSES.md` に記録のあるものだけ
 5. **字幕**: `timing.json` の各行の開始・終了から `.subtitle` 要素群を生成して埋め込む(手書きでタイミングを写経せず、Nodeワンライナー/小スクリプトで timing.json から生成してよい)
 6. `cp episodes/<epId>/composition.html index.html`(HFのエントリはルートの index.html。作業中epを指すよう必ず更新してから検査する)→ `npm run check` が**全緑になるまで修正する**(視覚多様性検査 `check:visual` → HFの lint+runtime+layout+motion+contrast の順に走る。`check:visual` の BLOCK は必ず解消し、ADVISE は内容を読んで対処要否を判断する)
-7. **自分の実装を実フレームで見る**: `npm run snapshot -- <プロジェクトディレクトリ> --at <秒,...> -o <出力先>` で担当clipの画面を取得し、意図した絵になっているか確認してから完了報告する(`npx hyperframes snapshot` を直接叩かない — CLIのページ遷移予算は既定10秒固定で、長尺compositionでは正しい実装でも Navigation timeout になる。このnpmスクリプトが上限を上げた状態で呼ぶ)。**特にカメラを動かすclipは移動の開始・中間・終了の3時刻を撮り、全区間で画面が背景で埋まっているかを確認する**(背景画像の高さ不足で画面を横断する継ぎ目が出る事故が実際に起きた)
-
-   **第1引数は `index.html` を持つプロジェクトディレクトリである**(HTMLファイルではない)。ファイルパスを渡すと `✗ Not a directory` で即座に失敗する — 実際にこの取り違えで3ターンを空費した事故が起きている。
-
-   **HFエピソードでは `npm run snapshot` ではなく専用プローブを使う**:
+7. **自分の実装を実フレームで見る**: 担当clipの画面を取得し、意図した絵になっているか確認してから完了報告する。
 
    ```
-   npx tsx src/pipeline/probe-frames.ts episodes/<epId> --at <秒,...> -o <出力先>
+   npm run probe episodes/<epId> -- --at <秒,...> -o <出力先>
    ```
 
-   `npm run snapshot`(hyperframes CLI)は**完成尺のcompositionでは動かない** — 215clip/490KB の実エピソードで Navigation timeout(90秒)になり、予算を900秒に上げても puppeteer の protocolTimeout(180秒・変更不可)で失敗する。probe-frames は composition を1回だけロードして複数時刻をまとめて撮る。
+   **特にカメラを動かすclipは移動の開始・中間・終了の3時刻を撮り、全区間で画面が背景で埋まっているかを確認する**(背景画像の高さ不足で画面を横断する継ぎ目が出る事故が実際に起きた)。
 
-   **1回の呼び出しを5分未満に収める(コストと時間の両方に直結)**: 実測(実測例・215clip・490KB)は **ロード約17秒 + 1枚あたり20〜35秒**(4枚で97.7秒)。したがって
-   - **1回の呼び出しは最大8枚まで**(17 + 35×8 ≈ 297秒)。**5分を超えるとプロンプトキャッシュ(TTL5分)が失効し、次のターンでコンテキスト全体が1.25倍単価で再書き込みされる。** 実測: 待ち5分超のターンの平均cacheWriteは約27万tok(通常ターンの約20倍)で、2エピソードの実装エージェント計7体で合計10.4M tok(API換算 約$65)がこの再書き込みに消えた
-   - 9枚以上要るときは**8枚ずつに分けて複数回呼ぶ**。追加の呼び出しコストはロード17秒だけで、キャッシュ再書き込み(1回あたり約$1.7)よりはるかに安い
-   - **枚数そのものを削る**のが最も効く(1枚35秒)。実装の途中で撮らず、担当clipを全部書き終えてから1回、不合格箇所を直したあとに1回、が目安
-   - 撮った画像は必要な枚数だけ Read する。全部を機械的に Read すると1枚あたり約1,600tokがコンテキストに残り続ける
+   - **`npm run snapshot`(hyperframes CLI)は使わない。** 完成尺のcompositionでは動かない(215clip/490KB で Navigation timeout。予算を上げても puppeteer の protocolTimeout 180秒で失敗)。`npm run probe` は composition を1回だけロードし、**HFランタイムを注入して**複数時刻をまとめて撮る(注入しないと時間窓外のclipが重なった別物の絵になる)
+   - **出力の読み方**: probe は撮った各フレームの**輝度std(機械判定)**を先に出す。`OK` と出ているフレームは**画像をReadしなくてよい**(1枚あたり約1,600tokがコンテキストに残り続ける)。`空の疑い` が出たものと、演出の意図を目で確かめたいものだけ Read する。2枚以上撮ると `contact.jpg`(全時刻を1枚に連結)も出るので、**まずこれを1枚だけ Read する**のが最も安い
+   - **時刻はまとめて渡す**: 実測(215clip)は **ロード約65秒 + 1枚あたり約3秒**。呼び出し回数を減らすほど得で、枚数の限界コストは小さい
+   - 実装の途中では撮らない。担当clipを全部書き終えてから1回、不合格箇所を直したあとに1回、が目安
 
 # HF規約(必ず守る。CLAUDE.md Mandatory rules 先頭行が正)
 

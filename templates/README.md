@@ -60,7 +60,7 @@ claude
 → 絵コンテ+clip表(visual-director)
 → 不足素材リスト → 素材生成(asset-generator)【あなた: キュレーション】
 → シーン実装(`composition.html`・scene-implementer)
-→ 音声ミックス(npm run audio-mix = ナレーション+BGM+SE を1本に焼く)
+→ 音声ミックス(npm run audio-cues → npm run audio-mix = ナレーション+BGM+SE を1本に焼く)
 → レンダー前検査(npm run check / check:audio / check:assets)
 → 公開パッケージ(タイトル・サムネ3案・概要欄)【あなた: 選ぶ】
 → 【あなた: プレビュー視聴・承認】 → 夜間レンダーキュー
@@ -134,7 +134,7 @@ claude
 | `channel/voice.json` | ナレーターの声 | ❌ 原則変更禁止 |
 | `.claude/agents/*.md` | エージェント11体の技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
 | `.claude/skills/*` | video-create / theme-scout / render-queue / channel-refine / system-refine | ❌ /system-refine 経由 |
-| `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / precheck / render-stills / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs / audio-mix / check-audio / check-storyboard-assets / qa-flat-frames) | ❌ /system-refine 経由 |
+| `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / precheck / render-stills / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs / audio-mix / build-audio-cues / check-audio / check-storyboard-assets / qa-flat-frames / probe-frames / usage-report) | ❌ /system-refine 経由 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
 | `hyperframes.json` | HyperFramesプロジェクト設定(本編のレンダー経路) | ❌ /system-refine 経由 |
@@ -188,15 +188,16 @@ fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(
 /factory-update                  # テンプレ最新OSを既存Factoryへ取り込み
 npm run dev                      # HyperFramesプレビュー(本編。必ずbackgroundで起動)
 npm run check                    # 視覚多様性検査 + HF check(本編。レンダー前の機械ゲート)
-npx tsx src/pipeline/probe-frames.ts episodes/<ep> --at 6,22,356 -o <出力先>  # 実フレーム取得(HFはこちら。1回5分未満=最大8枚)
-npm run snapshot -- . --at 6,22,356 -o <出力先>  # hyperframes CLI版(完成尺では動かない。短いcomposition専用)
+npm run probe episodes/<ep> -- --at 6,22,356 -o <出力先>  # 実フレーム取得(HFランタイム注入。輝度std判定+contact.jpg つき)
 npx tsx src/pipeline/scaffold-composition.ts episodes/<ep>   # composition.html の骨格を機械生成(工程8の最初)
 npm run render                   # HyperFramesレンダー(本編)
 npm run check:visual -- episodes/<epId>   # 視覚多様性検査のみ
-npm run audio-mix episodes/<ep>  # ナレーション+BGM+SE → narration/master.mp3(工程8.4)
+npm run audio-cues episodes/<ep>  # composition の SE台帳 → audio-cues.json(SEは手書きしない)
+npm run audio-mix episodes/<ep>  # ナレーション+BGM+SE → narration/master.mp3 + <audio src> 差し替え(工程8.4)
 npm run check:audio episodes/<ep>   # 音声の配線検査(レンダー前ゲート)
 npm run check:assets episodes/<ep>  # 絵コンテの使用素材と実装の突合(既定は報告のみ)
 npm run qa:frames episodes/<ep>  # レンダー後の空フレーム検出(何も描かれていないclip)
+npm run usage -- --since 2026-08-01   # コスト・キャッシュ内訳・サブエージェントの並列度
 npm test                         # 単体テスト(tsx --test)
 npm run studio                   # Remotion Studio(ショート・サムネ専用)
 npm run render:test:short        # ショートのテストレンダー(Remotion)

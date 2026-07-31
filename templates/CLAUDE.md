@@ -27,7 +27,8 @@
 
 - `npm run dev` — HyperFramesプレビュー(本編。必ずbackgroundで起動)
 - `npm run check` — 視覚多様性検査 + HF check(本編。レンダー前の機械ゲート)
-- `npm run snapshot -- --at <秒,...> -o <出力先>` — 指定時刻の実フレーム取得(レビュー・実装確認の視覚検証用)
+- `npm run probe episodes/<epId> -- --at <秒,...> -o <出力先>` — **HFエピソードの実フレーム取得はこれだけを使う**。HFランタイムを注入して composition を1回ロードし、複数時刻をまとめて撮る(実測: ロード約65秒+1枚約3秒)。**輝度stdの機械判定+コンタクトシート(contact.jpg)を出すので、OKのフレームは画像をReadしない**。ランタイムを注入しないと時間窓外のclipが重なった別物の絵になる(レンダーとの平均差 117→2.25)
+- `npm run snapshot`(hyperframes CLI)は**完成尺のcompositionでは動かない**(215clip/490KBで Navigation timeout。予算を上げても protocolTimeout 180秒で失敗)ため使わない
 - `npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> [--groups "cL01-cL50,..."]` — composition.html の骨格を timing.json から機械生成(clip/字幕/音声配線/素材テーブル/共通ヘルパー/SPLICEマーカー)。**工程8の最初に実行し、章グループを最初から並列で走らせる**
 - `npm run render` — HyperFramesレンダー(本編)
 - **HyperFrames CLI は必ず上記のnpmスクリプト経由で叩く**(`npx hyperframes ...` を直接叩かない)。CLIのページ遷移予算は既定10秒固定で、clip数・DOMノードの多い長尺compositionでは実装が正しくても `check_runtime_failure: Navigation timeout` になる。npmスクリプトと `scripts/render-episode.sh` が `PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS=90000` を渡した状態で呼ぶ
@@ -37,7 +38,9 @@
 - `npm run render:test:short` — ショートのテストレンダー(**Remotion**)
 - `npm run tts episodes/<epId>` — 台本→音声+timing.json(自己検証・ラウドネス正規化つき。最終行に pause_after_sec を明示するとその秒数の無音尾が付く=アウトロ尺の確保用)
 - `npm run tts episodes/<epId> -- --readings-only` — 誤読プリチェック(audio_queryのみ・数十秒。合成前にreading-checkerへ)
-- `npm run audio-mix episodes/<epId>` — audio-cues.json(ナレーション+BGM+SE)から `narration/master.mp3` を焼く。**この工程を飛ばすとBGMもSEも鳴らない**(工程8.4)
+- `npm run audio-cues episodes/<epId>` — composition の SE台帳(`window.__G<n>_SE_CUES`)から audio-cues.json のSEキューを機械生成する(BGMは storyboard の散文が正本なので人が書く)
+- `npm run audio-mix episodes/<epId>` — audio-cues.json(ナレーション+BGM+SE)から `narration/master.mp3` を焼き、composition の `<audio src>` をそこへ差し替える。SE音量は -22 LUFS へ整え、総和はリミッタ(-1.5 dBFS)で抑える。**この工程を飛ばすとBGMもSEも鳴らない**(工程8.4)
+- `npm run usage [-- --since <日付>|--session <id>|--json]` — セッション記録からAPI換算コスト・キャッシュ内訳・**サブエージェントの並列度**(1メッセージ1本の件数・同時最大本数)を集計する
 - `npm run check:audio episodes/<epId>` — 音声の配線検査(cues有無・`<audio src>`がmasterか・焼き直し漏れ・BGMが実際に乗っているか)。render-episode.sh のレンダー前ゲートでもある
 - `npm run check:assets episodes/<epId> [--strict]` — storyboardの「使用素材」列と composition の実装の突合(既定は報告のみ)
 - `npm run qa:frames episodes/<epId> [out名]` — レンダー後の空フレーム検出(何も描かれていないclipを輝度stdで見つける)。render-episode.sh に内蔵
