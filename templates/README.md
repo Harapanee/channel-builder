@@ -188,7 +188,8 @@ fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(
 /factory-update                  # テンプレ最新OSを既存Factoryへ取り込み
 npm run dev                      # HyperFramesプレビュー(本編。必ずbackgroundで起動)
 npm run check                    # 視覚多様性検査 + HF check(本編。レンダー前の機械ゲート)
-npm run snapshot -- . --at 6,22,356 -o <出力先>  # 指定時刻の実フレーム取得(視覚検証。第1引数はindex.htmlを持つディレクトリ)
+npx tsx src/pipeline/probe-frames.ts episodes/<ep> --at 6,22,356 -o <出力先>  # 実フレーム取得(HFはこちら。1回5分未満=最大8枚)
+npm run snapshot -- . --at 6,22,356 -o <出力先>  # hyperframes CLI版(完成尺では動かない。短いcomposition専用)
 npx tsx src/pipeline/scaffold-composition.ts episodes/<ep>   # composition.html の骨格を機械生成(工程8の最初)
 npm run render                   # HyperFramesレンダー(本編)
 npm run check:visual -- episodes/<epId>   # 視覚多様性検査のみ

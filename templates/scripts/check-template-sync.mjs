@@ -130,6 +130,9 @@ const HF_IDENTICAL = [
   "src/pipeline/check-storyboard-assets.test.ts",
   "src/pipeline/qa-flat-frames.ts",
   "src/pipeline/qa-flat-frames.test.ts",
+  // 2026-08-01 追加(snapshot が完成尺の composition で動かない問題の恒久対策)
+  "src/pipeline/probe-frames.ts",
+  "src/pipeline/probe-frames.test.ts",
 ];
 
 // コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。
