@@ -89,6 +89,56 @@ function makeTwoClipComposition(): { root: string; comp: string } {
   return { root, comp };
 }
 
+/**
+ * clip の中で `<img>` を組み立てる composition(実物の scaffold 生成物と同じ形)。
+ *
+ * 実測(sekaishi-longform ep001-plague-doctor・285clip): 撮影が画像の読み込み完了を
+ * 待っていなかったため、t=300 では素材の位置が下地の色のまま写り、**同じclipの
+ * t=301 では正しく写る**という絵が出ていた。実装エージェントはこの絵で
+ * 「素材が抜けている」と誤判定する。
+ * 大きめのPNGを複数枚読ませて、待ちが無ければ再現する条件を作る。
+ */
+function makeImageComposition(imageFiles: string[]): { root: string; comp: string } {
+  const root = path.dirname(imageFiles[0]);
+  const comp = path.join(root, "composition.html");
+  const names = JSON.stringify(imageFiles.map((f) => path.basename(f)));
+  writeFileSync(
+    comp,
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      html,body{margin:0}
+      #root{position:relative;width:1920px;height:1080px;overflow:hidden;background:#888888}
+      .clip{position:absolute;inset:0}
+      .clip img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+    </style></head><body>
+      <div id="root" data-composition-id="probe-img" data-start="0" data-width="1920" data-height="1080" data-duration="10">
+        <section class="clip" id="cImg" data-start="0" data-duration="10" data-track-index="1"></section>
+      </div>
+      <script>
+        /* 実物と同じく、clipのDOMはロード時にJSで組み立てられる */
+        (function () {
+          var host = document.getElementById("cImg");
+          ${names}.forEach(function (n) {
+            var im = document.createElement("img");
+            im.src = n;
+            host.appendChild(im);
+          });
+        })();
+        window.__timelines = {};
+        window.__timelines["probe-img"] = {
+          pause: function () {}, play: function () {},
+          time: function () { return 0; },
+          totalTime: function () { return 0; },
+          duration: function () { return 10; },
+          totalDuration: function () { return 10; },
+          progress: function () { return 0; },
+          kill: function () {},
+        };
+      </script>
+    </body></html>`
+  );
+  return { root, comp };
+}
+
 /** 中央1ピクセルのRGBを読む */
 async function centerPixel(file: string): Promise<{ r: number; g: number; b: number }> {
   const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
@@ -179,6 +229,39 @@ test("時間窓の外のclipは画面に出ない(レンダーと同じ絵にな
 
   assert.ok(atOne.r > 200 && atOne.b < 60, `t=1 は赤clipのはずが ${JSON.stringify(atOne)}`);
   assert.ok(atSeven.b > 200 && atSeven.r < 60, `t=7 は青clipのはずが ${JSON.stringify(atSeven)}`);
+});
+
+test("clip内の画像が読み込まれてから撮る(素材の抜けた別物の絵を出さない)", async () => {
+  // ep001-plague-doctor t=300 の回帰テスト。画像の読み込みを待たずに撮ると、
+  // 素材の位置が下地(#888)のまま写り、1秒後の t=301 では正しく写る絵が出ていた。
+  const dir = mkdtempSync(path.join(tmpdir(), "hf-probe-img-"));
+  const files: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const f = path.join(dir, `mat-${i}.png`);
+    // デコードに時間のかかる大きめの画像。ノイズを入れて圧縮が効かないようにする
+    const px = Buffer.alloc(2400 * 2400 * 3);
+    for (let p = 0; p < px.length; p += 3) {
+      px[p] = 220 + (p % 35);
+      px[p + 1] = 20 + (p % 17);
+      px[p + 2] = 20 + (p % 11);
+    }
+    await sharp(px, { raw: { width: 2400, height: 2400, channels: 3 } }).png().toFile(f);
+    files.push(f);
+  }
+
+  const { root, comp } = makeImageComposition(files);
+  const result = await captureFrames({
+    compositionPath: comp,
+    projectRoot: root,
+    times: [1],
+    outDir: path.join(dir, "shots"),
+  });
+
+  const px = await centerPixel(result.files[0]);
+  assert.ok(
+    px.r > 180 && px.g < 90,
+    `画像が写っていない(下地のまま撮れている): ${JSON.stringify(px)}`
+  );
 });
 
 test("撮ったフレームの輝度stdを機械判定して返す(空フレームを画像Readなしで検出)", async () => {

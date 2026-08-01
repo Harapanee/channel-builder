@@ -124,6 +124,43 @@ export function resolveRuntimePath(
   );
 }
 
+/** 素材のデコード待ちの上限(ms)。読めない素材があっても撮影は続行する */
+export const DECODE_TIMEOUT_MS = 30000;
+
+/**
+ * 画面上の `<img>` のデコード完了を待つ。
+ *
+ * なぜ要るか(sekaishi-longform ep001-plague-doctor で実測): HFランタイムの
+ * `__renderReady` は clip の構築完了を示すだけで、**素材画像のデコードは待たない**。
+ * 285clip・素材48点の composition では t=300 の撮影時点で古文書の画像が未デコードのまま撮られ、
+ * 素材が載るはずの位置が下地の色で写った(**同じclipの t=301 では正しく写る**)。
+ * 実装エージェントはこの絵を見て「素材が抜けている」と誤判定する。
+ * probe は「レンダー結果と一致する絵」を出すための道具なので、これは道具側の欠陥である。
+ *
+ * `complete` ではなく `decode()` を待つ(`complete` は読み込み試行の終了であって
+ * デコード完了ではない)。読めない素材で止まらないよう、個々の失敗は握りつぶし、全体にも上限を置く。
+ */
+export async function settleImages(
+  page: { evaluate: (expr: string) => Promise<unknown> },
+  timeoutMs: number = DECODE_TIMEOUT_MS
+): Promise<void> {
+  // NOTE: evaluate には「文字列」を渡す(tsx の keepNames 対策。上の goto 周辺と同じ理由)
+  const done = page.evaluate(`(() => {
+    var imgs = Array.prototype.slice.call(document.images || []);
+    return Promise.all(imgs.map(function (im) {
+      var p = im.decode ? im.decode() : Promise.resolve();
+      return p.catch(function () {});
+    })).then(function () { return true; });
+  })()`);
+  await Promise.race([
+    done.catch(() => undefined),
+    new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, timeoutMs);
+      if (typeof (t as { unref?: () => void }).unref === "function") (t as { unref: () => void }).unref();
+    }),
+  ]);
+}
+
 /**
  * composition を1回だけロードし、指定時刻のフレームをまとめて撮る。
  *
@@ -187,6 +224,8 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
         timeout: LOAD_TIMEOUT_MS,
         polling: 100,
       }).catch(() => undefined);
+      /* ロード直後に一度、素材のデコードを済ませておく(1枚目の待ちを償却する) */
+      await settleImages(page);
 
       for (const sec of opts.times) {
         // hyperframes CLI 自身のレンダー経路と同じ手順:
@@ -216,6 +255,7 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
           timeout: SEEK_TIMEOUT_MS,
           polling: 50,
         }).catch(() => undefined);
+        await settleImages(page);
         const file = path.join(opts.outDir, frameFileName(sec));
         await page.screenshot({ path: file, animations: "disabled", timeout: SEEK_TIMEOUT_MS });
         files.push(file);

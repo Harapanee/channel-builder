@@ -391,11 +391,26 @@ function sway(el, g, D, o) {
 
 /* ------------------------------ 組み立て ------------------------------ */
 
+/* clip を display で開閉する(2026-07-30 新設)。
+   HyperFrames の clip 非表示は `visibility: hidden` で行われるが、
+   **SVG要素に filter="url(#…)" を当てると visibility:hidden を貫通して描画され続ける**。
+   sekaishi-longform ep001-plague-doctor では第1章の霧12層+第5章1層が最後まで残り、
+   全編が暗い霧に覆われた(t=300 の画面平均輝度 190→39)。
+   display:none なら確実に消えることを実測済み。
+   GSAP の set は逆方向シークで元値へ戻るので seek-safe。 */
+function hf_clipGate(el, g, D) {
+  el.style.display = "none";
+  HF.tl.set(el, { display: "" }, g);
+  HF.tl.set(el, { display: "none" }, g + D);
+  return el;
+}
+
 /* SCENES を時刻順に構築する。未実装 clip には fallback(c,id,g,D) が呼ばれる。 */
 function hfBuild(SCENES, fallback) {
   var built = 0, missing = [];
   document.querySelectorAll(".clip.scene").forEach(function (el) {
     var id = el.id, g = parseFloat(el.dataset.start), D = parseFloat(el.dataset.duration);
+    hf_clipGate(el, g, D);
     if (typeof SCENES[id] === "function") { SCENES[id](g, D); built++; }
     else { missing.push(id); if (fallback) fallback(el, id, g, D); }
   });
