@@ -92,14 +92,40 @@ export function blockAt(src: string, start: number, brace: "{" | "[" = "{"): str
 /**
  * `SCENES.cLxx = ...` の本文を clipId ごとに取り出す。
  * ep009/ep010 は `(g,D)=>{`、ep011/ep012 は `function (g, D) {` と書き方が違うので両対応する。
+ * ep013 は `SCENES.cL01 = SC("cL01", function (c, g, D) {` のようにラッパ関数を挟むので、
+ * 「識別子( "clipId", 」の形の前置きも読み飛ばす(ここを見落とすと検査が空振りして常に緑になる)。
  */
 export function parseClipBlocks(html: string): Map<string, string> {
   const map = new Map<string, string>();
-  for (const m of html.matchAll(/SCENES\.(\w+)\s*=\s*(?:function\s*)?\([^)]*\)\s*(?:=>\s*)?\{/g)) {
-    map.set(m[1], blockAt(html, m.index! + m[0].length - 1));
+  const re =
+    /SCENES\s*(?:\.\s*(\w+)|\[\s*["'](\w+)["']\s*\])\s*=\s*(?:[A-Za-z_$][\w$]*\s*\(\s*["'][^"']*["']\s*,\s*)?(?:function\s*)?\([^)]*\)\s*(?:=>\s*)?\{/g;
+  for (const m of html.matchAll(re)) {
+    map.set(m[1] ?? m[2], blockAt(html, m.index! + m[0].length - 1));
   }
   return map;
 }
+
+/**
+ * 解析器が composition の書き方に追随できているかの自己検査。
+ *
+ * `assigned` = `SCENES.cLxx = ...` の代入数(=あるべき clip 数)
+ * `parsed`   = そのうち**本体を取り出せた**数
+ *
+ * なぜ要るか: ep013 は `SCENES.cL01 = SC("cL01", function (c, g, D) {` という
+ * ラッパ形式を使ったため、旧解析器は clip を1件も取り出せず
+ * 「0 clip を検査 → OK: BLOCK なし」で exit 0 していた。**解析できない検査は
+ * 緑ではなく「検査不能」**として止めないと、次の書き方でも同じ空振りが再発する。
+ */
+export function parseCoverage(html: string): { assigned: number; parsed: number } {
+  const assigned = new Set<string>();
+  for (const m of html.matchAll(/SCENES\s*(?:\.\s*(\w+)|\[\s*["'](\w+)["']\s*\])\s*=/g)) {
+    assigned.add(m[1] ?? m[2]);
+  }
+  return { assigned: assigned.size, parsed: parseClipBlocks(html).size };
+}
+
+/** 解析できた clip の割合がこれを下回ったら「検査不能」として exit 2 で止める */
+export const MIN_PARSE_COVERAGE = 0.9;
 
 /**
  * トップレベルの宣言(関数・const)の本文を名前ごとに取り出す。
@@ -119,6 +145,15 @@ export function parseHelperBlocks(html: string): Map<string, string> {
     if (!value || isAssetTableSource(value)) continue;
     map.set(m[1], value);
   }
+  /* 名前空間に生やすヘルパー(`DEV.thirtySeventy = function (c, o) {`、
+     `DEV.horde100Layout = (function () {...})()`)。ep013 が群れ描画をこの形で持つ。
+     ここを見ないと canvas 経由の素材参照が全部取りこぼされ、実素材を使っている clip が
+     BLOCK として誤検知される。値が関数/括弧/オブジェクトで始まるものだけを対象にする。 */
+  for (const m of html.matchAll(/^[A-Za-z_$][\w$]*\.([A-Za-z_$][\w$]*)\s*=\s*(?=function\b|\(|\{)/gm)) {
+    const value = blockAt(html, m.index! + m[0].length);
+    if (!value || isAssetTableSource(value)) continue;
+    if (!map.has(m[1])) map.set(m[1], value);
+  }
   return map;
 }
 
@@ -127,11 +162,17 @@ export function isAssetTableSource(src: string): boolean {
   return (src.match(/\/\/\s*(?:char|prop|place)_[a-z0-9_]+/g) ?? []).length >= 2;
 }
 
-/** `= ` の直後から、宣言の値の範囲を返す(`{`/`[` は対応括弧まで、それ以外は行末まで) */
+/**
+ * `= ` の直後から、宣言の値の範囲を返す。
+ * `{`/`[` は対応括弧まで。関数式・IIFE(`(function () {...})()`・`(g,D)=>{...}`)は
+ * 本体の `{...}` まで(ここを行末で切ると ep013 の `const MILL = (function () {` のように
+ * 装置まるごとが空になり、その装置が使う素材を全部取りこぼす)。それ以外は行末まで。
+ */
 export function declValue(src: string, from: number): string {
   let i = from;
   while (i < src.length && /\s/.test(src[i])) i++;
   if (src[i] === "{" || src[i] === "[") return blockAt(src, i, src[i] as "{" | "[");
+  if (src[i] === "(" || src.startsWith("function", i)) return blockAt(src, i);
   const nl = src.indexOf("\n", i);
   return src.slice(i, nl < 0 ? src.length : nl);
 }
@@ -275,6 +316,17 @@ function main(): void {
     );
     process.exit(0);
   }
+  /* 解析器の自己検査。空振りしたまま緑を返さない(ep013 のラッパ形式で0件になった事故) */
+  const cov = parseCoverage(html);
+  if (cov.assigned > 0 && cov.parsed / cov.assigned < MIN_PARSE_COVERAGE) {
+    console.error(
+      `ERROR: 検査不能 — SCENES への代入 ${cov.assigned} 件のうち、本体を解析できたのは ${cov.parsed} 件だけです。\n` +
+        `  この検査器が composition の書き方に追随できていません(緑にはできません)。\n` +
+        `  parseClipBlocks / parseHelperBlocks の対応形を増やしてから再実行してください。`
+    );
+    process.exit(2);
+  }
+
   const storyboard = parseStoryboardRows(readFileSync(storyboardPath, "utf8"));
   const implemented = resolveClipAssets(html);
   const missing = findMissingAssets(storyboard, implemented);

@@ -56,7 +56,8 @@ description: このチャンネルの新規エピソード動画を制作する�
 
 ## 0. 準備
 
-- epId は `epNNN-<slug>`(例 ep001-<slug>)。`episodes/<epId>/episode.json` を作成(episodeId / subject / targetDurationSec / status: "researched"の前は無し→調査完了後に設定)
+- epId は `epNNN-<slug>`(例 ep001-<slug>)。`episodes/<epId>/episode.json` を作成(episodeId / subject / targetDurationSec / **startedAt(現在時刻のISO文字列)** / status: "researched"の前は無し→調査完了後に設定)
+  - `startedAt` は工程12の `npm run finalize` が**実測の所要時間とコストを機械計測する起点**になる(無いと metrics が空欄になる)
 - VOICEVOX起動確認: `curl -s http://127.0.0.1:50021/version`
 
 ## 1. 調査 → `research.md`
@@ -133,6 +134,8 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 
 `timing.json` から clipセクション・字幕・プリミックス音声の配線・素材テーブル(storyboard.md の使用素材列 → library.json → PNGのアルファから不透明bboxを実測)・共通ヘルパー(`assets/hf/hf-helpers.js`)・章グループの `SPLICE` マーカー・未実装clipのフォールバックまでを生成する。**この時点で `npm run check` が通る**(未実装clip数が warning に出るだけ)。`--groups` は storyboard.md の章割に合わせる。
 
+あわせて **`_frag/<グループ>.brief.md`(実装ブリーフ)** をグループ数ぶん生成する。この回の設計(storyboard の clip表以外)・担当clipの表・その範囲で使える素材のキーと実寸・共通ヘルパーAPI・守る契約が1枚に入っている。
+
 **これにより章グループを最初から並列で起動できる**(骨格を1体のエージェントに作らせると、後続グループがその完了まで待つ)。
 
 **共通ヘルパーは書き直させない**: `assets/hf/hf-helpers.js` が素材配置(`pic` / `stage`)・紙の名札(`plate`)・木札(`placard`)・吹き出し(`bubble`)・章カード(`chapterCard`)・手描き線(`draw` / `pointer` / `cutArrow` / `blob` / `xMark`)・光と粒(`skyGlow` / `shafts` / `motes`)・シード付きPRNG(`prng`)を持つ。回固有の部品だけを実装させる。
@@ -142,8 +145,14 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 - **10分超は章グループ並列で起動する**(visual-directorと同じ分担。共有様式・スパイン演出は実装オーナー1グループ、他は同じ見え方を再現)。
   骨格は上の scaffold で機械生成済みなのでグループ間に依存は無い — **全グループを1つのメッセージにまとめて同時発行する**(冒頭原則の「並列起動の実行形」)。
   直列にすると壁時計はグループ数ぶん積み上がる(実測例: 114分・30分・137分の3グループを直列に回して281分。並列なら137分)
-- **グループの粒度は「章」ではなく「clip数」で切る — 1グループ 40〜50clip を上限の目安とする**。
-  1体のエージェントのコストは**ターン数のほぼ2乗**で効く(cache readは毎ターン全コンテキストに課金され、コンテキストはターン数に比例して伸びるため)。
+- **コストは「グループの割り方」ではなく「総ターン数」で決まる**(実測)。
+  ある回の実装6本のターン単価は $0.138〜$0.172 で、**担当clip数とは相関しなかった**(57ターン$8.1 / 103ターン$14.2 / 157ターン$27.0)。
+  毎ターン持ち回る固定分(システム+参照物)が自分の出力の累積より大きいため、細かく割ってもその固定分は減らない(体数ぶん増える)。
+  したがって粒度の規定は **1体あたり80ターンの予算**とする(超えそうなら報告させる。エージェント定義に内蔵)。
+- **`npm run check` は実装者に走らせない**(並列時はルートの index.html を奪い合って互いを壊す)。スプライス後にメインセッションが1回走らせる。
+- **発注プロンプトには scaffold が出す「ブリーフのパス」だけを渡す**(storyboard.md・composition.html・hf-helpers.js のパスを渡さない — 探索の往復がコストの本体)。
+- **共有装置のオーナーを先に走らせた場合、完了後に `npx tsx src/pipeline/frag-api.ts episodes/<epId>/_frag/<owner>.js` で API 表を作り、他グループへはそのパスだけを渡す**(実測 96KB → 8KB)。
+  ※旧記述「1体のコストはターン数のほぼ2乗/3体に割れば1/3」は実測で否定された。
   実測例: 最大グループは 200ターン・平均23万tok・**単独 $57**。同じ量を3体に割れば読み込み分は概算で 1/3 になる。
   壁時計も最遅グループに律速されるので、**グループ間のclip数を ±20%以内に均す**(章境界はグループ境界に合わせなくてよい。共有様式のオーナーだけ決めておけばよい)。
   `--groups` は全clipをちょうど1回ずつ覆うこと(覆い漏れ・重なりは scaffold が exit 2 で止める)
@@ -158,10 +167,11 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 
 **この工程を飛ばすとBGMもSEも一切鳴らない。** 工程として書かれていなかった時期に、あるエピソードが全編無音のまま check緑 → レンダー → 承認 → コミットまで通った(2026-08-01 の /system-refine で工程化)。
 
-1. `npm run audio-cues episodes/<epId>` — **SEキューを composition の台帳から機械生成する**(手で書かない)。
+1. **BGM の計画を書く** — `episodes/<epId>/bgm-plan.json`(包絡線 `envelope` × 曲の割り当て `assignment`。契約は `src/schemas/bgm-plan.schema.json`)。
+   storyboard の「BGM」節が正本で、これはその機械可読版。曲を差し替える指示は `assignment` だけを書き換える(包絡線を写し直さない)
+2. `npm run audio-cues episodes/<epId>` — **SEキューを composition の台帳から、BGMキューを bgm-plan.json から機械生成する**(手で書かない)。
    scene-implementer が出す `window.__G<n>_SE_CUES` が入力。台帳が無い/素材が見つからない場合はここで止まるので、実装へ差し戻す
-2. **BGM を書き足す**。`audio-cues.json` の `bgm[]` だけは機械では起こせない — storyboard の「BGM」節(全編の敷き方・停止/復帰・章ごとの増減・フェード)が正本。
-   ミックスにフェード機能は無いので、包絡線は 0.4秒刻みの区間に割って volume で階段状に再現する(素材側は `mediaStart` を連続させれば波形は途切れない)。音源は `assets/audio/LICENSES.md` に記録のあるものだけ
+   SE台帳の内容ハッシュが `audio-cues.json` に埋まり、以後 `check:audio` が composition と突合する(ミックス後にSEを足した/動かしたまま焼き直していない状態を捕まえる)
 3. `npm run audio-mix episodes/<epId>` — SE音量を素材ごとの実測ラウドネスから -22 LUFS へ揃え、リミッタ(-1.5 dBFS)を通して `narration/master.mp3` を焼き、**composition.html の `<audio id="master" src>` をこの master へ差し替える**(2026-08-01 からツール側で行う。以前はここが唯一の手作業で、無音事故と同じ入口だった)
 4. `npm run check:audio episodes/<epId>` が緑になること(工程9とレンダー前ゲートでも自動で走る)
 
@@ -170,7 +180,7 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 実装完了後、**レンダリングを焼く前に** HyperFrames プレビューでユーザーが確認できる:
 
 ```
-cp episodes/<epId>/composition.html index.html   # HFのエントリはルートのindex.html。作業中epを指すよう必ず更新する
+npm run use episodes/<epId>   # HFのエントリ(ルートindex.html)を作業中epに向ける
 npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localhost:<port> を開く
 ```
 
@@ -181,7 +191,7 @@ npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localho
 夜間レンダーを一発で通すため、機械ゲートを日中に前倒しで実行する:
 
 ```
-cp episodes/<epId>/composition.html index.html   # HFのエントリはルートのindex.html。作業中epを指すよう必ず更新する
+npm run use episodes/<epId>   # HFのエントリ(ルートindex.html)を作業中epに向ける
 npm run check                                    # check:visual(視覚多様性)→ HF lint+runtime+layout+motion+contrast
 npm run check:audio episodes/<epId>              # 音声の配線(cues/master/BGMが実際に乗っているか)
 npm run check:assets episodes/<epId>             # 絵コンテの使用素材と実装の突合
@@ -234,7 +244,7 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 
 **承認後の完了処理(このジョブの終点。レンダーはしない):**
 
-- `npm run usage -- --since <制作開始日>` で実測コストと並列度を確認し、`npm run finalize episodes/<epId> -- --hours <実測時間> --images <画像生成数> --cost <costUsd>` を実行する
+- `npm run finalize episodes/<epId> -- --images <画像生成数>` を実行する。**所要時間とコストは finalize がセッション記録(サブエージェントの記録を含む)から機械計測する**(episode.json の `startedAt` が起点。人の申告値を渡さない)。出力に出る**ターン予算超過のエージェント**が次回の是正対象
   (status更新・metrics追記・backlog消し込み・git commit を一括実行。手作業で個別に行わない)
 - キュー登録の確認: Factory UI 経由(ヘッドレス)ならゲート承認時にサーバーが自動登録済み。**対話セッションの場合のみ** `curl -s -X POST http://127.0.0.1:4700/api/render-queue/enqueue -H 'Content-Type: application/json' -d '{"dir":"<チャンネルフォルダ名>","epId":"<epId>"}'` で登録する(サーバー未起動で失敗したら、Factory UI のエピソード詳細から「夜間レンダーキューへ」を押すようユーザーへ案内)
 - ここで `<done>` を出して終了する。**status "final" は夜のレンダー成功時にサーバーが書く**(このジョブでは書かない)

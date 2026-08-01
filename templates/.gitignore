@@ -44,3 +44,7 @@ snapshots/
 **/publish/_thumb-old-*/
 .thumbnails/
 .g2preview/
+
+# HyperFrames のエントリ。episodes/<epId>/composition.html の写しで、
+# `npm run use <epId>` がいつでも作り直せる(1話ごとに約500KBの全書き換え差分になるため追跡しない)
+/index.html

@@ -99,6 +99,9 @@ const IDENTICAL = [
   // 2026-08-01 追加(コスト・並列度の実測。全経路で使う)
   "src/pipeline/usage-report.ts",
   "src/pipeline/usage-report.test.ts",
+  // 2026-08-02 追加(HFエントリの切替。shorts でも使う)
+  "src/pipeline/use-episode.ts",
+  "src/pipeline/use-episode.test.ts",
   "src/schemas/metadata.schema.json",
   "src/schemas/episode-ledger.schema.json",
   "src/schemas/thumb-test.schema.json",
@@ -141,6 +144,12 @@ const HF_IDENTICAL = [
   "src/pipeline/audio-mix.test.ts",
   "src/pipeline/build-audio-cues.ts",
   "src/pipeline/build-audio-cues.test.ts",
+  // 2026-08-02 追加(BGM包絡線の契約化・共有装置のAPI抽出)
+  "src/pipeline/build-bgm-cues.ts",
+  "src/pipeline/build-bgm-cues.test.ts",
+  "src/pipeline/frag-api.ts",
+  "src/pipeline/frag-api.test.ts",
+  "src/schemas/bgm-plan.schema.json",
 ];
 
 // コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。

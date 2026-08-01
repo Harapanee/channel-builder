@@ -7,7 +7,12 @@ import {
   emptyUsage,
   overlapStats,
   priceKeyOf,
+  activeSpanMs,
+  subagentsDirFor,
+  summarizeAgent,
+  totalCostOf,
   transcriptDirFor,
+  wallClockSpanMs,
 } from "./usage-report";
 
 test("モデルIDから単価表を引く(未知は最上位モデル相当で見積もる)", () => {
@@ -85,6 +90,81 @@ test("1メッセージに並べたAgent数を数える(直列起動の検出)", 
 
   assert.deepEqual(perMessage, [2, 1]);
   assert.deepEqual(launches.map((l) => l.label), ["G1", "G2", "G3"]);
+});
+
+test("同時発行は message.id でまとめる(記録は tool_use ごとに別行で書かれる)", () => {
+  /* Claude Code の jsonl は1つのアシスタントメッセージを content ブロックごとに
+     別行で書く。行単位で数えると**必ず「1メッセージ1本」**になり、
+     並列起動できていても「全部が直列」と誤警告していた(ep013 は実際には6本同時)。 */
+  const line = (id: string, toolId: string, desc: string, ts: string) => ({
+    timestamp: ts,
+    message: { id, content: [{ type: "tool_use", id: toolId, name: "Agent", input: { description: desc } }] },
+  });
+  const { launches, perMessage } = agentLaunches([
+    line("msg_A", "t1", "G1", "2026-08-01T00:00:00.000Z"),
+    line("msg_A", "t2", "G2", "2026-08-01T00:00:00.100Z"),
+    line("msg_A", "t3", "G3", "2026-08-01T00:00:00.200Z"),
+    line("msg_B", "t4", "G4", "2026-08-01T01:00:00.000Z"),
+  ]);
+
+  assert.deepEqual(perMessage, [3, 1], "3本同時発行 + 1本");
+  assert.equal(launches.length, 4);
+});
+
+test("壁時計: 記録の最初から最後までの経過を返す", () => {
+  const span = wallClockSpanMs([
+    { timestamp: "2026-08-01T18:05:00.000Z" },
+    { timestamp: "2026-08-01T21:40:00.000Z" },
+    { timestamp: "2026-08-01T19:00:00.000Z" },
+    { message: {} },
+  ]);
+  assert.equal(span / 3_600_000, 3.5833333333333335);
+  assert.equal(wallClockSpanMs([]), 0);
+});
+
+test("実作業時間: 一定以上あいた区間(休止)は経過から除く", () => {
+  const at = (h: number, m: number) => ({ timestamp: `2026-08-01T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z` });
+  /* 18:00→18:30 作業 / 3時間半あく(休止)/ 22:00→22:30 作業 = 実作業1時間、全体4.5時間 */
+  const entries = [at(18, 0), at(18, 30), at(22, 0), at(22, 30)];
+
+  assert.equal(wallClockSpanMs(entries) / 3_600_000, 4.5);
+  assert.equal(activeSpanMs(entries, 30 * 60_000) / 3_600_000, 1);
+  /* 閾値を4時間にすれば休止も作業とみなす */
+  assert.equal(activeSpanMs(entries, 4 * 3_600_000) / 3_600_000, 4.5);
+});
+
+test("サブエージェントの記録は <セッションID>/subagents/ にある", () => {
+  assert.equal(
+    subagentsDirFor("/p/-Users-x", "a22ca025-160a-4667-a6ba-b5762ad11365.jsonl"),
+    "/p/-Users-x/a22ca025-160a-4667-a6ba-b5762ad11365/subagents"
+  );
+});
+
+test("エージェント1本の要約: コスト・ターン数・ターン単価", () => {
+  const turn = (out: number, cacheRead: number) => ({
+    message: {
+      model: "claude-opus-5",
+      usage: { output_tokens: out, cache_read_input_tokens: cacheRead, input_tokens: 10 },
+    },
+  });
+  const s = summarizeAgent("G5実装", [turn(1000, 100_000), turn(2000, 200_000), { message: {} }]);
+
+  assert.equal(s.label, "G5実装");
+  assert.equal(s.turns, 2);
+  assert.equal(s.ctxMaxTokens, 200_010);
+  /* 出力3000tok×$25 + cacheRead 300k×$0.5 + input 20×$5 = 0.075 + 0.15 + 0.0001 */
+  assert.equal(s.costUsd.toFixed(4), "0.2251");
+  assert.equal(s.costPerTurnUsd.toFixed(3), "0.113");
+});
+
+test("合計コストはモデル別の総和", () => {
+  assert.equal(
+    totalCostOf({
+      "claude-opus-5": { ...emptyUsage(), output: 1_000_000 },
+      "claude-haiku-4-5": { ...emptyUsage(), output: 1_000_000 },
+    }),
+    30
+  );
 });
 
 test("並列度: 重なりの最大本数と 総和/経過 を出す", () => {

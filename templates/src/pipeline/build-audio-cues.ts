@@ -8,19 +8,30 @@
  *   `window.__G<n>_SE_CUES` に機械可読で出している。だから**人が書き写す必要はない**。
  *   書き写しはトークンを食うだけでなく、時刻ずれ・取りこぼしという事故の温床でもある。
  *
- * BGMについて:
- *   BGMの包絡線(敷き方・停止/復帰・章ごとの増減)は storyboard の散文が正本で、機械では
- *   起こせない。既存の audio-cues.json があればその bgm 配列を引き継ぎ、無ければ空にして
- *   「BGMを書き足すこと」を促す(空のまま audio-mix しても check-audio の no_bed で止まる)。
+ * BGMについて(2026-08-02):
+ *   BGMの包絡線は storyboard の散文が正本で実装からは抽出できないが、**宣言には落とせる**。
+ *   `episodes/<epId>/bgm-plan.json`(包絡線 × 曲の割り当て)から build-bgm-cues が生成する。
+ *   これが無い ep は既存 audio-cues.json の bgm 配列を引き継ぐ(後方互換)。
+ *   計画も既存も無ければ空になり、check-audio の no_bed で止まる。
  *
  * 使い方:
  *   npx tsx src/pipeline/build-audio-cues.ts episodes/<epId> [--bgm <bgm配列のJSON>] [--dry-run]
  *
  * exit: 0 = OK / 1 = 素材が見つからない等の契約違反 / 2 = 実行エラー
  */
+import Ajv from "ajv";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AudioCue, AudioCues } from "./audio-mix";
+import {
+  buildBgmCues,
+  expandEnvelope,
+  silentGaps,
+  validateBgmPlan,
+  type BgmPlan,
+} from "./build-bgm-cues";
 
 export type SeLedgerEntry = { clip: string; t: number; se: string };
 
@@ -38,6 +49,26 @@ export function parseSeLedgers(html: string): SeLedgerEntry[] {
     }
   }
   return out.sort((a, b) => a.t - b.t || a.clip.localeCompare(b.clip));
+}
+
+/**
+ * SE台帳の内容ハッシュ。audio-cues.json に埋め、check-audio がレンダー前に突合する。
+ *
+ * なぜ要るか: 焼き直し漏れの検査は「cues より master が新しいか」しか見ておらず、
+ * **ミックス後に実装側でSEを足したり時刻を動かしたりしても全部緑**だった。
+ * SEの正本は composition の `window.__G<n>_SE_CUES` なので、そこから直接測る。
+ */
+export function seLedgerHash(entries: SeLedgerEntry[]): string {
+  const canon = [...entries]
+    .sort((a, b) => a.t - b.t || a.clip.localeCompare(b.clip) || a.se.localeCompare(b.se))
+    .map((e) => `${e.clip}@${e.t.toFixed(3)}:${e.se}`)
+    .join("|");
+  return createHash("sha1").update(canon).digest("hex").slice(0, 16);
+}
+
+/** composition.html から直接 SE台帳ハッシュを求める */
+export function seLedgerHashOf(html: string): string {
+  return seLedgerHash(parseSeLedgers(html));
 }
 
 /** SE名(台帳の `se` 値)から実ファイルの相対パスを引く表を作る */
@@ -85,6 +116,26 @@ function fail(message: string): never {
   process.exit(2);
 }
 
+/** bgm-plan.json の形を契約(JSON Schema)で検証する */
+function schemaErrors(plan: unknown): string[] {
+  const schemaPath = path.join(process.cwd(), "src", "schemas", "bgm-plan.schema.json");
+  if (!existsSync(schemaPath)) return [];
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  const validate = ajv.compile(JSON.parse(readFileSync(schemaPath, "utf8")));
+  if (validate(plan)) return [];
+  return (validate.errors ?? []).map((e) => `bgm-plan.json${e.instancePath}: ${e.message}`);
+}
+
+/** 音源の実尺(秒)。曲の尺を計画に手書きさせないため、ここで実測する */
+function probeDurationSec(file: string): number {
+  const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], {
+    encoding: "utf8",
+  });
+  const n = Number((r.stdout ?? "").trim());
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`音源の尺を測れません: ${file}`);
+  return n;
+}
+
 /** assets/audio 配下の音源を再帰的に集める(プロジェクトルート基準の相対パス) */
 function listAudioFiles(root: string): string[] {
   const base = path.join(root, "assets", "audio");
@@ -128,9 +179,38 @@ function main(): void {
     ? JSON.parse(readFileSync(cuesPath, "utf8"))
     : {};
 
+  /* BGM: bgm-plan.json(包絡線 × 曲の割り当ての宣言)があればそこから機械生成する。
+     無ければ既存 cues の bgm を引き継ぐ(--bgm で明示指定も可) */
   const bgmArg = args.indexOf("--bgm");
-  const bgm: AudioCue[] =
-    bgmArg >= 0 ? JSON.parse(readFileSync(args[bgmArg + 1], "utf8")) : (prev.bgm ?? []);
+  const planPath = path.join(epDir, "bgm-plan.json");
+  let bgm: AudioCue[];
+  let bgmSource: string;
+  if (bgmArg >= 0) {
+    bgm = JSON.parse(readFileSync(args[bgmArg + 1], "utf8"));
+    bgmSource = "--bgm で指定";
+  } else if (existsSync(planPath)) {
+    const plan: BgmPlan = JSON.parse(readFileSync(planPath, "utf8"));
+    const total = readTotalDuration(html);
+    /* 形は JSON Schema、意味(隙間・重なり・未知の曲キー)は validateBgmPlan で見る */
+    const errors = [...schemaErrors(plan), ...validateBgmPlan(plan, total)];
+    if (errors.length > 0) {
+      console.error(`NG: bgm-plan.json の契約違反:\n  - ${errors.join("\n  - ")}`);
+      process.exit(1);
+    }
+    const lengths: Record<string, number> = {};
+    for (const [key, t] of Object.entries(plan.tracks)) {
+      if (!existsSync(path.join(root, t.src))) fail(`bgm-plan.json の音源がありません: ${t.src}`);
+      lengths[key] = probeDurationSec(path.join(root, t.src));
+    }
+    bgm = buildBgmCues(plan, lengths) as unknown as AudioCue[];
+    bgmSource = "bgm-plan.json から生成";
+    for (const [a, b] of silentGaps(expandEnvelope(plan.envelope), total)) {
+      console.log(`  BGM完全停止: ${a.toFixed(3)}–${b.toFixed(3)}s`);
+    }
+  } else {
+    bgm = prev.bgm ?? [];
+    bgmSource = prev.bgm ? "既存 audio-cues.json から引き継ぎ" : "無し";
+  }
 
   const narration = ["narration/narration.wav", "narration/narration.mp3"]
     .map((p) => path.join(path.relative(root, epDir), p))
@@ -142,12 +222,10 @@ function main(): void {
     narration,
     bgm,
     se: cues,
+    seLedgerHash: seLedgerHash(ledger),
   };
 
-  console.log(
-    `SE台帳 ${ledger.length}件 → キュー ${cues.length}件 / BGM ${bgm.length}区間` +
-      `${bgmArg >= 0 ? "(--bgm で指定)" : prev.bgm ? "(既存 audio-cues.json から引き継ぎ)" : ""}`
-  );
+  console.log(`SE台帳 ${ledger.length}件 → キュー ${cues.length}件 / BGM ${bgm.length}区間(${bgmSource})`);
   if (missing.length > 0) {
     console.error(
       `NG: assets/audio 配下に見つからないSEがあります: ${missing.join(", ")}` +

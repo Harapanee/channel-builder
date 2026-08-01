@@ -30,7 +30,8 @@
     "qa:frames": "tsx src/pipeline/qa-flat-frames.ts",
     "probe": "tsx src/pipeline/probe-frames.ts",
     "audio-cues": "tsx src/pipeline/build-audio-cues.ts",
-    "usage": "tsx src/pipeline/usage-report.ts"
+    "usage": "tsx src/pipeline/usage-report.ts",
+    "use": "tsx src/pipeline/use-episode.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

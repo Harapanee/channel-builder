@@ -41,6 +41,12 @@ export interface AudioCues {
   narration: string;
   bgm: AudioCue[];
   se: AudioCue[];
+  /**
+   * 生成元 composition の SE台帳(`window.__G<n>_SE_CUES`)の内容ハッシュ。
+   * build-audio-cues が書き、check-audio が composition から再計算して突合する
+   * (ミックス後にSEを足した/動かしたまま焼き直していない状態を捕まえるため)。
+   */
+  seLedgerHash?: string;
 }
 
 /** SE の実効ラウドネスを揃える目標値。ナレーション(実測 -14.7 LUFS)の約7dB下 */

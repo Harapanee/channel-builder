@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "bgm-plan.schema.json",
+  "title": "BGM計画(包絡線 × 曲の割り当て)",
+  "description": "episodes/<epId>/bgm-plan.json。storyboard の「BGM」節(散文が正本)の機械可読版で、npm run audio-cues が audio-cues.json の bgm[] を生成する。曲を差し替える指示は assignment だけを書き換える。",
+  "type": "object",
+  "required": ["baseVolume", "tracks", "envelope", "assignment"],
+  "additionalProperties": true,
+  "properties": {
+    "baseVolume": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "BGMの基準音量(ナレーションの下に敷く床)。包絡線の倍率がこれに掛かる"
+    },
+    "tracks": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "曲キー → 音源。尺は ffprobe で実測するので書かない",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["src"],
+        "properties": {
+          "src": {
+            "type": "string",
+            "pattern": "^assets/audio/.+\\.(mp3|wav|m4a|ogg)$",
+            "description": "プロジェクトルート基準。assets/audio/LICENSES.md に記録のあるものだけ"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "envelope": {
+      "type": "array",
+      "minItems": 1,
+      "description": "時刻ごとの音量倍率。**覆っていない時間帯 = BGM完全停止**",
+      "items": {
+        "oneOf": [
+          {
+            "type": "array",
+            "description": "[開始秒, 終了秒, 音量倍率]",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": { "type": "number", "minimum": 0 }
+          },
+          {
+            "type": "object",
+            "description": "直線フェード。start から stepSec 刻みで steps 段、gain[0] → gain[1] へ",
+            "required": ["start", "gain", "steps", "stepSec"],
+            "additionalProperties": false,
+            "properties": {
+              "start": { "type": "number", "minimum": 0 },
+              "gain": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": { "type": "number", "minimum": 0 }
+              },
+              "steps": { "type": "integer", "minimum": 2 },
+              "stepSec": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          }
+        ]
+      }
+    },
+    "assignment": {
+      "type": "array",
+      "minItems": 1,
+      "description": "[開始秒, 終了秒, 曲キー]。全尺を隙間なく覆うこと(隙間はその区間だけ無音になる)",
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 3,
+        "items": [
+          { "type": "number", "minimum": 0 },
+          { "type": "number", "minimum": 0 },
+          { "type": "string", "minLength": 1 }
+        ]
+      }
+    },
+    "crossfade": {
+      "type": "object",
+      "description": "曲の切り替え境界に挟む段(既定 0.4秒×2段)。境界の前後が停止帯のときは挟まない",
+      "required": ["stepSec", "out", "in"],
+      "additionalProperties": false,
+      "properties": {
+        "stepSec": { "type": "number", "exclusiveMinimum": 0 },
+        "out": { "type": "array", "minItems": 1, "items": { "type": "number", "minimum": 0 } },
+        "in": { "type": "array", "minItems": 1, "items": { "type": "number", "minimum": 0 } }
+      }
+    }
+  }
+}

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSeCues, indexAudioFiles, parseSeLedgers, readTotalDuration } from "./build-audio-cues";
+import {
+  buildSeCues,
+  indexAudioFiles,
+  parseSeLedgers,
+  readTotalDuration,
+  seLedgerHash,
+  seLedgerHashOf,
+} from "./build-audio-cues";
 
 const HTML = `<html><body>
   <div id="root" data-composition-id="animal-ep012" data-start="0" data-duration="707.689"></div>
@@ -51,4 +58,24 @@ test("素材が見つからないSEは missing として返す(黙って落と�
 
 test("総尺は composition のルート要素から読む", () => {
   assert.equal(readTotalDuration(HTML), 707.689);
+});
+
+test("SE台帳のハッシュ: 内容が同じなら一致し、時刻が動けば変わる", () => {
+  const a = seLedgerHash([{ clip: "cL01", t: 0.15, se: "pop" }, { clip: "cL04", t: 12.4, se: "don" }]);
+  const b = seLedgerHash([{ clip: "cL01", t: 0.15, se: "pop" }, { clip: "cL04", t: 12.4, se: "don" }]);
+  assert.equal(a, b);
+
+  const moved = seLedgerHash([{ clip: "cL01", t: 0.15, se: "pop" }, { clip: "cL04", t: 12.9, se: "don" }]);
+  assert.notEqual(a, moved, "SEの時刻が動けばハッシュが変わる(焼き直しが要る)");
+
+  const added = seLedgerHash([
+    { clip: "cL01", t: 0.15, se: "pop" },
+    { clip: "cL04", t: 12.4, se: "don" },
+    { clip: "cL09", t: 30, se: "chin" },
+  ]);
+  assert.notEqual(a, added, "SEが増えればハッシュが変わる");
+});
+
+test("SE台帳のハッシュは composition から直接も計算できる", () => {
+  assert.equal(seLedgerHash(parseSeLedgers(HTML)), seLedgerHashOf(HTML));
 });

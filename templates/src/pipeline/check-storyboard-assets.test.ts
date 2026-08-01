@@ -4,9 +4,11 @@ import {
   findMissingAssets,
   isAssetTableSource,
   keysIn,
+  MIN_PARSE_COVERAGE,
   parseAssetTable,
   parseClipBlocks,
   parseConstAliases,
+  parseCoverage,
   parseStoryboardRows,
   resolveClipAssets,
 } from "./check-storyboard-assets";
@@ -103,4 +105,31 @@ test("findMissingAssets: 別のキャラ素材を使っているなら ADVISE �
 test("findMissingAssets: 実装の無い clip は判定しない(被覆検査の担当)", () => {
   const sb = new Map([["cL99", ["char_x_y"]]]);
   assert.deepEqual(findMissingAssets(sb, new Map()), []);
+});
+
+test("parseCoverage: SCENES への代入数と、本体を解析できた数を返す", () => {
+  const html = `
+const SCENES = {};
+SCENES.cL01 = function (c, g, D) { pic(c, "antWorkerCanonical"); };
+SCENES.cL02 = (g, D) => { paper(c); };
+SCENES["cL03"] = SC("cL03", function (c, g, D) { stage(c, "nestBase"); });
+`;
+  const cov = parseCoverage(html);
+  assert.equal(cov.assigned, 3, "SCENES への代入は3件");
+  assert.equal(cov.parsed, 3, "3件とも本体を取り出せている");
+});
+
+test("解析器が clip 本体を取れないときは検査不能とわかる(黙って緑にしない)", () => {
+  /* ep013 は `SCENES.cL01 = SC("cL01", function (c, g, D) {` というラッパ形式を
+     使ったため、旧解析器は clip を1件も取り出せず「0 clip を検査 → OK」で
+     exit 0 していた。**解析できない検査は緑ではなく「検査不能」**でなければならない。 */
+  const html = `
+const SCENES = {};
+SCENES.cL01 = MAKE\`cL01\`;
+SCENES.cL02 = MAKE\`cL02\`;
+`;
+  const cov = parseCoverage(html);
+  assert.equal(cov.assigned, 2);
+  assert.equal(cov.parsed, 0);
+  assert.ok(cov.parsed / cov.assigned < MIN_PARSE_COVERAGE, "被覆率が下限を下回る=検査不能");
 });

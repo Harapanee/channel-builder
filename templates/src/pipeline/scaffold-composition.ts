@@ -29,6 +29,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
+import { extractApi } from "./frag-api";
 
 type TimingLine = { lineId: string; text: string; startSec: number; endSec: number };
 type Timing = { lines: TimingLine[]; totalDurationSec?: number; durationSec?: number };
@@ -85,6 +86,34 @@ async function opaqueBBox(file: string): Promise<[number, number, number, number
   if (x1 < 0) return [0, 0, 1, 1];
   const r = (n: number) => Math.round(n * 1e4) / 1e4;
   return [r(x0 / rw), r(y0 / rh), r((x1 + 1) / rw), r((y1 + 1) / rh)];
+}
+
+/**
+ * storyboard.md を「clip表の行」と「それ以外の設計の散文」に割る。
+ *
+ * なぜ要るか(ep013 実測): 実装エージェントは毎回 storyboard(166KB)の見出しを grep し、
+ * 冒頭の設計節を sed で抜き、自分の担当範囲の行を探す — という往復に十数ターンを使っていた。
+ * この分割は機械でできるので、scaffold がグループ別ブリーフとして配る。
+ */
+export function splitStoryboard(md: string): { design: string; rows: Map<string, string>; header: string } {
+  const rows = new Map<string, string>();
+  const design: string[] = [];
+  let header = "";
+  for (const line of md.split("\n")) {
+    const m = /^\|\s*(cL\d+[a-z]?)\s*\|/.exec(line);
+    if (m) {
+      rows.set(m[1], line);
+      continue;
+    }
+    /* clip表のヘッダ行と区切り行は設計の散文には混ぜず、表の見出しとして取っておく */
+    if (/^\|\s*clipId\s*\|/i.test(line)) {
+      header = line;
+      continue;
+    }
+    if (/^\|[\s:|-]+\|$/.test(line)) continue;
+    design.push(line);
+  }
+  return { design: design.join("\n").replace(/\n{3,}/g, "\n\n").trim(), rows, header };
 }
 
 /** storyboard.md の clip表「使用素材」列から assetId を拾う */
@@ -151,6 +180,97 @@ export function parseGroups(spec: string | undefined, clipIds: string[]): { labe
   for (let i = 0; i < n; i++) {
     const slice = clipIds.slice(i * size, (i + 1) * size);
     if (slice.length) out.push({ label: `G${i + 1}`, from: slice[0], to: slice[slice.length - 1] });
+  }
+  return out;
+}
+
+/**
+ * 章グループごとの実装ブリーフを `_frag/<label>.brief.md` へ書く。
+ *
+ * ねらい(ep013 実測に基づく): 実装エージェントのコストは**ターン数にほぼ線形**
+ * ($0.138〜$0.172/ターン)で、担当clip数とは相関しなかった。
+ * 立ち上がりの探索(storyboard の見出し grep → 冒頭節の sed → 自範囲の抽出 →
+ * hf-helpers の関数探し)は毎回同じことをしており、機械で先に配れる。
+ * ブリーフ1枚に畳めば、その往復ぶんのターンがまるごと消える。
+ */
+function writeGroupBriefs(o: {
+  epDir: string;
+  epId: string;
+  groups: { label: string; from: string; to: string }[];
+  clipIds: string[];
+  starts: number[];
+  endAll: number;
+  lines: TimingLine[];
+  assetEntries: string[];
+  helpersSrc: string;
+}): string[] {
+  const sbPath = path.join(o.epDir, "storyboard.md");
+  const sb = fs.existsSync(sbPath)
+    ? splitStoryboard(fs.readFileSync(sbPath, "utf8"))
+    : { design: "(storyboard.md が無い)", rows: new Map<string, string>(), header: "" };
+  const helperApi = extractApi(o.helpersSrc).filter((e) => !e.name.startsWith("hf"));
+  const fragDir = path.join(o.epDir, "_frag");
+  fs.mkdirSync(fragDir, { recursive: true });
+
+  const index = new Map(o.clipIds.map((id, i) => [id, i]));
+  const out: string[] = [];
+  for (const g of o.groups) {
+    const from = index.get(g.from)!;
+    const to = index.get(g.to)!;
+    const ids = o.clipIds.slice(from, to + 1);
+    const startSec = o.starts[from];
+    const endSec = to + 1 < o.starts.length ? o.starts[to + 1] : o.endAll;
+
+    /* 担当範囲で実際に指定されている素材だけを載せる(全素材表を配らない) */
+    const usedIds = new Set(
+      ids.flatMap((id) => [...(sb.rows.get(id) ?? "").matchAll(/\b(?:char|prop|place)_[a-z0-9_]+/g)].map((m) => m[0]))
+    );
+    const assetRows = o.assetEntries.filter((line) => {
+      const m = /\/\/\s*((?:char|prop|place)_[a-z0-9_]+)\s*$/.exec(line.trim());
+      return m ? usedIds.has(m[1]) : false;
+    });
+
+    const body = `# ${o.epId} / ${g.label} 実装ブリーフ(scaffold 生成)
+
+**この1枚が入力である。** storyboard.md / composition.html / hf-helpers.js を開き直さないこと —
+探索の往復がコストの本体で、読んだものは残り全ターンのコンテキストに乗り続ける。
+ここに無い情報が要ると判断したときだけ、grep で該当箇所を当てる。
+
+- 担当: **${g.from}–${g.to}**(${ids.length} clip / ${startSec.toFixed(2)}s–${endSec.toFixed(2)}s)
+- 成果物: \`_frag/${g.label}.js\` に \`SCENES.cLxx = ...\` の代入**だけ**(発注元が SPLICE マーカーへ差し込む)
+- 骨格(clip要素・字幕・音声配線・素材テーブル \`A\`)は生成済み。**作り直さない**
+
+## 1. この回の設計(storyboard の clip表以外)
+
+${sb.design}
+
+## 2. 担当clipの表
+
+${sb.header || "| clipId | 開始秒 | 尺 | lineIds | role | 演出記述 | 使用素材 | SE |"}
+|---|---|---|---|---|---|---|---|
+${ids.map((id) => sb.rows.get(id) ?? `| ${id} | | | | | (storyboard に行が無い) | | |`).join("\n")}
+
+## 3. この範囲で使える素材(素材テーブル \`A\` のキー)
+
+${assetRows.length > 0 ? "```js\n" + assetRows.join("\n") + "\n```" : "(この範囲の clip表は素材を指定していない = コード描画)"}
+
+\`p\`=パス / \`ar\`=高さ÷幅 / \`b\`=不透明部の相対bbox。\`pic(host, "キー", o)\` が b を使って「見える大きさ」で置く。
+
+## 4. 共通ヘルパー(assets/hf/hf-helpers.js — 再実装しない)
+
+${helperApi.map((e) => `- \`${e.signature}\`${e.doc ? ` — ${e.doc}` : ""}`).join("\n")}
+
+## 5. 守る契約(破るとレンダーが壊れる)
+
+- 1シーン=1 clipラッパー / タイムラインは paused 登録 / 決定論のみ(\`Date.now\`・\`Math.random\` 禁止。ゆらぎは \`prng(seed)\`)
+- シーン内のテキスト・札は **y<82%** に収める(\`npm run check\` の caption-zone が error 判定する)
+- **SE台帳を必ず出す**: \`window.__${g.label}_SE_CUES = [{ clip, t, se }, ...]\`(\`t\` は composition 先頭からの秒)。
+  出し忘れるとこの章のSEは1件も鳴らない。音源は \`assets/audio/LICENSES.md\` に記録のあるものだけ
+- 共有装置のオーナー以外は、オーナーの \`_frag/<owner>.api.md\`(部品一覧)を読む。**本体JSを全文Readしない**
+`;
+    const file = path.join(fragDir, `${g.label}.brief.md`);
+    fs.writeFileSync(file, body);
+    out.push(file);
   }
   return out;
 }
@@ -356,6 +476,19 @@ window.__timelines["${compId}"] = tl;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, html);
 
+  /* --- グループ別ブリーフ(実装エージェントが読む唯一の入口) --- */
+  const briefs = writeGroupBriefs({
+    epDir,
+    epId,
+    groups,
+    clipIds,
+    starts,
+    endAll,
+    lines,
+    assetEntries: entries,
+    helpersSrc: helpers,
+  });
+
   console.log(`OK: ${outPath}`);
   console.log(`  composition-id : ${compId}`);
   console.log(`  尺             : ${total.toFixed(3)}秒`);
@@ -364,7 +497,13 @@ window.__timelines["${compId}"] = tl;
   console.log(`  素材テーブル   : ${entries.length}件(storyboard.md の使用素材列から。bboxはPNG実測)`);
   if (missing.length) console.log(`  ! library未登録: ${missing.join(", ")}`);
   console.log(`  章グループ     : ${groups.map((g) => `${g.label}=${g.from}-${g.to}`).join(" / ")}`);
-  console.log(`  次: 各グループの scene-implementer が SPLICE マーカー行へ SCENES.cLxx を差し込む`);
+  console.log(
+    `  ブリーフ       : ${briefs
+      .map((b) => `${path.relative(ROOT, b)}(${Math.round(fs.statSync(b).size / 1024)}KB)`)
+      .join(" / ")}`
+  );
+  console.log(`  次: 各グループの scene-implementer に**ブリーフのパスだけ**を渡して起動する`);
+  console.log(`      (storyboard.md / hf-helpers.js / composition.html は渡さない — 探索の往復がコストの本体)`);
 }
 
 /* テストから import したときは走らせない(basename 完全一致でCLI起動だけを判定する) */

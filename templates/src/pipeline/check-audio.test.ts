@@ -117,3 +117,15 @@ test("evaluateAudio: master のピークが天井を超えていたら焼き直�
 test("evaluateAudio: ピークに余裕があれば指摘しない", () => {
   assert.deepEqual(evaluateAudio({ ...OK, peakDb: -1.3 }), []);
 });
+
+test("evaluateAudio: ミックス後に実装のSE台帳が変わったら焼き直しを要求する", () => {
+  /* cues の mtime しか見ていなかったため、ミックス後に scene-implementer が
+     SEを足す/時刻を動かすと**全部緑のまま**だった(SEが鳴らない・ずれる)。
+     SEの正本は composition の __G<n>_SE_CUES なので、そこから直接突合する。 */
+  const codes = evaluateAudio({ ...OK, seLedgerMatches: false }).map((f) => f.code);
+  assert.deepEqual(codes, ["se_ledger_stale"]);
+});
+
+test("evaluateAudio: 台帳ハッシュを持たない古い cues では突合しない(後方互換)", () => {
+  assert.deepEqual(evaluateAudio({ ...OK, seLedgerMatches: null }), []);
+});

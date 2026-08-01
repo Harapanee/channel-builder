@@ -26,6 +26,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { seLedgerHashOf } from "./build-audio-cues";
 
 /** master と narration の尺のずれの許容(秒) */
 export const DURATION_TOLERANCE_SEC = 0.5;
@@ -84,6 +85,11 @@ export interface AudioFacts {
   medianWindowDb: number;
   /** master のトゥルーピーク(dBFS) */
   peakDb: number;
+  /**
+   * composition の SE台帳が audio-cues.json の生成元と一致するか。
+   * null = cues が台帳ハッシュを持たない(2026-08-02 より前に作られた ep)ので突合しない。
+   */
+  seLedgerMatches?: boolean | null;
 }
 
 /** 事実から契約違反を判定する(純粋関数 — I/Oを持たない) */
@@ -135,6 +141,15 @@ export function evaluateAudio(facts: AudioFacts): AudioFinding[] {
       message:
         `master.mp3 のトゥルーピークが ${facts.peakDb.toFixed(1)} dBFS で、天井 ${MASTER_PEAK_CEILING_DB} dBFS を超えています。` +
         "ナレーション+BGM+SEの総和がクリップしています — npm run audio-mix で焼き直してください(リミッタが入ります)",
+    });
+  }
+  if (facts.seLedgerMatches === false) {
+    out.push({
+      code: "se_ledger_stale",
+      message:
+        "composition の SE台帳(window.__G<n>_SE_CUES)が audio-cues.json の生成元と違います。" +
+        "ミックス後にSEが足された/動かされた状態です — " +
+        "npm run audio-cues → npm run audio-mix をやり直してください",
     });
   }
   if (facts.hasMaster && facts.p10WindowDb < SILENCE_FLOOR_DB) {
@@ -210,9 +225,22 @@ function main(): void {
 
   const cuesPath = path.join(epDir, "audio-cues.json");
   const masterPath = path.join(epDir, "narration", "master.mp3");
-  const audio = parseMasterAudio(readFileSync(compositionPath, "utf8"));
+  const compositionHtml = readFileSync(compositionPath, "utf8");
+  const audio = parseMasterAudio(compositionHtml);
   const hasMaster = existsSync(masterPath);
   const windows = hasMaster ? windowRmsDb(masterPath) : [];
+
+  /* SE台帳の突合(cues が台帳ハッシュを持つときだけ)。
+     ハッシュを持たない古い ep は null にして突合しない(後方互換) */
+  let seLedgerMatches: boolean | null = null;
+  if (existsSync(cuesPath)) {
+    try {
+      const cues = JSON.parse(readFileSync(cuesPath, "utf8")) as { seLedgerHash?: string };
+      if (cues.seLedgerHash) seLedgerMatches = cues.seLedgerHash === seLedgerHashOf(compositionHtml);
+    } catch {
+      /* cues が壊れている場合は他の指摘(no_audio_cues 以外)に委ねる */
+    }
+  }
 
   const facts: AudioFacts = {
     hasCues: existsSync(cuesPath),
@@ -227,6 +255,7 @@ function main(): void {
     p10WindowDb: percentile(windows, 0.1),
     medianWindowDb: percentile(windows, 0.5),
     peakDb: hasMaster ? truePeakDb(masterPath) : NaN,
+    seLedgerMatches,
   };
 
   const findings = evaluateAudio(facts);
@@ -234,7 +263,10 @@ function main(): void {
     `音声の配線検査: src=${facts.audioSrc ?? "(なし)"} / master ${
       facts.hasMaster ? `${facts.masterDurationSec.toFixed(2)}s` : "なし"
     } / 音の床 p10=${facts.p10WindowDb.toFixed(1)}dB(中央値 ${facts.medianWindowDb.toFixed(1)}dB)` +
-      ` / ピーク ${Number.isFinite(facts.peakDb) ? facts.peakDb.toFixed(1) : "?"}dBFS(天井 ${MASTER_PEAK_CEILING_DB})`
+      ` / ピーク ${Number.isFinite(facts.peakDb) ? facts.peakDb.toFixed(1) : "?"}dBFS(天井 ${MASTER_PEAK_CEILING_DB})` +
+      ` / SE台帳 ${
+        facts.seLedgerMatches === null ? "未記録(突合なし)" : facts.seLedgerMatches ? "一致" : "不一致"
+      }`
   );
   if (findings.length === 0) {
     console.log("OK: ナレーション+BGM+SEのミックスが正しく配線されています");
