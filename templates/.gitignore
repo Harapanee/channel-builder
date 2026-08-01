@@ -48,3 +48,8 @@ snapshots/
 # HyperFrames のエントリ。episodes/<epId>/composition.html の写しで、
 # `npm run use <epId>` がいつでも作り直せる(1話ごとに約500KBの全書き換え差分になるため追跡しない)
 /index.html
+
+# 実装ブリーフ/装置API(scaffold と frag-api がいつでも作り直せる生成物。
+# 中身は storyboard.md と hf-helpers.js の写しなので、追跡すると同じ内容を二重に持つ)
+**/_frag/*.brief.md
+**/_frag/*.api.md
