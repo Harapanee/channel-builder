@@ -10,6 +10,10 @@
     "episodeId": { "type": "string", "minLength": 1 },
     "subject": { "type": "string", "minLength": 1 },
     "targetDurationSec": { "type": "number", "exclusiveMinimum": 0 },
+    "audioScheme": {
+      "description": "音声の方式。既定 premix(master.mp3 1本)。legacy-tags はプリミックス移行前に完成した ep で、<audio> 直載せのまま check:audio を通すための明示宣言。",
+      "enum": ["premix", "legacy-tags"]
+    },
     "status": {
       "enum": [
         "researched",

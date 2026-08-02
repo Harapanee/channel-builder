@@ -18,6 +18,12 @@
  *      ナレーションの合間に音の床があるか(0.1秒窓RMSの下位10%点)で判定する。
  *      ここが「鳴っていない」を捕まえる本体。
  *
+ * 移行前エピソード(旧方式 = <audio> 直載せ):
+ *   プリミックス移行は「適用は次エピソードから」と決めた。移行前の ep は
+ *   episode.json に `"audioScheme": "legacy-tags"` と書くことで旧方式として検査する
+ *   (ナレーション以外の音源があるか・参照先が実在するか)。宣言が無ければ既定は premix。
+ *   暗黙のフォールバックにしないのは、無警告フォールバックが ep012 の事故の入口だったため。
+ *
  * 使い方:
  *   npx tsx src/pipeline/check-audio.ts episodes/<epId>
  *
@@ -59,6 +65,9 @@ export interface AudioFinding {
   message: string;
 }
 
+/** 音声の方式。既定は premix(プリミックス1本) */
+export type AudioScheme = "premix" | "legacy-tags";
+
 /** composition.html の <audio id="master"> の src と data-duration を読む */
 export function parseMasterAudio(html: string): { src: string; durationSec: number } | null {
   const tag = /<audio[^>]*\bid="master"[^>]*>/.exec(html)?.[0];
@@ -70,6 +79,16 @@ export function parseMasterAudio(html: string): { src: string; durationSec: numb
 }
 
 export interface AudioFacts {
+  /**
+   * 音声の方式。既定は premix(master.mp3 1本)。
+   * "legacy-tags" は <audio> 直載せの移行前エピソードで、episode.json の
+   * `"audioScheme": "legacy-tags"` を書いた ep だけがこちらに入る(暗黙のフォールバックはしない)。
+   */
+  scheme?: AudioScheme;
+  /** 旧方式のときに composition が持つ <audio> の id 一覧 */
+  legacyAudioIds?: string[];
+  /** 旧方式のときに <audio src> が指すファイルのうち実在しないもの */
+  legacyMissingSrc?: string[];
   hasCues: boolean;
   hasMaster: boolean;
   /** <audio src> が指すパス(composition 基準の相対パス) */
@@ -92,8 +111,47 @@ export interface AudioFacts {
   seLedgerMatches?: boolean | null;
 }
 
+/** 旧方式(<audio>直載せ)の音源タグを全部読む */
+export function parseLegacyAudioTags(html: string): { id: string; src: string }[] {
+  const out: { id: string; src: string }[] = [];
+  for (const m of html.match(/<audio[^>]*>/g) ?? []) {
+    const id = /\sid="([^"]+)"/.exec(m)?.[1];
+    const src = /\ssrc="([^"]+)"/.exec(m)?.[1];
+    if (id && src) out.push({ id, src });
+  }
+  return out;
+}
+
+/**
+ * 旧方式の判定。プリミックス一式(cues / master / <audio id=master>)は要求せず、
+ * 「ナレーション以外の音源が配線されているか」「参照先が実在するか」だけを見る。
+ * ep012 の事故(narration 1本きり)はこの条件で捕まる。
+ */
+function evaluateLegacy(facts: AudioFacts): AudioFinding[] {
+  const out: AudioFinding[] = [];
+  const ids = facts.legacyAudioIds ?? [];
+  const bed = ids.filter((id) => !/^narration/.test(id));
+  if (bed.length === 0) {
+    out.push({
+      code: "legacy_no_bed_tracks",
+      message:
+        `composition.html の <audio> が ${ids.length}本(${ids.join(", ") || "なし"})で、` +
+        "ナレーション以外の音源がありません。BGM/SEが1つも鳴りません(ep012 の無音事故と同じ形)",
+    });
+  }
+  const missing = facts.legacyMissingSrc ?? [];
+  if (missing.length > 0) {
+    out.push({
+      code: "legacy_missing_source",
+      message: `<audio src> が実在しないファイルを指しています: ${missing.join(", ")}`,
+    });
+  }
+  return out;
+}
+
 /** 事実から契約違反を判定する(純粋関数 — I/Oを持たない) */
 export function evaluateAudio(facts: AudioFacts): AudioFinding[] {
+  if (facts.scheme === "legacy-tags") return evaluateLegacy(facts);
   const out: AudioFinding[] = [];
   if (!facts.hasCues) {
     out.push({
@@ -216,6 +274,17 @@ export function percentile(xs: number[], q: number): number {
   return s[Math.min(s.length - 1, Math.floor(s.length * q))];
 }
 
+/** episode.json の音声方式。宣言が無ければ premix(既定) */
+function readAudioScheme(episodeJsonPath: string): AudioScheme {
+  if (!existsSync(episodeJsonPath)) return "premix";
+  try {
+    const ep = JSON.parse(readFileSync(episodeJsonPath, "utf8")) as { audioScheme?: string };
+    return ep.audioScheme === "legacy-tags" ? "legacy-tags" : "premix";
+  } catch {
+    return "premix";
+  }
+}
+
 function main(): void {
   const epArg = process.argv[2];
   if (!epArg) fail("使い方: npx tsx src/pipeline/check-audio.ts episodes/<epId>");
@@ -227,6 +296,42 @@ function main(): void {
   const masterPath = path.join(epDir, "narration", "master.mp3");
   const compositionHtml = readFileSync(compositionPath, "utf8");
   const audio = parseMasterAudio(compositionHtml);
+
+  /* 旧方式は episode.json の明示宣言でだけ選ぶ(暗黙のフォールバックはしない) */
+  const scheme = readAudioScheme(path.join(epDir, "episode.json"));
+  if (scheme === "legacy-tags") {
+    const tags = parseLegacyAudioTags(compositionHtml);
+    const missing = tags
+      .map((t) => t.src)
+      .filter((src, i, a) => a.indexOf(src) === i)
+      .filter((src) => !existsSync(path.resolve(process.cwd(), src)));
+    const legacyFacts: AudioFacts = {
+      scheme,
+      legacyAudioIds: tags.map((t) => t.id),
+      legacyMissingSrc: missing,
+      hasCues: false,
+      hasMaster: false,
+      audioSrc: null,
+      audioDurationSec: NaN,
+      masterDurationSec: NaN,
+      masterFresherThanCues: false,
+      p10WindowDb: NaN,
+      medianWindowDb: NaN,
+      peakDb: NaN,
+    };
+    const legacyFindings = evaluateAudio(legacyFacts);
+    console.log(
+      `音声の配線検査(旧方式・episode.json の宣言による): <audio> ${tags.length}本 ` +
+        `/ ナレーション以外 ${legacyFacts.legacyAudioIds!.filter((id) => !/^narration/.test(id)).length}本 ` +
+        `/ 参照欠落 ${missing.length}件`
+    );
+    if (legacyFindings.length === 0) {
+      console.log("OK: 旧方式(<audio>直載せ)として配線されています");
+      process.exit(0);
+    }
+    for (const f of legacyFindings) console.error(`NG [${f.code}] ${f.message}`);
+    process.exit(1);
+  }
   const hasMaster = existsSync(masterPath);
   const windows = hasMaster ? windowRmsDb(masterPath) : [];
 

@@ -20,6 +20,13 @@
  *   ※「単色かどうか」ではなく「**何も描かれていないか**」を見る検査である。
  *   紙地に記号1つの図解は正しく通る(チャンネルの画風を殺さない)。
  *
+ * 意図的な空白の宣言(data-blank-ok):
+ *   演出として画面を空にする間(暗転・要素が全部消える等)は、その clip の <section> に
+ *     data-blank-ok="なぜ空なのか"
+ *   を書けば検査から外れる。理由が空の宣言は無効(=検査される)。免除した clip は
+ *   ログに一覧で出るので、通ったのか外したのかは常に読み取れる。
+ *   検査を緩めるのではなく、事故と演出を分けるための機構である。
+ *
  * 使い方:
  *   npx tsx src/pipeline/qa-flat-frames.ts episodes/<epId> [out名]
  *
@@ -52,6 +59,27 @@ export interface ClipSpan {
   id: string;
   startSec: number;
   durationSec: number;
+  /**
+   * composition.html の `data-blank-ok="理由"`。空白が演出として意図されたものである、
+   * という作者の宣言。理由が空(または属性なし)なら宣言として扱わない。
+   */
+  blankOk?: string;
+}
+
+/** 「意図的な空白」の宣言が有効か(理由が書かれているか)。 */
+export function isBlankExempt(clip: ClipSpan): boolean {
+  return (clip.blankOk ?? "").trim().length > 0;
+}
+
+/**
+ * 免除の内訳を1行で返す(宣言が無ければ null)。
+ * 免除を黙って通すと「検査が通った」のか「宣言で外した」のかが後から分からなくなる。
+ */
+export function blankExemptSummary(clips: ClipSpan[]): string | null {
+  const exempt = clips.filter(isBlankExempt);
+  if (exempt.length === 0) return null;
+  const list = exempt.map((c) => `${c.id}(${(c.blankOk ?? "").trim()})`).join(" / ");
+  return `免除 ${exempt.length} clip(data-blank-ok の宣言): ${list}`;
 }
 
 export interface FrameSample {
@@ -84,6 +112,7 @@ export function findBlankClips(
   const coverage = opts.coverage ?? BLANK_CLIP_COVERAGE;
   const findings: BlankFinding[] = [];
   for (const clip of clips) {
+    if (isBlankExempt(clip)) continue;
     const end = clip.startSec + clip.durationSec;
     const mine = samples.filter((s) => s.timeSec >= clip.startSec && s.timeSec < end);
     if (mine.length === 0) continue;
@@ -123,7 +152,13 @@ export function parseClipSpans(html: string): ClipSpan[] {
     const start = /\sdata-start="([\d.]+)"/.exec(m)?.[1];
     const dur = /\sdata-duration="([\d.]+)"/.exec(m)?.[1];
     if (!id || start === undefined || dur === undefined) continue;
-    spans.push({ id, startSec: Number(start), durationSec: Number(dur) });
+    const blankOk = /\sdata-blank-ok="([^"]*)"/.exec(m)?.[1];
+    spans.push({
+      id,
+      startSec: Number(start),
+      durationSec: Number(dur),
+      ...(blankOk === undefined ? {} : { blankOk }),
+    });
   }
   return spans.sort((a, b) => a.startSec - b.startSec);
 }
@@ -183,6 +218,8 @@ function main(): void {
     `空フレーム検査: ${clips.length} clip / ${samples.length} 標本` +
       `(${SAMPLE_INTERVAL_SEC}秒毎・字幕帯を除外・輝度std < ${BLANK_STD_THRESHOLD} を空と判定)`
   );
+  const exemptLine = blankExemptSummary(clips);
+  if (exemptLine) console.log(exemptLine);
   if (findings.length === 0) {
     console.log("OK: 何も描かれていないclipはありません");
     process.exit(0);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateAudio, parseMasterAudio, type AudioFacts } from "./check-audio";
+import { evaluateAudio, parseLegacyAudioTags, parseMasterAudio, type AudioFacts } from "./check-audio";
 import { buildMixArgs, gainForLufs, type AudioCues } from "./audio-mix";
 
 /** 正常な ep(ep012 修正後の実測値に合わせた) */
@@ -128,4 +128,55 @@ test("evaluateAudio: ミックス後に実装のSE台帳が変わったら焼き
 
 test("evaluateAudio: 台帳ハッシュを持たない古い cues では突合しない(後方互換)", () => {
   assert.deepEqual(evaluateAudio({ ...OK, seLedgerMatches: null }), []);
+});
+
+/*
+ * 移行前エピソード(旧方式 = <audio> 直載せ)の検査。
+ * プリミックス移行は「適用は次エピソードから」と決めたのに、ゲートは無条件に配線された。
+ * 結果、旧方式で正しく音が鳴っている ep001(narration + BGM19 + SE15、実測 -14.7 LUFS)が
+ * レンダー前に落ちた。ゲートを緩めるのではなく、旧方式でも判定できる不変条件
+ * =「ナレーション以外の音源が配線されているか」を見る。ep012 の事故は
+ * narration 1本だけの状態だったので、この条件で引き続き捕まる。
+ * 黙って旧経路に落ちないよう episode.json の明示宣言を要件にする
+ * (無警告フォールバックが ep012 の入口だったため)。
+ */
+const LEGACY: AudioFacts = {
+  ...OK,
+  scheme: "legacy-tags",
+  hasCues: false,
+  hasMaster: false,
+  audioSrc: null,
+  masterDurationSec: NaN,
+  p10WindowDb: NaN,
+  medianWindowDb: NaN,
+  peakDb: NaN,
+  legacyAudioIds: ["narration", "bgm-01", "se-don-1"],
+  legacyMissingSrc: [],
+};
+
+test("evaluateAudio: 旧方式を宣言した ep は master 一式を要求しない", () => {
+  assert.deepEqual(evaluateAudio(LEGACY), []);
+});
+
+test("evaluateAudio: 旧方式でもナレーション1本だけなら捕まえる(ep012 の事故形)", () => {
+  const codes = evaluateAudio({ ...LEGACY, legacyAudioIds: ["narration"] }).map((f) => f.code);
+  assert.deepEqual(codes, ["legacy_no_bed_tracks"]);
+});
+
+test("evaluateAudio: 旧方式で音源ファイルが欠けていたら捕まえる", () => {
+  const codes = evaluateAudio({
+    ...LEGACY,
+    legacyMissingSrc: ["assets/audio/bgm/blue-eyed-birds.wav"],
+  }).map((f) => f.code);
+  assert.deepEqual(codes, ["legacy_missing_source"]);
+});
+
+test("parseLegacyAudioTags: id と src を全部読む", () => {
+  const html = `
+    <audio id="narration" src="episodes/ep001/narration/narration.wav" data-start="0" data-duration="10"></audio>
+    <audio id="bgm-01" src="assets/audio/bgm/a.wav" data-start="0" data-duration="5"></audio>`;
+  assert.deepEqual(parseLegacyAudioTags(html), [
+    { id: "narration", src: "episodes/ep001/narration/narration.wav" },
+    { id: "bgm-01", src: "assets/audio/bgm/a.wav" },
+  ]);
 });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BLANK_STD_THRESHOLD,
+  blankExemptSummary,
   findBlankClips,
   lumaStdOfFrame,
   parseClipSpans,
@@ -97,4 +98,61 @@ test("2標本以上が空なら短いclipでも指摘する", () => {
   ];
 
   assert.equal(findBlankClips(clips, samples).length, 1);
+});
+
+/*
+ * 意図的な空白の宣言(data-blank-ok)。
+ * 動物転生 ep013 の cL119 は「画鋲が抜けて落ち、方眼も消える」演出で 3.3秒のうち
+ * 2.7秒を意図的に空にしていたが、この検査が事故と区別できず赤になった。
+ * 検査を緩めるのではなく、作者が理由つきで宣言した空白だけを外す。
+ */
+test("parseClipSpans: data-blank-ok の理由を読む", () => {
+  const html = `
+    <section class="clip scene" id="cL119" data-start="399.081" data-duration="3.302" data-blank-ok="画鋲が落ちて方眼も消える間"></section>`;
+  assert.deepEqual(parseClipSpans(html), [
+    { id: "cL119", startSec: 399.081, durationSec: 3.302, blankOk: "画鋲が落ちて方眼も消える間" },
+  ]);
+});
+
+test("findBlankClips: 理由つきで data-blank-ok を宣言したclipは指摘しない", () => {
+  const clips: ClipSpan[] = [
+    { id: "cL119", startSec: 10, durationSec: 3.3, blankOk: "画鋲が落ちて方眼も消える間" },
+  ];
+  const samples: FrameSample[] = [
+    { timeSec: 10, lumaStd: 15.31 },
+    { timeSec: 10.5, lumaStd: 0.4 },
+    { timeSec: 11, lumaStd: 0.4 },
+    { timeSec: 11.5, lumaStd: 0.4 },
+    { timeSec: 12, lumaStd: 0.4 },
+    { timeSec: 12.5, lumaStd: 0.4 },
+  ];
+
+  assert.deepEqual(findBlankClips(clips, samples), []);
+});
+
+test("findBlankClips: 理由が空の data-blank-ok は免除しない(空振りの宣言を許さない)", () => {
+  const clips: ClipSpan[] = [{ id: "cL119", startSec: 10, durationSec: 1.2, blankOk: "  " }];
+  const samples: FrameSample[] = [
+    { timeSec: 10, lumaStd: 0.5 },
+    { timeSec: 10.5, lumaStd: 0.7 },
+    { timeSec: 11, lumaStd: 0.6 },
+  ];
+
+  assert.deepEqual(findBlankClips(clips, samples).map((f) => f.clipId), ["cL119"]);
+});
+
+/* 免除は黙って通さない。検査を通ったのか宣言で外したのかがログで分かること */
+test("blankExemptSummary: 宣言があれば clip id と理由を並べる", () => {
+  const clips: ClipSpan[] = [
+    { id: "cL118", startSec: 0, durationSec: 3 },
+    { id: "cL119", startSec: 3, durationSec: 3.3, blankOk: "画鋲が落ちて方眼も消える間" },
+  ];
+  assert.equal(
+    blankExemptSummary(clips),
+    "免除 1 clip(data-blank-ok の宣言): cL119(画鋲が落ちて方眼も消える間)"
+  );
+});
+
+test("blankExemptSummary: 宣言が1つも無ければ何も出さない", () => {
+  assert.equal(blankExemptSummary([{ id: "cL118", startSec: 0, durationSec: 3 }]), null);
 });
