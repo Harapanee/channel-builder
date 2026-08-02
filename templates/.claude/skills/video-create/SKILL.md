@@ -44,6 +44,17 @@ description: このチャンネルの新規エピソード動画を制作する�
 3. **メインは全文Readしない**: メインセッションの監査は、機械検査の出力(`lint:script` / HF `npm run check` / validate 等)と
    サブエージェントの構造化報告に基づいて判断する。報告に疑義がある場合も全文Readせず、
    該当箇所の抜粋Read(offset/limit指定)のみ。同一ファイルの再Readを繰り返さない。
+4. **メインは内容検査をしない(Read でも Bash でも)**: 台本・実装・素材の中身を
+   `grep` / `sed` / `awk` / `python3` で抜き出して読み直す行為は、項目3の「全文Readしない」と
+   同じ理由で禁止する。**ep002 実測ではメインの Bash 127回のうち79回(62%)がこれだった**
+   (台本の言い回しを grep で検査し、sed で該当行を抜いていた = 2026-07-30 に廃止した
+   script-reviewer 相当の仕事の復活)。合否は機械検査の exit code と
+   サブエージェントの構造化報告で決める。疑義があれば**差し戻す**のであって、自分で読まない。
+   例外は「機械検査が指した1箇所を確認する」ための offset/limit つき Read のみ。
+5. **status 更新は `npm run status episodes/<epId> <status>`**(2026-08-02 新設)。
+   JSON を自分で読み書きしない。契約(episode.schema.json の enum)で検証され、
+   後戻りと綴り違いを止める。ep002 実測ではメインの Bash 12回が status 更新の
+   python heredoc だった。
 
 ## 0-a. 題材の決定(引数なしで呼ばれた場合)
 
@@ -64,7 +75,7 @@ description: このチャンネルの新規エピソード動画を制作する�
 
 fact-checkerエージェントに委譲。出典つき・確度(定説/有力/諸説)つきで、「フック候補(視聴者を掴む要素のランキング)」を含めること。
 また「約束」節(仮タイトル1本+サムネ一言の方向+その約束を本編が回収できる根拠。docs/retention-principles.md 原則3)を必ず含めること。調査の結果、約束が成立しない(本編が回収できない)と判明した場合は台本へ進まず題材を差し戻す。
-`channel/backlog.md` に該当題材の行がある場合、その候補メモ(フック・物語の当たり・多様性メモ)を委譲プロンプトへ丸ごと含める(theme-scoutの検討結果を初動に使い、切り口の再発明をさせない)。→ status: "researched"
+`channel/backlog.md` に該当題材の行がある場合、その候補メモ(フック・物語の当たり・多様性メモ)を委譲プロンプトへ丸ごと含める(theme-scoutの検討結果を初動に使い、切り口の再発明をさせない)。→ `npm run status episodes/<epId> researched`
 
 ## 2. 台本 → `script.md`
 
@@ -74,7 +85,7 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 **台本ドラフト受領後、audience-simを起動する**(合否権なし・助言のみ)。`script.md` のパスのみを渡す(bible.md・storyboard.md は渡さない)。
 **この位置に置く理由**: 台本が可変な時点でしか初見の助言は反映できない。工程10で起動していた時期は助言が4本連続で「台本確定済みのため未対応=次話への申し送り」となり、出力が構造的に使われていなかった。
 助言の採否はメインセッションが判断する(script-directorへの自動差し戻しはしない)。採用する指摘は script.md に反映してから工程3へ進む。
-→ status: "scripted"
+→ `npm run status episodes/<epId> scripted`
 
 ## 3. 台本の審査(機械lint → 二重審査は必ず並列)
 
@@ -94,7 +105,7 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 - **誤読プリチェック(合成前・高速)**: まず `npm run tts episodes/<epId> -- --readings-only` で読み仮名レポート(narration/readings.md)だけを生成し(VOICEVOX audio_queryのみ・数十秒)、reading-checkerエージェント(合否権あり)で検査する。REVISEなら台本表記を修正して再プリチェック(**最大3周**。3周で解決しない読みはユーザーへエスカレーション)。**PASSしてから** `npm run tts episodes/<epId>` で本合成を1回だけ実行する(本合成はプリチェックと同じaudio_queryの読みで合成するため、表記が変わらない限り合成後の再検査は不要)
 - 自己検証エラーが出たら台本表記を調整(読みの揺れ・難読語)
 - PASSまで**工程7(素材)以降**へ進まない
-- → status: "voiced"
+- → `npm run status episodes/<epId> voiced`
 
 ## 5-6. ストーリーボード(HF版・clip表) → `storyboard.md`
 
@@ -103,7 +114,7 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 **流れは「演出が先、素材が後」**: visual-directorは手持ち素材に縛られず演出を設計し(演出記述はWeb技術語彙で自由に。creative原則はエージェント定義に内蔵)、不足素材リストを storyboard.md に出す → 工程7で充足 → clip表の使用素材を確定。
 **10分超は章並列**: 全体設計(Phase 1)→章グループ並列(Phase 2)→統合(Phase 3)。Phase 1の分担は**グループ間のclip数が±20%以内**になるよう均す(壁時計は最遅グループに律速される)。共有様式・スパイン演出は1グループが実装オーナー、他は同じ見え方を再現。
 メインセッションは 多様性の自己計測表・role分布・不足素材リストの妥当性・**clip表とtiming.jsonの行被覆(欠落行ゼロ)の自己申告**を監査する。
-→ status: "storyboarded"
+→ `npm run status episodes/<epId> storyboarded`
 
 ## 7. 素材取得
 
@@ -124,7 +135,23 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 
 全新規素材を library.json に登録(kind/subject/variant/file/source/license/approvedBy)。
 
+**この工程がフェーズの終点である**(factory-ui のフェーズ3)。全素材の調達と登録が済んだら
+`npm run status episodes/<epId> assets_ready` を実行し、工程8へは進まずに `<done>` を出して終了する。
+工程8は新しいセッションが担当する — 素材工程12エージェントとのやりとりを実装工程が
+引き継がないための区切りで、ep002 実測ではこの1セッションだけで投入47.2M(1本の24.7%)だった。
+
+**再開時は library.json を先に読む**: 登録済みの素材は再調達しない。ep002 では枠切れ中断からの
+再開で素材5本をまるごとやり直し、23分と約10Mトークンを捨てた。
+
+**素材の確認はコンタクトシート1枚で行う**: 生成物・調達物を1枚ずつ Read させない
+(asset-generator / image-researcher の定義に内蔵。実測で1本が19枚8.74MBを個別Readしていた)。
+
 ## 8. シーン実装 → `composition.html`
+
+**この工程は新しいセッションで始まる**(factory-ui のフェーズ4)。素材は前フェーズで確定済み
+(status: `assets_ready`)なので、**この工程で素材を作り直したり追加調達したりしない**。
+不足が判明したらその旨を報告して止まる(メインが判断してフェーズ3へ差し戻す)。
+工程8.4(音声ミックス)まで終えたら `npm run status episodes/<epId> implemented` を実行して `<done>`。
 
 **まずメインセッションが骨格を機械生成する**(エージェントに作らせない):
 
@@ -161,7 +188,6 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
   - **ゼロ持ち越し**: 過去ep composition.html からの場面演出の流用が0件であること(過去エピソード由来の場面演出が1件でも混入していたら差し戻し)
   - composition.html の実装が storyboard.md の clip表と数・内容で整合すること
   - **テンプレ量産でないこと**: 単一factory/ヘルパーの文言差替え変種群は1演出と数える。実効演出数が定量規則を満たさなければ差し戻し
-- → status: "implemented"
 
 ## 8.4 音声ミックス(ナレーション+BGM+SE を1本に焼く)
 
@@ -209,7 +235,7 @@ composition.html の実行時エラー・レイアウト事故・モーション
 - **check:audio の NG はレンダーを起動しない**(`scripts/render-episode.sh` も同じゲートを持つ)
 - **check:assets は既定では報告のみ(exit 0)**。BLOCK 行は「実装が素材を使わず図形で代用している」か「絵コンテがコード描画のclipに素材名を書いている」のどちらかなので、**メインセッションが1件ずつ判定して、実装か絵コンテのどちらかを直す**。既存の食い違いを一掃したチャンネルは `--strict` でゲートへ格上げできる
 
-全て緑になったら → status: "prechecked"
+全て緑になったら → `npm run status episodes/<epId> prechecked`
 
 ## 10. 準拠レビュー(フレーム検査。新規コンテキストのエージェント1体)
 
@@ -217,7 +243,7 @@ mp4 非依存(レンダー前で成立する):
 
 - **compliance-reviewer**: bible.md + review-checklist.md + script/storyboard/composition に加えて、**工程9で実行した `npm run check` の出力を渡す**(エージェントに再実行させない)。判定するのは review-checklist.md の **`@frame` タグの項目のみ** — `@script`(工程3)・`@check`(工程9)・`@fact`(工程3)・`@assets`(工程7)・`@publish`(工程11)は担当ゲートが判定済みであり、ここでの再検査は禁止する。PASS/FAIL。FAILは修正して再レビュー(修正したら工程9の検査から再確認。**FAIL→再レビューは最大2周** — 2周で解決しなければユーザーへエスカレーション)。視覚検証のフレームは `hyperframes-cli` スキルの snapshot 系(指定時刻のフレーム抽出・エージェント定義に内蔵)で取得する — **レビューのためにフルレンダーを起動しない**(80秒動画で12分、通常尺で30分超の浪費を実測。フレーム十数枚で足りる)
 - **audience-sim はこの工程では起動しない**(工程2へ移設済み)
-- → status: "reviewed"
+- → `npm run status episodes/<epId> reviewed`
 
 ## 11. 公開パッケージ(タイトル・サムネ・概要欄 — finalレンダー前に作る)
 
@@ -231,7 +257,7 @@ npx tsx src/pipeline/render-thumbs.ts episodes/<epId>
 
 タイトルはbible(公開パッケージ節)の規定に従う — 固定型ならそのまま確定、3案方式ならユーザーが1案選定。**サムネは選定不要 — 3枚とも朝のアップロード時にYouTube Studio「テストと比較」へ投入**しABテストする(bibleの公開パッケージ節)。
 publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像ブリーフ」から `publish/thumb-oneshot-{1..3}.png` を生成する(型5・正典`--ref`・16:9)。生成完了後に上のrender-thumbsを実行する。
-→ status: "packaged"
+→ `npm run status episodes/<epId> packaged`
 
 ## 12. 人間レビュー(一括)→ 承認 → 夜間レンダーキューへ
 
