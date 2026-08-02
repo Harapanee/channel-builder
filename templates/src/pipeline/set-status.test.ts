@@ -27,3 +27,14 @@ test("同じ status の再設定は許す(再開時の冪等性)", () => {
 test("status 未設定のエピソードにはどの status も置ける", () => {
   assert.equal(nextStatusOrThrow(undefined, "researched", ALLOWED), "researched");
 });
+
+test("契約に無い現在値からは後戻り検査をスキップして更新できる、かつ警告する(黙って通さない)", () => {
+  const warnings: string[] = [];
+  const result = nextStatusOrThrow("storyboardd", "voiced", ALLOWED, (message) => {
+    warnings.push(message);
+  });
+  assert.equal(result, "voiced");
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /契約にない/);
+  assert.match(warnings[0], /storyboardd/);
+});

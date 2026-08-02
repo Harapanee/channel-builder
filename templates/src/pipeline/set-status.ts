@@ -32,17 +32,28 @@ export function resolveEpisodeDir(arg: string, exists: (p: string) => boolean): 
 /**
  * 遷移の可否を決める。契約外は拒否、後戻りは拒否、同値は許す(再開の冪等性)。
  * 後戻りを拒むのは、検査落ちで status を巻き戻す判断を人に残すため。
+ *
+ * 現在の status が契約(enum)に無い値の場合は後戻り検査そのものが成立しない
+ * (順序上の位置が無いため)。この改修より前の episode.json は python heredoc で
+ * 直接書かれており typo や旧世代の値を持つ可能性があるため、この経路を素通り
+ * させず `warn` で必ず知らせる(黙って通さない)。
  */
 export function nextStatusOrThrow(
   current: string | undefined,
   next: string,
-  allowed: string[]
+  allowed: string[],
+  warn: (message: string) => void = (message) => console.error(message)
 ): string {
   if (!allowed.includes(next)) {
     throw new Error(`status "${next}" は契約にありません。使える値: ${allowed.join(" / ")}`);
   }
   if (current === undefined) return next;
-  if (!allowed.includes(current)) return next;
+  if (!allowed.includes(current)) {
+    warn(
+      `WARNING: 現在の status "${current}" は契約にない値なので後戻り検査を行わずに更新します(→ ${next})`
+    );
+    return next;
+  }
   const from = allowed.indexOf(current);
   const to = allowed.indexOf(next);
   if (to < from) {
