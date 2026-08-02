@@ -15,14 +15,19 @@
       "enum": ["premix", "legacy-tags"]
     },
     "status": {
+      "description": "工程の到達点。video-create が各工程完了時に npm run status で更新する(中断・再開の基盤)。factory-ui の server/progress.ts の工程レールと1対1で対応する。",
       "enum": [
         "researched",
         "scripted",
         "voiced",
         "storyboarded",
+        "assets_ready",
         "implemented",
+        "prechecked",
         "qa_passed",
         "reviewed",
+        "packaged",
+        "render_ready",
         "final"
       ]
     }

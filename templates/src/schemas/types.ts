@@ -145,9 +145,13 @@ export type EpisodeStatus =
   | "scripted"
   | "voiced"
   | "storyboarded"
+  | "assets_ready"
   | "implemented"
+  | "prechecked"
   | "qa_passed"
   | "reviewed"
+  | "packaged"
+  | "render_ready"
   | "final";
 
 export type EpisodeFile = {
