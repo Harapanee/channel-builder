@@ -18,7 +18,17 @@ cd "$(dirname "$0")/.."
 # Navigation timeout になる(実測: 164clip・6700ノード・2600tweenで再現。素材が正しくても落ちる)。
 # 遷移待ちは domcontentloaded なので健全なページなら1秒台で返り、上限を上げても遅くならない。
 # 呼び出し元が明示指定していればそちらを尊重する。
-export PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS="${PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS:-90000}"
+#
+# 2026-08-03 に 90秒 → 600秒へ引き上げた。sekaishi-longform ep001(23分・285clip)の
+# レンダーが browser_probe(calibrating)で 90秒を2回連続で超過し
+# 「Navigation timeout of 90000 ms exceeded」で落ちた。待ちの正体は clip数ではなく
+# **音声の総バイト数**で、`waitUntil:"networkidle2"` が全 <audio> の読み込みを待つ:
+#   narration.wav 63.7MB + BGM 4曲(13.5〜21.0MB)× 19要素 = 実測で読み込みに3分強。
+# 同じ理由で `npm run check` 側は 2026-07-30 に既に 600秒へ引き上げられており
+# (tools/run-check.mjs の HF_NAV_TIMEOUT_MS)、**render だけが 90秒で取り残されていた**。
+# 90秒は同エピソードで通ったり落ちたりする境界値で、成否が運に依存していた。
+# **下げないこと** — 長尺HFでは足りず、1本 99分のレンダーを丸ごと捨てることになる。
+export PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS="${PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS:-600000}"
 
 # HyperFrames が最初に見つけた ffmpeg を使うため、PATH 先頭に host と別アーキテクチャの
 # ビルド(Apple Silicon 上の x86_64 Homebrew 等)があると "FFmpeg cannot start" で
