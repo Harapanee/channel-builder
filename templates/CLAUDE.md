@@ -2,6 +2,8 @@
 
 このリポジトリは「{{CHANNEL_NAME}}」専用のYouTube動画制作システム(Channel Video Factory)である。汎用動画ツールではない。全ての制作判断はこのチャンネルの人格に従う。
 
+- **H3 経路(本編映像を MiniMax H3 で生成する。任意採用)**: `.channel-system.json` に `h3Pipeline.episodes` を宣言したエピソードだけが対象。設計は `docs/superpowers/specs/2026-08-19-h3-prompt-pipeline-design.md`、道具は `src/pipeline/h3/`、規則は `h3/vocab/<epId>.ts`(雛形 `h3/vocab/example-salmon.ts`)。**factory-ui の manual モードでのみ走らせる**(semi/auto は人間ゲートを自動承認する)。GPU を使うコマンドは `H3_ALLOW_GPU=1` が要る(生成 `npm run h3:run` と Pod 起動 `npm run h3:pod -- up` の二重ロック)。**Pod 起動は要確認・停止(`npm run h3:pod -- down`)は必ず行う**。H3 経路のエピソードは**夜間レンダーキューへ投入しない**(assemble の完了が最終物)
+
 # Source of truth
 
 - `channel/bible.md` — チャンネル教義(人格・文法・画風・音)の唯一の定義。全工程がここを参照する
@@ -40,6 +42,18 @@
 - `npm run tts episodes/<epId> -- --readings-only` — 誤読プリチェック(audio_queryのみ・数十秒。合成前にreading-checkerへ)
 - `npm run audio-cues episodes/<epId>` — composition の SE台帳(`window.__G<n>_SE_CUES`)から audio-cues.json のSEキューを機械生成する(BGMは storyboard の散文が正本なので人が書く)
 - `npm run audio-mix episodes/<epId>` — audio-cues.json(ナレーション+BGM+SE)から `narration/master.mp3` を焼き、composition の `<audio src>` をそこへ差し替える。SE音量は -22 LUFS へ整え、総和はリミッタ(-1.5 dBFS)で抑える。**この工程を飛ばすとBGMもSEも鳴らない**(工程8.4)
+- `npm run check:readings episodes/<epId>` — 誤読リスクの機械抽出(readings.md の実読みカナと台本表記を突合し、既知の誤読型を候補リストで出す。exit 1=候補あり)。**reading-checker の前段**。チャンネル固有の語族は `channel/reading-risks.json`(任意)
+- `npm run next-videos episodes/<epId> [-- --apply]` — 「次に見る」2本の選定(最新の analytics スナップショットから、公開後7日以上・本編・平均視聴率の降順)。`publish/next-videos.json` に書き、`--apply` で metadata.json の概要欄末尾へ追記する。**終了画面は API に無いので人間が Studio で置く**
+- 【H3経路】`npm run check:h3 -- <epId> [章ID] [--dump <出力先>]` — 生成前のプロンプト検査(exit 0=緑 / 1=ADVISE / 2=BLOCK。B14 は `cuts.json` の `firstWorstLineId` を検査)
+- 【H3経路】`npm run h3:pod -- status|up|down` — RunPod の状態・起動・停止(`up` は `H3_ALLOW_GPU=1` 必須・要ユーザー確認。`down` は必ず実行)
+- 【H3経路】`H3_ALLOW_GPU=1 npm run h3:run -- <epId> <章ID> [--only <id,..>] --url <PodのURL>` — 章の生成(`--plan` / `--dry` はGPU不要)
+- 【H3経路】`npm run h3:inspect -- <epId> <章ID>` — 章のコンタクトシートとストリップ(`review/<epId>/<章ID>-manifest.json` を検品報告の1行目に引用する)
+- 【H3経路】`npm run h3:reject -- <epId> <clipId,..>` — 不合格クリップの隔離(削除ではなく移動。再生成の対象に戻す)
+- 【H3経路】`npm run h3:audio-cues -- <epId>` / `npm run audio-mix episodes/<epId>` / `npm run h3:ambient -- <epId>` — 音声(BGM+SE の cues → master.mp3 → 生成音の環境音トラック)
+- 【H3経路】`npm run h3:subs <epId>` — 字幕を透過PNGに焼く(1回の表示=1文。表示窓は `subs/subs.json`)
+- 【H3経路】`npm run h3:figures -- <epId> [--only <id,..>] [--force] [--check]` — 図解オーバーレイ(`h3/episodes/<epId>/figures.json`)と章カードを透過PNG連番に焼く。**`h3:assemble` の前に実行**。設計は `docs/superpowers/specs/2026-09-04-h3-figure-overlay-design.md`
+- 【H3経路】`npm run h3:assemble -- <epId> [--out <名前>] [--no-figures]` — クリップ+図解+字幕+master.mp3 を1本に組み立てる(これが最終物。既定の出力先に既存ファイルがあれば exit 2)
+- 【H3経路】`npm run typecheck:h3` — 語彙帳・カット文面(`h3/vocab` / `h3/episodes/*/shots`)の型検査
 - `npm run usage [-- --since <日付>|--session <id>|--json]` — セッション記録からAPI換算コスト・キャッシュ内訳・**サブエージェントの並列度**(1メッセージ1本の件数・同時最大本数)を集計する
 - `npm run check:audio episodes/<epId>` — 音声の配線検査(cues有無・`<audio src>`がmasterか・焼き直し漏れ・BGMが実際に乗っているか)。render-episode.sh のレンダー前ゲートでもある
 - `npm run check:assets episodes/<epId> [--strict]` — storyboardの「使用素材」列と composition の実装の突合(既定は報告のみ)
@@ -79,7 +93,7 @@
 
 # Agents(制作の実働。メインセッションは監査・ゲート管理のみ)
 
-fact-checker / script-director / **script-reviewer(台本合否)** / reading-checker(誤読検査) / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット)
+fact-checker / script-director / **script-reviewer(台本合否)** / reading-checker(誤読検査) / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット) / **H3経路(任意採用)**: h3-cut-planner(カット割り台帳)/ h3-prompt-writer(カット文面)/ h3-prompt-reviewer / h3-fix-writer / h3-clip-inspector(検品)/ figure-planner(図解オーバーレイの宣言。工程7で prompt-writer と並列起動)
 
 # ショート動画の運用注記
 

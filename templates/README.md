@@ -132,9 +132,14 @@ claude
 |---|---|---|
 | `channel/bible.md` | チャンネル憲法 | ❌ /channel-refine 経由(承認後は保護hookがブロック) |
 | `channel/voice.json` | ナレーターの声 | ❌ 原則変更禁止 |
-| `.claude/agents/*.md` | エージェント11体の技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
+| `.claude/agents/*.md` | エージェントの技能定義 | ❌ /system-refine 経由(テンプレ同期必須) |
 | `.claude/skills/*` | video-create / theme-scout / render-queue / channel-refine / system-refine | ❌ /system-refine 経由 |
 | `src/pipeline/` | ツール群(tts / validate / qa / qa-smoke / precheck / render-stills / repair-render / gen-image / codex-image / remove-bg / retime / render-thumbs / audio-mix / build-audio-cues / build-bgm-cues / check-audio / check-storyboard-assets / qa-flat-frames / probe-frames / frag-api / use-episode / usage-report) | ❌ /system-refine 経由 |
+| `src/pipeline/h3/` | **H3経路**(本編映像を MiniMax H3 で生成する。任意採用)のツール群(check-h3-prompt / pod / run-chapter / inspect-clips / reject-clips / render-subs / build-audio-cues-h3 / build-ambient / render-figures / assemble / preview-chapter)。対象は `.channel-system.json` の `h3Pipeline.episodes` | ❌ /system-refine 経由 |
+| `h3/vocab/<epId>.ts` | H3経路の語彙帳(題材ごとの場所・被写体・小物の英文定数。雛形は `h3/vocab/example-salmon.ts`) | 工程6.4で人間承認のうえ作る |
+| `h3/episodes/<epId>/` | H3経路の台帳(cuts.json)・カット文面(shots/)・図解宣言(figures.json)・検品記録(defects/) | エージェントが書く |
+| `channel/bgm-policy.json` | BGM方針の契約(冒頭の曲・baseVolume の範囲。無ければ検査しない) | チャンネル判断で調整可 |
+| `channel/reading-risks.json` | 誤読リスクの語族(`npm run check:readings` が読む。無ければ既知の型だけ) | チャンネル判断で追記可 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
 | `hyperframes.json` | HyperFramesプロジェクト設定(本編のレンダー経路) | ❌ /system-refine 経由 |
@@ -149,6 +154,8 @@ claude
 ### エージェント一覧(制作の実働部隊)
 
 fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(台本審査・合否)**/ visual-director(絵コンテ・ショット)/ scene-implementer(シーン実装・演出コード)/ asset-generator(画像素材のプロンプト技能)/ compliance-reviewer(準拠・合否)/ audience-sim(疑似初見)/ theme-scout(題材候補の採点・ネタ帳維持)/ publisher(タイトル・サムネ・概要欄+YouTubeメタデータ契約 publish/metadata.json。サムネは docs/thumbnail-principles.md の検証済みCTR原則に従う)
+
+**H3経路(任意採用)**: h3-cut-planner(カット割り台帳)/ h3-prompt-writer(カット文面)/ h3-prompt-reviewer(意味の突合・ADVISE)/ h3-fix-writer(不合格カットの書き直し)/ h3-clip-inspector(生成クリップの目視検品)/ figure-planner(図解オーバーレイの宣言)
 
 ---
 
@@ -197,6 +204,15 @@ npm run check:visual -- episodes/<epId>   # 視覚多様性検査のみ
 npm run audio-cues episodes/<ep>  # SE台帳 + bgm-plan.json → audio-cues.json(SEもBGMも手書きしない)
 npm run audio-mix episodes/<ep>  # ナレーション+BGM+SE → narration/master.mp3 + <audio src> 差し替え(工程8.4)
 npm run check:audio episodes/<ep>   # 音声の配線検査(レンダー前ゲート)
+npm run check:readings episodes/<ep>   # 誤読リスクの機械抽出(reading-checker の前段)
+npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記(終了画面は Studio で人間が置く)
+npm run check:h3 -- <ep> [章ID] [--dump <出力先>]   # 【H3】生成前のプロンプト検査(BLOCKゼロまで生成しない)
+npm run h3:pod -- status|up|down                    # 【H3】Pod の状態・起動(要確認・H3_ALLOW_GPU=1)・停止(必ず)
+H3_ALLOW_GPU=1 npm run h3:run -- <ep> <章ID> --url <PodURL>   # 【H3】章の生成(初回は --only で1〜2本)
+npm run h3:inspect -- <ep> <章ID>                   # 【H3】章のコンタクトシート(検品材料)
+npm run h3:reject -- <ep> <clipId,..>               # 【H3】不合格クリップの隔離(再生成対象へ戻す)
+npm run h3:audio-cues -- <ep> && npm run audio-mix episodes/<ep> && npm run h3:ambient -- <ep>   # 【H3】音声
+npm run h3:subs <ep> && npm run h3:figures -- <ep> && npm run h3:assemble -- <ep>   # 【H3】字幕・図解を焼いて組み立て(最終物)
 npm run check:assets episodes/<ep>  # 絵コンテの使用素材と実装の突合(既定は報告のみ)
 npm run qa:frames episodes/<ep>  # レンダー後の空フレーム検出(何も描かれていないclip)
 npm run usage -- --since 2026-08-01   # コスト(サブエージェント込み)・実所要時間・並列度・ターン単価

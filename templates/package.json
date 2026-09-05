@@ -32,7 +32,21 @@
     "audio-cues": "tsx src/pipeline/build-audio-cues.ts",
     "usage": "tsx src/pipeline/usage-report.ts",
     "use": "tsx src/pipeline/use-episode.ts",
-    "status": "tsx src/pipeline/set-status.ts"
+    "status": "tsx src/pipeline/set-status.ts",
+    "typecheck:h3": "tsc -p tsconfig.h3.json --noEmit",
+    "check:h3": "tsx src/pipeline/h3/check-h3-prompt.ts",
+    "h3:pod": "tsx src/pipeline/h3/pod.ts",
+    "h3:inspect": "tsx src/pipeline/h3/inspect-clips.ts",
+    "h3:run": "tsx src/pipeline/h3/run-chapter.ts",
+    "h3:reject": "tsx src/pipeline/h3/reject-clips.ts",
+    "h3:subs": "python3 src/pipeline/h3/render-subs.py",
+    "h3:audio-cues": "tsx src/pipeline/h3/build-audio-cues-h3.ts",
+    "h3:assemble": "tsx src/pipeline/h3/assemble.ts",
+    "h3:ambient": "tsx src/pipeline/h3/build-ambient.ts",
+    "h3:preview": "tsx src/pipeline/h3/preview-chapter.ts",
+    "check:readings": "tsx src/pipeline/check-readings.ts",
+    "h3:figures": "tsx src/pipeline/h3/render-figures.ts",
+    "next-videos": "tsx src/pipeline/next-videos.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

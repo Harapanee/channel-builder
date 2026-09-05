@@ -104,6 +104,10 @@ const IDENTICAL = [
   "src/pipeline/use-episode.test.ts",
   "src/schemas/metadata.schema.json",
   "src/schemas/episode-ledger.schema.json",
+  // 2026-09-05 追加(誤読リスクの機械抽出・「次に見る」選定。経路非依存)
+  "src/pipeline/check-readings.ts",
+  "src/pipeline/next-videos.ts",
+  "src/pipeline/next-videos.test.ts",
   "src/schemas/thumb-test.schema.json",
   "src/schemas/analytics.schema.json",
   "src/scenes/shorts/core/RankCard.tsx",
@@ -150,6 +154,64 @@ const HF_IDENTICAL = [
   "src/pipeline/frag-api.ts",
   "src/pipeline/frag-api.test.ts",
   "src/schemas/bgm-plan.schema.json",
+];
+
+// MiniMax H3(生成動画)経路のファイル(本編)。.channel-system.json に h3Pipeline が
+// 宣言されたチャンネルでのみ完全一致必須。宣言の無いチャンネルでは存在しなくてよい。
+// テンプレ側には必ず存在しなければならない(scaffold元)。2026-09-05 追加
+const H3_IDENTICAL = [
+  "src/pipeline/h3/ambient.ts",
+  "src/pipeline/h3/ambient.test.ts",
+  "src/pipeline/h3/assemble.ts",
+  "src/pipeline/h3/assemble.test.ts",
+  "src/pipeline/h3/build-ambient.ts",
+  "src/pipeline/h3/build-audio-cues-h3.ts",
+  "src/pipeline/h3/build-audio-cues-h3.test.ts",
+  "src/pipeline/h3/build-cuts.ts",
+  "src/pipeline/h3/build-cuts.test.ts",
+  "src/pipeline/h3/calibrate.ts",
+  "src/pipeline/h3/check-first-worst.test.ts",
+  "src/pipeline/h3/check-h3-prompt.ts",
+  "src/pipeline/h3/check.ts",
+  "src/pipeline/h3/check.test.ts",
+  "src/pipeline/h3/clip-metrics.ts",
+  "src/pipeline/h3/clip-metrics.test.ts",
+  "src/pipeline/h3/compose.ts",
+  "src/pipeline/h3/compose.test.ts",
+  "src/pipeline/h3/config.ts",
+  "src/pipeline/h3/figures.ts",
+  "src/pipeline/h3/figures.test.ts",
+  "src/pipeline/h3/frames.ts",
+  "src/pipeline/h3/frames.test.ts",
+  "src/pipeline/h3/inspect-clips.ts",
+  "src/pipeline/h3/inspect-clips.test.ts",
+  "src/pipeline/h3/plan.ts",
+  "src/pipeline/h3/plan.test.ts",
+  "src/pipeline/h3/pod.ts",
+  "src/pipeline/h3/pod.test.ts",
+  "src/pipeline/h3/preview-chapter.ts",
+  "src/pipeline/h3/preview-chapter.test.ts",
+  "src/pipeline/h3/reject-clips.ts",
+  "src/pipeline/h3/render-figures.ts",
+  "src/pipeline/h3/render-figures.test.ts",
+  "src/pipeline/h3/render-subs.py",
+  "src/pipeline/h3/run-chapter.ts",
+  "src/pipeline/h3/run-chapter.test.ts",
+  "src/pipeline/h3/types.ts",
+  "src/pipeline/h3/vocab.test.ts",
+  "src/schemas/h3-ambient.schema.json",
+  "tsconfig.h3.json",
+  // 語彙帳の雛形(vocab.test.ts が読む。題材ごとの語彙帳 h3/vocab/<epId>.ts はこれを写して起こす)
+  "h3/vocab/example-salmon.ts",
+  ".claude/agents/h3-cut-planner.md",
+  ".claude/agents/h3-prompt-writer.md",
+  ".claude/agents/h3-prompt-reviewer.md",
+  ".claude/agents/h3-fix-writer.md",
+  ".claude/agents/h3-clip-inspector.md",
+  ".claude/agents/figure-planner.md",
+  "docs/superpowers/specs/2026-08-19-h3-prompt-pipeline-design.md",
+  "docs/superpowers/specs/2026-08-24-h3-pipeline-improvements-design.md",
+  "docs/superpowers/specs/2026-09-04-h3-figure-overlay-design.md",
 ];
 
 // コアコンポーネント(src/scenes/core/)— 原則IDENTICAL(テンプレと完全一致)。
@@ -308,6 +370,25 @@ for (const f of HF_IDENTICAL) {
     fail(`HF_IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
 }
 
+const h3Enabled = !!channelSystem.h3Pipeline;
+for (const f of H3_IDENTICAL) {
+  const a = path.join(SRC, f);
+  const b = path.join(TPL, f);
+  if (!fs.existsSync(b)) {
+    fail(`H3_IDENTICAL欠落(テンプレ側): ${f}`);
+    continue;
+  }
+  if (!h3Enabled) continue; // H3 未採用のチャンネルでは存在しなくてよい
+  if (templateOptOut.includes(f)) continue;
+  if (!fs.existsSync(a)) {
+    fail(`H3_IDENTICAL未受領: ${f}(h3Pipeline を宣言したチャンネルに無い)`);
+    continue;
+  }
+  if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8")) {
+    fail(`H3_IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
+  }
+}
+
 const coreOverrides = channelSystem.coreOverrides ?? [];
 
 for (const f of CORE_IDENTICAL) {
@@ -395,7 +476,7 @@ checkBuilderRepoPushed();
 
 if (failures === 0) {
   console.log(
-    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / HF ${HF_IDENTICAL.length}(engine=${renderEngine}) / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
+    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / HF ${HF_IDENTICAL.length}(engine=${renderEngine}) / H3 ${H3_IDENTICAL.length}(${h3Enabled ? "on" : "off"}) / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
   );
 } else {
   console.error(`\n${failures}件の乖離。同期後に再実行すること。`);
