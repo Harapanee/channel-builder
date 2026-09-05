@@ -30,6 +30,8 @@ import {
   expandEnvelope,
   silentGaps,
   validateBgmPlan,
+  validateBgmPolicy,
+  type BgmPolicy,
   type BgmPlan,
 } from "./build-bgm-cues";
 
@@ -192,7 +194,9 @@ function main(): void {
     const plan: BgmPlan = JSON.parse(readFileSync(planPath, "utf8"));
     const total = readTotalDuration(html);
     /* 形は JSON Schema、意味(隙間・重なり・未知の曲キー)は validateBgmPlan で見る */
-    const errors = [...schemaErrors(plan), ...validateBgmPlan(plan, total)];
+    const policyPath = path.join(root, "channel", "bgm-policy.json");
+    const policy: BgmPolicy = existsSync(policyPath) ? JSON.parse(readFileSync(policyPath, "utf8")) : {};
+    const errors = [...schemaErrors(plan), ...validateBgmPlan(plan, total), ...validateBgmPolicy(plan, policy)];
     if (errors.length > 0) {
       console.error(`NG: bgm-plan.json の契約違反:\n  - ${errors.join("\n  - ")}`);
       process.exit(1);

@@ -207,3 +207,33 @@ export function validateBgmPlan(plan: BgmPlan, totalSec: number): string[] {
   }
   return errors;
 }
+
+/**
+ * チャンネルの BGM 方針(`channel/bgm-policy.json`)。**2026-09-05 に追加。**
+ * ep012〜ep026 の15本すべてが冒頭 wafu(太鼓)で始まる慣行だったが、どこにも明文化されておらず
+ * ep027 で tense 始まりにして視聴者に即座に気づかれ、組み立て直しが1回発生した。
+ * 教義は bible §11、機械契約はこのファイル。audio-cues を組む前に検査する。
+ */
+export interface BgmPolicy {
+  /** 冒頭(assignment の先頭)に置く曲キー */
+  openingTrack?: string;
+  /** baseVolume の許容範囲(過去の実績値) */
+  baseVolume?: { min: number; max: number };
+}
+
+export function validateBgmPolicy(plan: BgmPlan, policy: BgmPolicy): string[] {
+  const errors: string[] = [];
+  if (policy.openingTrack) {
+    const first = [...(plan.assignment ?? [])].sort((a, b) => a[0] - b[0])[0];
+    if (first && first[2] !== policy.openingTrack) {
+      errors.push(`冒頭の曲が ${first[2]}(方針は ${policy.openingTrack}。チャンネルの署名。bible §11 / channel/bgm-policy.json)`);
+    }
+  }
+  if (policy.baseVolume && Number.isFinite(plan.baseVolume)) {
+    const { min, max } = policy.baseVolume;
+    if (plan.baseVolume < min || plan.baseVolume > max) {
+      errors.push(`baseVolume ${plan.baseVolume} が方針の範囲 ${min}〜${max} の外(channel/bgm-policy.json)`);
+    }
+  }
+  return errors;
+}

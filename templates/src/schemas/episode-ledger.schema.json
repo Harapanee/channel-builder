@@ -24,5 +24,21 @@
         }
       }
     }
+  },
+  "$defs": {
+    "entryFormat": {
+      "description": "書式規則。packagedAt が 2026-08-24 以降のエントリにのみ適用する(validate-ledger.ts がゲートする)。それ以前のエントリは据え置き。台帳が「避けるべきもの図鑑」に肥大するのを防ぐための上限。",
+      "type": "object",
+      "properties": {
+        "arcType": { "type": "string", "maxLength": 40, "description": "bible §6の型名と変奏名まで(例 \"型A(転落)・欠落開示型\")。選定理由・他の型を採らなかった弁明は書かない" },
+        "motifs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": { "type": "string", "maxLength": 30 },
+          "description": "タグであって説明文ではない(例 \"十秒の円環\")"
+        }
+      }
+    }
   }
 }

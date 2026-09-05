@@ -53,3 +53,6 @@ snapshots/
 # 中身は storyboard.md と hf-helpers.js の写しなので、追跡すると同じ内容を二重に持つ)
 **/_frag/*.brief.md
 **/_frag/*.api.md
+
+# H3 図解オーバーレイの焼き出し(h3:figures の生成物。figures.json から再生成できる。170MB/ep)
+h3/episodes/*/figures/

@@ -108,3 +108,13 @@ test("validateBgmPlan: 割り当ての隙間・未知の曲キー・包絡線の
   const overlap: BgmPlan = { ...SIMPLE, envelope: [[0, 15, 1], [10, 25, 0.5]] };
   assert.ok(validateBgmPlan(overlap, 25).some((e) => e.includes("envelope が重複")));
 });
+
+test("BGM 方針: 冒頭の曲と baseVolume の範囲(channel/bgm-policy.json)", async () => {
+  const { validateBgmPolicy } = await import("./build-bgm-cues");
+  const plan = { baseVolume: 0.14, tracks: { wafu: { src: "a" }, tense: { src: "b" } }, assignment: [[0, 10, "wafu"], [10, 20, "tense"]] as [number, number, string][], envelope: [] };
+  const policy = { openingTrack: "wafu", baseVolume: { min: 0.1, max: 0.16 } };
+  assert.deepEqual(validateBgmPolicy(plan as never, policy), []);
+  assert.ok(validateBgmPolicy({ ...plan, assignment: [[0, 10, "tense"], [10, 20, "wafu"]] } as never, policy).some((m) => /冒頭の曲が tense/.test(m)));
+  assert.ok(validateBgmPolicy({ ...plan, baseVolume: 0.3 } as never, policy).some((m) => /baseVolume 0.3/.test(m)));
+  assert.deepEqual(validateBgmPolicy(plan as never, {}), []);
+});

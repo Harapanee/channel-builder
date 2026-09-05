@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * 台本の機械lint(数え上げで判定できる4項目)。
- * 意味判定が要る項目(同型ビート・因果・署名運用)は台本ゲートの担当者
- * (チャンネルによって台本審査エージェント / script-director のセルフチェック)が担う。
+ * 台本の機械lint。検査は L1(尺)のみ。
+ * 2026-09-02 に L2(読点上限)・L4(ヘッジ近接)・L5(二人称空白)・L6(落ち直後の留保)を廃止した。
+ * いずれも文体を縛る方向に効き、短文・否定形の連打や逐語テンプレを再生産していた(CHANGELOG 参照)。
+ * 文体・意味の判断は script-director と人間の読みに戻す。
  *
  * L1 の尺判定は2方式:
  *  - 既定: 目標尺比(85〜100%)
  *  - `.channel-system.json` に `durationPolicy: {minSec,maxSec}` があれば絶対レンジ
+ *    (下限未満は WARN のみ。文字数で埋めさせると終章の既出事実リプライズが増えるため FAIL にしない)
  *
  * CLI: npx tsx src/pipeline/lint-script.ts episodes/<epId>
  * exit 0 = 全項目PASS / exit 1 = FAILあり / exit 2 = 入力不備
@@ -16,14 +18,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseScriptFile, ParsedScriptLine } from "./parse-script";
 
-const HEDGES = ["一説に", "という説", "とも言われ", "諸説あ"];
-
 type Violation = { check: string; lineId?: string; detail: string };
 
 export type LintResult = {
   ok: boolean;
   summary: string[]; // 項目ごとの1行サマリ(数字つき)
   violations: Violation[];
+  /** FAILさせない指摘(L1 下限)。ok には影響しない。 */
+  warnings: Violation[];
 };
 
 /**
@@ -44,6 +46,7 @@ export function lintScript(
   durationPolicy?: DurationPolicy | null
 ): LintResult {
   const violations: Violation[] = [];
+  const warnings: Violation[] = [];
   const summary: string[] = [];
 
   // L1 時間予算(リファレンス: speedScale=1.05 で約6.3文字/秒 → 6.0×speedScale)
@@ -61,9 +64,9 @@ export function lintScript(
       `L1 尺レンジ: ${totalChars}文字 + pause${pauseTotal.toFixed(1)}s ≒ ${estimatedSec.toFixed(0)}s / 許容 ${minSec ?? "下限なし"}〜${maxSec ?? "上限なし"}s(目標${targetDurationSec}sは目安)`
     );
     if (minSec !== null && estimatedSec < minSec) {
-      violations.push({
+      warnings.push({
         check: "L1",
-        detail: `推定尺${estimatedSec.toFixed(0)}sが下限${minSec}sに届かない。約${Math.ceil((minSec - estimatedSec) * charsPerSec)}文字の追加が必要`,
+        detail: `推定尺${estimatedSec.toFixed(0)}sが下限${minSec}sに届かない(WARN。文字数で埋めず、納品できる「最悪」が足りているかを見直す)`,
       });
     }
     if (maxSec !== null && estimatedSec > maxSec) {
@@ -91,53 +94,8 @@ export function lintScript(
     }
   }
 
-  // L2 読点上限(1文に「、」2個まで)
-  let l2count = 0;
-  for (const l of lines) {
-    for (const sentence of l.text.split("。")) {
-      const commas = (sentence.match(/、/g) ?? []).length;
-      if (commas >= 3) {
-        l2count++;
-        violations.push({
-          check: "L2",
-          lineId: l.lineId,
-          detail: `1文に読点${commas}個(上限2): 「${sentence.slice(0, 30)}…」`,
-        });
-      }
-    }
-  }
-  summary.push(`L2 読点上限: 違反${l2count}文`);
 
-  // L3 間の予算(pause 0.6s以上は 90秒あたり5箇所以内・比例)
-  // 尺レンジ方式のチャンネルでは目標尺が目安なので、推定尺を基準に比例させる
-  const pauseRefSec = hasPolicy ? estimatedSec : targetDurationSec;
-  const longPauses = lines.filter((l) => (l.pauseAfterSec ?? 0) >= 0.6);
-  const allowed = Math.ceil((pauseRefSec / 90) * 5);
-  summary.push(`L3 間の予算: 0.6s以上のpause ${longPauses.length}箇所 / 上限${allowed}`);
-  if (longPauses.length > allowed) {
-    violations.push({
-      check: "L3",
-      detail: `長い間が${longPauses.length}箇所(上限${allowed})。対象行: ${longPauses.map((l) => l.lineId).join(", ")}`,
-    });
-  }
-
-  // L4 ヘッジ語の近接反復(同じヘッジ語が隣接2行)
-  let l4count = 0;
-  for (let i = 1; i < lines.length; i++) {
-    for (const h of HEDGES) {
-      if (lines[i]!.text.includes(h) && lines[i - 1]!.text.includes(h)) {
-        l4count++;
-        violations.push({
-          check: "L4",
-          lineId: lines[i]!.lineId,
-          detail: `「${h}」が ${lines[i - 1]!.lineId} と連続使用(言い換える)`,
-        });
-      }
-    }
-  }
-  summary.push(`L4 ヘッジ語近接: 違反${l4count}箇所`);
-
-  return { ok: violations.length === 0, summary, violations };
+  return { ok: violations.length === 0, summary, violations, warnings };
 }
 
 function main() {
@@ -190,6 +148,9 @@ function main() {
     durationPolicy
   );
   for (const s of result.summary) console.log(s);
+  for (const w of result.warnings) {
+    console.log(`WARN [${w.check}]${w.lineId ? ` ${w.lineId}` : ""}: ${w.detail}`);
+  }
   for (const v of result.violations) {
     console.log(`NG [${v.check}]${v.lineId ? ` ${v.lineId}` : ""}: ${v.detail}`);
   }
