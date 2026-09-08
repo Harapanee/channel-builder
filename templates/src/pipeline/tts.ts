@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseScriptFile, type ParsedScriptLine } from "./parse-script";
+import { loadUserDict, syncUserDict, userDictHash } from "./voicevox-user-dict";
 import type { LineTiming, PhraseTiming, TimingFile } from "../schemas/types";
 
 /**
@@ -42,6 +43,24 @@ import type { LineTiming, PhraseTiming, TimingFile } from "../schemas/types";
  */
 
 const VOICEVOX_BASE_URL = process.env.VOICEVOX_URL ?? "http://127.0.0.1:50021";
+
+/**
+ * channel/user-dict.json を VOICEVOX のユーザー辞書へ同期し、辞書内容のハッシュを返す。
+ * 行キャッシュのキーに混ぜるので、辞書を変えた語を含む行は次回の合成で作り直される
+ * (辞書はエンジン側に永続するため、audio_query の結果が変わるのに hash が同じだと
+ * 古い読みの WAV が再利用されてしまう)。
+ */
+async function syncVoicevoxUserDict(projectRoot: string): Promise<string> {
+  const words = loadUserDict(projectRoot);
+  if (words.length > 0) {
+    const r = await syncUserDict(words, VOICEVOX_BASE_URL);
+    console.log(
+      `user-dict: ${words.length}語(登録 ${r.added} / 更新 ${r.updated} / 一致 ${r.unchanged})`
+    );
+  }
+  // 辞書が空なら "" を返し、既存エピソードの行キャッシュ(辞書導入前)をそのまま生かす
+  return words.length > 0 ? userDictHash(words) : "";
+}
 const SELF_CHECK_TOLERANCE_SEC = 0.1;
 // 疑問形(is_interrogative)を含む行専用の緩和許容差
 const INTERROGATIVE_TOLERANCE_SEC = 0.3;
@@ -858,6 +877,9 @@ export async function runTts(
 
   mkdirSync(narrationDir, { recursive: true });
 
+  const dictHash =
+    voice.provider === "fishaudio" ? "" : await syncVoicevoxUserDict(projectRoot);
+
   // ---- 行キャッシュ(局所再TTS) ------------------------------------------
   // テキスト・話速・話者・韻律が前回と同一の行は合成をスキップし、既存WAVと
   // キャッシュ済みタイミングを再利用する。誤読修正などの数行変更では変更行
@@ -980,6 +1002,7 @@ export async function runTts(
           sp.pitchScale,
           sp.intonationScale,
           voice.pauseLengthScale ?? DEFAULT_PAUSE_LENGTH_SCALE,
+          ...(dictHash ? [dictHash] : []),
         ])
       )
       .digest("hex");
@@ -1248,6 +1271,8 @@ export async function runReadingsOnly(
     return;
   }
 
+  const dictHash = await syncVoicevoxUserDict(projectRoot);
+
   // 行キャッシュ(読み取り専用)。フルモードと同一のヒット条件(ハッシュ一致かつ
   // 既存WAVあり)を満たす行は保存済みkanaを再利用し、それ以外は audio_query を
   // 叩く。--readings-only ではキャッシュを書き戻さない。
@@ -1285,6 +1310,7 @@ export async function runReadingsOnly(
           sp.speakerId,
           sp.pitchScale,
           sp.intonationScale,
+          ...(dictHash ? [dictHash] : []),
         ])
       )
       .digest("hex");

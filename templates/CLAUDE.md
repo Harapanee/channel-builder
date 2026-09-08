@@ -43,6 +43,8 @@
 - `npm run audio-cues episodes/<epId>` — composition の SE台帳(`window.__G<n>_SE_CUES`)から audio-cues.json のSEキューを機械生成する(BGMは storyboard の散文が正本なので人が書く)
 - `npm run audio-mix episodes/<epId>` — audio-cues.json(ナレーション+BGM+SE)から `narration/master.mp3` を焼き、composition の `<audio src>` をそこへ差し替える。SE音量は -22 LUFS へ整え、総和はリミッタ(-1.5 dBFS)で抑える。**この工程を飛ばすとBGMもSEも鳴らない**(工程8.4)
 - `npm run check:readings episodes/<epId>` — 誤読リスクの機械抽出(readings.md の実読みカナと台本表記を突合し、既知の誤読型を候補リストで出す。exit 1=候補あり)。**reading-checker の前段**。チャンネル固有の語族は `channel/reading-risks.json`(任意)
+- `npm run diff:readings episodes/<epId>` — **期待読み(`narration/expected-readings.md`。reading-checker が readings.md を見る前に台本から書く)と VOICEVOX 実読みの機械diff**。差分行だけを出す(exit 1=差分あり / 2=未記入行あり)。判定はしない(合否権は reading-checker)。未知の誤読を拾う側で、check:readings(既知の型)と補完関係
+- `channel/user-dict.json`(任意)— **VOICEVOX ユーザー辞書**(表記→カタカナ読み・accentType)。`npm run tts` の起動時にエンジンへ同期し、行キャッシュのキーにも混ぜる。**誤読が確定した名詞はここへ登録する**(台本をひらがなに開かなくてよい・以後の全話に効く)。動詞の活用形・助詞の結合は辞書で固定できないので台本表記で直す。エンジン側に永続する(同じ VOICEVOX を使う他チャンネルにも効く)
 - `npm run next-videos episodes/<epId> [-- --apply]` — 「次に見る」2本の選定(最新の analytics スナップショットから、公開後7日以上・本編・平均視聴率の降順)。`publish/next-videos.json` に書き、`--apply` で metadata.json の概要欄末尾へ追記する。**終了画面は API に無いので人間が Studio で置く**
 - 【H3経路】`npm run check:h3 -- <epId> [章ID] [--dump <出力先>]` — 生成前のプロンプト検査(exit 0=緑 / 1=ADVISE / 2=BLOCK。B14 は `cuts.json` の `firstWorstLineId` を検査)
 - 【H3経路】`npm run h3:pod -- status|up|down` — RunPod の状態・起動・停止(`up` は `H3_ALLOW_GPU=1` 必須・要ユーザー確認。`down` は必ず実行)

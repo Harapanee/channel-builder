@@ -106,6 +106,11 @@ const IDENTICAL = [
   "src/schemas/episode-ledger.schema.json",
   // 2026-09-05 追加(誤読リスクの機械抽出・「次に見る」選定。経路非依存)
   "src/pipeline/check-readings.ts",
+  // 2026-09-08 追加(期待読みとの機械diff・VOICEVOX ユーザー辞書同期)
+  "src/pipeline/diff-readings.ts",
+  "src/pipeline/diff-readings.test.ts",
+  "src/pipeline/voicevox-user-dict.ts",
+  "src/pipeline/voicevox-user-dict.test.ts",
   "src/pipeline/next-videos.ts",
   "src/pipeline/next-videos.test.ts",
   "src/schemas/thumb-test.schema.json",

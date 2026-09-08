@@ -56,7 +56,7 @@ claude
 
 ```
 調査+台本(script-director) → 機械lint(npm run lint:script)
-→ 音声合成+タイミング(自己検証つき・reading-checkerが誤読を合否判定)
+→ 音声合成+タイミング(自己検証つき・期待読みと実読みの機械diffを reading-checker が合否判定)
 → 絵コンテ+clip表(visual-director)
 → 不足素材リスト → 素材生成(asset-generator)【あなた: キュレーション】
 → シーン実装(`composition.html`・scene-implementer)
@@ -140,6 +140,7 @@ claude
 | `h3/episodes/<epId>/` | H3経路の台帳(cuts.json)・カット文面(shots/)・図解宣言(figures.json)・検品記録(defects/) | エージェントが書く |
 | `channel/bgm-policy.json` | BGM方針の契約(冒頭の曲・baseVolume の範囲。無ければ検査しない) | チャンネル判断で調整可 |
 | `channel/reading-risks.json` | 誤読リスクの語族(`npm run check:readings` が読む。無ければ既知の型だけ) | チャンネル判断で追記可 |
+| `channel/user-dict.json` | VOICEVOX ユーザー辞書(誤読が確定した名詞の表記→読み。`npm run tts` が起動時にエンジンへ同期。無ければ何もしない) | チャンネル判断で追記可 |
 | `assets/library.json` | 素材台帳(あなたの承認済みのみ使用可) | ❌ Claudeが管理 |
 | `.env` | APIキー | あなただけが書く(コミット禁止) |
 | `hyperframes.json` | HyperFramesプロジェクト設定(本編のレンダー経路) | ❌ /system-refine 経由 |
@@ -204,7 +205,8 @@ npm run check:visual -- episodes/<epId>   # 視覚多様性検査のみ
 npm run audio-cues episodes/<ep>  # SE台帳 + bgm-plan.json → audio-cues.json(SEもBGMも手書きしない)
 npm run audio-mix episodes/<ep>  # ナレーション+BGM+SE → narration/master.mp3 + <audio src> 差し替え(工程8.4)
 npm run check:audio episodes/<ep>   # 音声の配線検査(レンダー前ゲート)
-npm run check:readings episodes/<ep>   # 誤読リスクの機械抽出(reading-checker の前段)
+npm run check:readings episodes/<ep>   # 誤読リスクの機械抽出(既知の型。reading-checker の前段)
+npm run diff:readings episodes/<ep>    # 期待読み(expected-readings.md)と VOICEVOX 実読みの機械diff(未知の誤読。差分行だけ出す)
 npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記(終了画面は Studio で人間が置く)
 npm run check:h3 -- <ep> [章ID] [--dump <出力先>]   # 【H3】生成前のプロンプト検査(BLOCKゼロまで生成しない)
 npm run h3:pod -- status|up|down                    # 【H3】Pod の状態・起動(要確認・H3_ALLOW_GPU=1)・停止(必ず)

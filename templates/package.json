@@ -46,7 +46,8 @@
     "h3:preview": "tsx src/pipeline/h3/preview-chapter.ts",
     "check:readings": "tsx src/pipeline/check-readings.ts",
     "h3:figures": "tsx src/pipeline/h3/render-figures.ts",
-    "next-videos": "tsx src/pipeline/next-videos.ts"
+    "next-videos": "tsx src/pipeline/next-videos.ts",
+    "diff:readings": "tsx src/pipeline/diff-readings.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

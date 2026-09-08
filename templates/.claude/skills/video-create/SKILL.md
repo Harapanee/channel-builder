@@ -104,7 +104,7 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 
 ## 4. TTS → `narration/` + `timing.json`
 
-- **誤読プリチェック(合成前・高速)**: まず `npm run tts episodes/<epId> -- --readings-only` で読み仮名レポート(narration/readings.md)だけを生成し(VOICEVOX audio_queryのみ・数十秒)、reading-checkerエージェント(合否権あり)で検査する。REVISEなら台本表記を修正して再プリチェック(**最大3周**。3周で解決しない読みはユーザーへエスカレーション)。**PASSしてから** `npm run tts episodes/<epId>` で本合成を1回だけ実行する(本合成はプリチェックと同じaudio_queryの読みで合成するため、表記が変わらない限り合成後の再検査は不要)
+- **誤読プリチェック(合成前・高速)**: まず `npm run tts episodes/<epId> -- --readings-only` で読み仮名レポート(narration/readings.md)だけを生成する(VOICEVOX audio_queryのみ・数十秒。起動時に `channel/user-dict.json`(あれば)をVOICEVOXのユーザー辞書へ同期するので、登録済みの名詞はこの時点で正しく読まれる)。**次に `npm run check:readings episodes/<epId>` を実行**して既知の誤読型の候補リストを機械で出し(exit 1=候補あり)、**その出力を逐語で reading-checker の委譲プロンプトへ貼って**検査する。reading-checker(合否権あり)は **(1) readings.md を見る前に台本から期待読み `narration/expected-readings.md` を書き、(2) `npm run diff:readings episodes/<epId>` で実読みと機械突合し、(3) 差分行だけを判定する**(手順は定義に内蔵)。報告の1行目に `読み突合: N行 / 一致 / 差分 / 期待未記入` の引用が**無い報告は棄却して再検査させる**。候補リストは全件 PASS/REVISE の報告義務。REVISEなら修正して再プリチェック(**最大3周**。3周で解決しない読みはユーザーへエスカレーション): **名詞は `channel/user-dict.json` へ登録**(表記は変えない・以後の全話に効く)、**活用形・助詞の結合・数量表現は台本表記で直す**(ひらがなに開く/言い換え/読点+`- display:`)。**PASSしてから** `npm run tts episodes/<epId>` で本合成を1回だけ実行する(本合成はプリチェックと同じaudio_queryの読みで合成するため、表記と辞書が変わらない限り合成後の再検査は不要)
 - 自己検証エラーが出たら台本表記を調整(読みの揺れ・難読語)
 - PASSまで**工程7(素材)以降**へ進まない
 - → `npm run status episodes/<epId> voiced`
