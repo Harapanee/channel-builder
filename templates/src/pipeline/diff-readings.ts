@@ -62,8 +62,21 @@ export function normalizeKana(s: string): string {
     else if (c === "ウ" && prev && VOWEL_OF[prev] === "オ") r += "オ";
     else r += c;
   }
+  // 発音上の同値(VOICEVOX 実測: ep031 で差分30行のうち 23行がこの型)
+  r = r
+    .replace(/ニッポン/g, "ニホン") // 日本
+    .replace(/ジュッ/g, "ジッ") // 十(ジッ/ジュッ)
+    .replace(/ソオユウ/g, "ソオイウ") // そういう
+    .replace(/ドオユウ/g, "ドオイウ"); // どういう
   return r;
 }
+
+/**
+ * 塊単位で無視してよい差(聞いて意味が変わらない)。期待側が助詞「へ」を ヘ と
+ * 書いた場合が大半(実読みは エ)。語中の ヘ も無視されるが、VOICEVOX が子音 h を
+ * 落とす誤読は観測されていないので実害はない。
+ */
+const IGNORABLE_HUNKS: [string, string][] = [["ヘ", "エ"]];
 
 export type ExpectedLine = { lineId: string; expected: string };
 
@@ -154,7 +167,9 @@ export function diffKana(aRaw: string, bRaw: string): Hunk[] {
     }
   }
   if (cur) hunks.push(cur);
-  return hunks.map((h) => ({
+  return hunks
+    .filter((h) => !IGNORABLE_HUNKS.some(([e, a]) => h.del === e && h.ins === a))
+    .map((h) => ({
     expected: h.del,
     actual: h.ins,
     context:

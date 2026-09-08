@@ -68,3 +68,15 @@ test("diffReadings: 行ごとに突合し、未記入行と差分行を分けて
   assert.equal(r.diffs.length, 1);
   assert.equal(r.diffs[0].lineId, "L01");
 });
+
+test("diffKana: 発音上の同値(日本・十・そういう・助詞へ)は差分にしない", () => {
+  assert.deepEqual(diffKana("ニホンノカワヘハイル", "ニッポンノカワエハイル"), []);
+  assert.deepEqual(diffKana("ゴジッセンチ", "ゴジュッセンチ"), []);
+  assert.deepEqual(diffKana("ソオイウツクリ", "ソオユウツクリ"), []);
+  // ヘ→エ は語中でも無視される(VOICEVOX が子音 h を落とすことは無いので実害なし)。
+  // ヘ→他の文字は無視しない
+  assert.equal(diffKana("ヘラス", "ケラス").length, 1);
+  // 実際の誤読(ep031 v2 で人の視聴もすり抜けた2件)
+  assert.equal(diffKana("ホカノサカナ", "タノサカナ").length, 1);
+  assert.equal(diffKana("ソノアイダアナタワ", "ソノカンアナタワ").length, 1);
+});
