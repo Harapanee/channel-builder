@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ambientPath, assertUniformFps, buildSegments, checkAmbient, checkMasterAudio, holdSlowShortfalls, overlayWindows, parseFrameRate,
-  partCacheSpec, speedFilter, subsByLine, targetFrames, videoFilter,
+  partCacheSpec, speedFilter, subsByLine, targetFrames, videoFilter, headTrimFilter,
 } from "./assemble";
 import type { AmbientAudioFacts } from "./assemble";
 import type { Cut } from "./types";
@@ -147,6 +147,15 @@ test("holdSlow は時間を伸縮しない(あとの trim が頭から必要ぶ�
   assert.equal(videoFilter(124, 48, true), "null");
 });
 
+/* ---- skipHeadFrames(先頭を捨てる) ---- */
+
+test("headTrimFilter は k>0 のときだけ先頭 k フレームを捨てる trim を前置する", () => {
+  assert.equal(headTrimFilter(0), "");
+  assert.equal(headTrimFilter(12), "trim=start_frame=12,setpts=PTS-STARTPTS,");
+  assert.equal(headTrimFilter(2.9), "trim=start_frame=2,setpts=PTS-STARTPTS,");
+  assert.equal(headTrimFilter(-3), "");
+});
+
 test("buildSegments は cuts.json の holdSlow を Segment へ写す", () => {
   const cuts = {
     cL01: { lineIds: ["L01"], seconds: 5.167, place: "", subject: "", role: "", holdSlow: true },
@@ -171,7 +180,7 @@ test("buildSegments は cuts.json の noSub を Segment へ写す", () => {
 
 test("noSub のカットは字幕の表示窓を1枚も返さない(画面内文字との二重読みを避ける)", () => {
   const lineById = new Map(LINES.map((l) => [l.lineId, l]));
-  const on = { clipId: "cL01", lineIds: ["L01", "L02"], startSec: 0, frames: 120, offsetFrames: 0, holdSlow: false, noSub: false };
+  const on = { clipId: "cL01", lineIds: ["L01", "L02"], startSec: 0, frames: 120, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub: false };
   const off = { ...on, noSub: true };
   assert.equal(overlayWindows(on, lineById, 0, 24).length, 2);
   assert.deepEqual(overlayWindows(off, lineById, 0, 24), []);
@@ -274,7 +283,7 @@ test("ambientPath は episodes/<epId>/narration/ambient.wav を指す", () => {
 });
 
 test("字幕台帳(1回の表示=1文)があれば、行を文ごとの窓に分けて重ねる", () => {
-  const seg = { clipId: "cL03", lineIds: ["L03"], startSec: 5.0, frames: 144, offsetFrames: 120, holdSlow: false, noSub: false };
+  const seg = { clipId: "cL03", lineIds: ["L03"], startSec: 5.0, frames: 144, offsetFrames: 120, holdSlow: false, skipHeadFrames: 0, noSub: false };
   const lineById = new Map(LINES.map((l) => [l.lineId, l]));
   const ledger = subsByLine([
     { id: "L03", png: "/s/sub_L03_1.png", start: 7.5, end: 10.6 },

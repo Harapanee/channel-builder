@@ -12,18 +12,44 @@
     },
     "exclude": {
       "type": "array",
-      "items": { "type": "string", "pattern": "^cL[0-9]+$" },
+      "items": {
+        "type": "string",
+        "pattern": "^cL[0-9]+$"
+      },
       "description": "音が破綻しているカット。無音に置き換える"
     },
     "perClip": {
       "type": "object",
-      "propertyNames": { "pattern": "^cL[0-9]+$" },
+      "propertyNames": {
+        "pattern": "^cL[0-9]+$"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "properties": { "gainDb": { "type": "number", "minimum": -60, "maximum": 0 } },
-        "required": ["gainDb"]
+        "properties": {
+          "gainDb": {
+            "type": "number",
+            "minimum": -60,
+            "maximum": 0
+          }
+        },
+        "required": [
+          "gainDb"
+        ]
       }
+    },
+    "noiseFloorMaxDb": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": -90,
+      "maximum": 0,
+      "description": "noise floor(dBFS)がこれを超えるクリップを h3:ambient が報告する。null で検査を切る。既定 -40(2026-09-18)"
+    },
+    "autoExclude": {
+      "type": "boolean",
+      "description": "真なら noiseFloorMaxDb を超えたクリップを自動で無音に置換する。既定 false(報告のみ)"
     }
   }
 }

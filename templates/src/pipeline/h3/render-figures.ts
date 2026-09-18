@@ -100,7 +100,7 @@ export function buildFigureHtml(fig: Figure, durationSec: number, assets: { font
     const size = total <= 40 ? 108 : 54;
     const icon = fig.icon === "bowl" ? BOWL_SVG : fig.icon === "otter" ? OTTER_SVG : "";
     const legend = fig.segments
-      ? `<div class="legend">` + fig.segments.map((s, i) => `<div class="li seg"${at(i)}><span class="chip" style="background:${COLORS[s.color ?? "indigo"] ?? s.color}"></span>${esc(s.label)}<b>${s.count}%</b></div>`).join("") + `</div>`
+      ? `<div class="legend">` + fig.segments.map((s, i) => `<div class="li seg"${at(i)}><span class="chip" style="background:${COLORS[s.color ?? "indigo"] ?? s.color}"></span>${esc(s.label)}<b>${total === 100 ? s.count + "%" : s.count}</b></div>`).join("") + `</div>`
       : fig.highlightLabel ? `<div class="legend"><div class="li"><span class="chip" style="background:${COLORS.red}"></span>${esc(fig.highlightLabel)}</div></div>` : "";
     // 粒の図解は板が縦に長いので、一言は下ではなく右の列に置く(字幕帯と離す)
     const sideCaption = fig.caption ? `<div class="caption side"${rv.caption === undefined ? "" : ` data-at="${rv.caption.toFixed(3)}"`}>${esc(fig.caption)}</div>` : "";
@@ -146,6 +146,7 @@ html,body{margin:0;width:${W}px;height:${H}px;background:transparent;overflow:hi
 .bars .val{font-size:64px;margin-left:22px;white-space:nowrap;opacity:0}
 .bars .val.accent{color:${COLORS.red}}
 .gridwrap{display:flex;align-items:center;gap:48px}
+.gridwrap .side{flex:1;min-width:0;padding-right:24px}
 .grid{display:grid;gap:8px;justify-content:start}
 .cell{border:4px solid ${COLORS.ink};border-radius:50%;transform:scale(0);display:flex;align-items:center;justify-content:center;overflow:hidden}
 .cell:has(svg){border:0;border-radius:0}
@@ -174,7 +175,7 @@ html,body{margin:0;width:${W}px;height:${H}px;background:transparent;overflow:hi
 .sc-label{font-size:40px}
 .caption.side{margin-top:0;text-align:left;font-size:46px;white-space:nowrap}
 .legend .li{display:flex;align-items:center;gap:16px;margin:12px 0}
-.legend b{margin-left:auto;font-size:58px}
+.legend b{margin-left:auto;font-size:58px;white-space:nowrap}
 .chip{display:inline-block;width:40px;height:40px;border:4px solid ${COLORS.ink};border-radius:50%}
 </style></head><body>
 <div class="dim"></div>

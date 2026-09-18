@@ -793,9 +793,23 @@ export function buildPhraseTimings(
  * 「わね」に開くと確実に wa 読みになるため、この形だけを置換する。
  * 本物の「羽根」を仮名で「はね、」と書くと誤爆するが、その場合は台本側で
  * 漢字「羽根」を使うこと。
+ *
+ * 「〜ありません」問題: ひらがなの「ありません」は直前の語と1つのアクセント句に
+ * 融合し、平板で不自然な長い句になる(実測 2026-09-12 speaker 13:
+ * 「方法はありません」→ ホオホオワアリマセ'ン / 「方法は有りません」→
+ * ホオホオワ'/アリマセ'ン。「〜も」「〜でした」でも同じ)。漢字「有りません」
+ * に閉じると正しく句が切れるので、TTS入力だけ置換する(字幕はひらがなのまま)。
  */
 const TTS_READING_SUBSTITUTIONS: { pattern: RegExp; replace: string }[] = [
   { pattern: /はね(?=[、。!?！?…]|$)/g, replace: "わね" },
+  { pattern: /ありません/g, replace: "有りません" },
+  // ep036: user-dict 登録でも VOICEVOX 既定の読みに負けた名詞(コノミ / ミドリショク / チクダ / ショウカクダ)
+  { pattern: /木の実/g, replace: "きのみ" },
+  { pattern: /緑色/g, replace: "みどりいろ" },
+  { pattern: /消化管/g, replace: "しょうかかん" },
+  { pattern: /血管/g, replace: "けっかん" },
+  // ep038: 「管」(クダ)の登録に引きずられ「管理」がクダリになる。user-dict の「管理」登録でも負けた
+  { pattern: /管理/g, replace: "かんり" },
 ];
 
 export function ttsReadingText(text: string): string {

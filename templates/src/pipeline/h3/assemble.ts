@@ -27,7 +27,7 @@ import { SILENCE_FLOOR_DB, percentile, windowRmsDb } from "../check-audio";
 import { OUT_FPS, ROOT, clipsDir, epBase } from "./config";
 import type { TimingLine } from "./plan";
 import type { Cut, CutsFile } from "./types";
-import { figureOverlaysForChunk } from "./figures";
+import { figureOverlaysForChunk, overlayEnableExpr, overlayPtsExpr } from "./figures";
 import type { FigureChunkOverlay, FigureIndex } from "./figures";
 
 export interface Segment {
@@ -41,6 +41,8 @@ export interface Segment {
   offsetFrames: number;
   /** 早回しをやめて頭から等速で使う(cuts.json の holdSlow) */
   holdSlow: boolean;
+  /** 先頭から捨てるフレーム数(cuts.json の skipHeadFrames。既定 0) */
+  skipHeadFrames: number;
   /** 字幕を敷かない(cuts.json の noSub)。画面内に文字を出すカット用 */
   noSub: boolean;
   /** 章カード(cuts.json の card)。文字は h3:figures が不透明な板として焼くので、生成クリップが無ければ紙色で合成する */
@@ -190,6 +192,7 @@ export function buildSegments(
     return {
       clipId: e.clipId, lineIds: e.cut.lineIds, startSec: e.start, frames, offsetFrames,
       holdSlow: Boolean(e.cut.holdSlow),
+      skipHeadFrames: Math.max(0, Math.floor(e.cut.skipHeadFrames ?? 0)),
       noSub: Boolean(e.cut.noSub),
       card: Boolean(e.cut.card),
     };
@@ -210,6 +213,15 @@ export function speedFilter(srcFrames: number, dstFrames: number): string {
  */
 export function videoFilter(srcFrames: number, dstFrames: number, holdSlow = false): string {
   return holdSlow ? "null" : speedFilter(srcFrames, dstFrames);
+}
+
+/**
+ * 先頭 k フレームを捨てるフィルタ(cuts.json の skipHeadFrames)。k=0 なら空文字。
+ * videoFilter の**前**に置く(捨てたあとの残りフレーム数を目標へ詰める)。
+ */
+export function headTrimFilter(skipHeadFrames: number): string {
+  const k = Math.max(0, Math.floor(skipHeadFrames || 0));
+  return k > 0 ? "trim=start_frame=" + k + ",setpts=PTS-STARTPTS," : "";
 }
 
 export interface OverlayWindow {
@@ -274,6 +286,8 @@ export interface PartCacheClip {
   frames: number;
   src: number;
   holdSlow: boolean;
+  /** 先頭から捨てるフレーム数(0 のときは省略してよい。鍵に含めて古い part の再利用を防ぐ) */
+  skipHeadFrames?: number;
   /**
    * クリップファイルの mtime(ms)。**中身までは見ていない鍵の穴を塞ぐ**:
    * 不合格クリップを同じ frames・同じパスのまま焼き直すと id/frames/src/holdSlow は
@@ -496,8 +510,11 @@ function main(): void {
    * 文字は h3:figures の card-<id> が不透明な板として上に載るので、下は何でもよい。
    * これにより章カードは GPU で生成しなくてよい(生成してあればそれを使う。見えないので差は無い)。
    */
-  const synth = (s: Segment): boolean => Boolean(s.card) && !existsSync(clipPath(s));
-  const srcFrames = (s: Segment): number => (synth(s) ? s.frames : sourceFrames(clipPath(s)));
+  // 章カードは生成クリップがあっても使わない(2026-09-09: 板の窓の外へ1コマ漏れたとき H3 が描いた章カードが
+  // チカッと見えた。下地を紙色にしておけば、万一漏れても板と同色で見えない)
+  const synth = (s: Segment): boolean => Boolean(s.card);
+  // skipHeadFrames ぶんは捨てるので、伸縮・不足判定はいずれも「残りのフレーム数」で行う
+  const srcFrames = (s: Segment): number => (synth(s) ? s.frames : Math.max(1, sourceFrames(clipPath(s)) - s.skipHeadFrames));
   const srcMtime = (s: Segment): number => (synth(s) ? 0 : statSync(clipPath(s)).mtimeMs);
   const PAPER = "0xF4F1E7";
   const clipInputArgs = (s: Segment): string[] => synth(s)
@@ -511,7 +528,7 @@ function main(): void {
 
   const missingClips = segments.filter((s) => !existsSync(clipPath(s)) && !s.card);
   const synthCards = segments.filter(synth);
-  if (synthCards.length > 0) console.log("章カード " + synthCards.length + "本は生成クリップが無いので紙色で合成します(文字は figures の card-* が載る): " + synthCards.map((s) => s.clipId).join(", "));
+  if (synthCards.length > 0) console.log("章カード " + synthCards.length + "本は紙色で合成します(生成クリップは使わない。文字は figures の card-* が載る): " + synthCards.map((s) => s.clipId).join(", "));
   if (missingClips.length > 0) {
     console.error("❌ 素材が足りません: " + missingClips.length + "本");
     console.error("   " + missingClips.slice(0, 20).map((s) => s.clipId).join(", ") + (missingClips.length > 20 ? " ..." : ""));
@@ -563,6 +580,7 @@ function main(): void {
   {
     const clips: PartCacheClip[] = segments.map((s) => ({
       id: s.clipId, frames: s.frames, src: srcFrames(s), holdSlow: s.holdSlow,
+      ...(s.skipHeadFrames > 0 ? { skipHeadFrames: s.skipHeadFrames } : {}),
       mtimeMs: srcMtime(s),
     }));
     const shortfalls = holdSlowShortfalls(clips);
@@ -666,6 +684,7 @@ function main(): void {
       base,
       chunk.map((s) => ({
         id: s.clipId, frames: s.frames, src: srcFrames(s), holdSlow: s.holdSlow,
+        ...(s.skipHeadFrames > 0 ? { skipHeadFrames: s.skipHeadFrames } : {}),
         mtimeMs: srcMtime(s),
       })),
       overlays,
@@ -686,7 +705,7 @@ function main(): void {
     for (const g of figs) args.push("-framerate", String(OUT_FPS), "-start_number", String(g.startNumber), "-i", join(g.dir, "f%05d.png"));
 
     const f = chunk.map((s, i) =>
-      "[" + i + ":v]" + videoFilter(srcFrames(s), s.frames, s.holdSlow)
+      "[" + i + ":v]" + (synth(s) ? "" : headTrimFilter(s.skipHeadFrames)) + videoFilter(srcFrames(s), s.frames, s.holdSlow)
       + ",fps=" + OUT_FPS + ",trim=start_frame=0:end_frame=" + s.frames + ",setpts=PTS-STARTPTS"
       + ",scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,format=yuv420p[v" + i + "]");
     f.push(chunk.map((_, i) => "[v" + i + "]").join("") + "concat=n=" + chunk.length + ":v=1:a=0[cat]");
@@ -695,9 +714,9 @@ function main(): void {
     // 図解は映像の上・字幕の下に重ねる(暗転は図解側に焼き込み済み)
     figs.forEach((g, k) => {
       const inIdx = chunk.length + overlays.length + k;
-      const end = (Number(g.atSec) + g.frames / OUT_FPS).toFixed(3);
-      f.push("[" + inIdx + ":v]trim=end_frame=" + g.frames + ",setpts=PTS-STARTPTS+" + g.atSec + "/TB[fg" + k + "]");
-      f.push(chain + "[fg" + k + "]overlay=0:0:eof_action=pass:enable='between(t," + g.atSec + "," + end + ")'[g" + k + "]");
+      // フレーム番号で閉じる(秒の丸めで窓の両端が1コマ落ち、下のクリップが見える事故の恒久修正。2026-09-09)
+      f.push("[" + inIdx + ":v]trim=end_frame=" + g.frames + ",setpts=" + overlayPtsExpr(g.atFrame, OUT_FPS) + "[fg" + k + "]");
+      f.push(chain + "[fg" + k + "]overlay=0:0:eof_action=pass:enable='" + overlayEnableExpr(g.atFrame, g.frames) + "'[g" + k + "]");
       chain = "[g" + k + "]";
     });
     if (overlays.length === 0) {

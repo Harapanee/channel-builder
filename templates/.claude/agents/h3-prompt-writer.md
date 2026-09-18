@@ -113,6 +113,14 @@ export default shots;
 `Everything falls silent at 00:05.000 until a soft gust of wind rises at 00:05.800.` のように書けば、
 音の切れ目を本文の動きと合わせられる。**時刻は尺の内側に置く**(本文の `[Shot N]` と同じ `MM:SS.mmm` 形式)。
 
+**広帯域の持続音を重ねない(2026-09-18 追加)。** `a broad steady wind` + `a continuous dense dry rustle of
+countless small bodies` のように、風・ざわめき・hiss・hum・roar・rush・static の類を「steady / continuous / constant」で
+2つ以上重ねると、H3 はそれを時間変化のない広帯域ノイズ床として描く(ep039 cL23 / cL86 / cL115 / cL97 の実測。
+seed・設定では消えず、文面を変えると noise floor が 11 dB 下がる。`check:h3` の ADVISE A13 が拾う)。
+- 持続音は**1つまで**。もう1つは時刻つきの点音(`one dry click at 00:01.400` / `a single gust from 00:03.000 to 00:03.800`)にする
+- 引きの静止ショット(俯瞰・遠景・動きの少ない絵)は `almost silent` を土台に、点音1〜2個で書く
+- 群れ・多数の音は「countless / dense / continuous」で量を書かず、**個別に聞こえる音の粒**(`scattered soft clicks`・`a few dry scrapes`)で書く
+
 ### non_diegetic_music(変更なし・機械で止まる)
 
 **`N/A` 以外を書かない。** BGM は `bgm-plan.json` の包絡線設計が正であり、

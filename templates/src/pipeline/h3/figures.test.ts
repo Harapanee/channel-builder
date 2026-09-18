@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { figureOverlaysForChunk, figureReveals, figureWindow, typeRuns, validateFigure } from "./figures";
+import { figureOverlaysForChunk, overlayEnableExpr, overlayPtsExpr, figureReveals, figureWindow, typeRuns, validateFigure } from "./figures";
 import type { Figure, FigureIndexEntry } from "./figures";
 import type { FigureLine } from "./figures";
 import type { Cut } from "./types";
@@ -68,11 +68,13 @@ test("区間への切り出し: 連番の必要範囲と区間内の時刻を返
   assert.equal(o.startNumber, 0);
   assert.equal(o.frames, 72); // 2400..2472
   assert.equal(o.atSec, (48 / fps).toFixed(3));
+  assert.equal(o.atFrame, 48);
   // 次の区間 2472F 起点・200F → 残り 28F を 28 番から
   const [o2] = figureOverlaysForChunk([e], 2472, 200, fps);
   assert.equal(o2.startNumber, 72);
   assert.equal(o2.frames, 28);
   assert.equal(o2.atSec, "0.000");
+  assert.equal(o2.atFrame, 0);
   // 重ならない区間には出ない
   assert.deepEqual(figureOverlaysForChunk([e], 0, 2400, fps), []);
   assert.deepEqual(figureOverlaysForChunk([e], 2500, 100, fps), []);
@@ -134,4 +136,10 @@ test("同じ型の連続(typeRuns)を窓順の型列から拾う", () => {
     { type: "bars", from: 0, count: 3 }, { type: "scale", from: 4, count: 2 },
   ]);
   assert.deepEqual(typeRuns(["bars", "grid"]), []);
+});
+
+test("重ねの式はフレーム番号で閉じる(秒の丸めで窓の両端が1コマ落ちない)", () => {
+  // 2062/24 = 85.91666… を秒3桁に丸めると 85.917 > 実フレーム時刻 となり、先頭フレームが between(t,…) から外れる(ep032 章カードで実測)
+  assert.equal(overlayEnableExpr(2062, 106), "between(n,2062,2167)");
+  assert.equal(overlayPtsExpr(2062, 24), "PTS-STARTPTS+2062/24/TB");
 });

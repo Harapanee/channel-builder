@@ -332,8 +332,24 @@ export interface FigureChunkOverlay {
   /** 連番の読み始め(f%05d の番号) */
   startNumber: number;
   frames: number;
-  /** 区間内の置き時刻(秒・小数3桁の文字列。ffmpeg の式へそのまま入れる) */
+  /** 区間内の置き時刻(秒・小数3桁の文字列。表示用。ffmpeg の式には atFrame を使う) */
   atSec: string;
+  /** 区間内の置き位置(フレーム番号)。ffmpeg の enable / setpts はこれで組む(秒の丸めで両端が1コマ落ちるため) */
+  atFrame: number;
+}
+
+/**
+ * overlay の enable 式。フレーム番号で閉じる(両端を含む)。
+ * 秒で `between(t,a,b)` と書くと、a を3桁に丸めた値が実フレーム時刻を上回って先頭フレームが窓から外れ、
+ * 下のクリップが1コマ見える(2026-09-09 ep032 の章カードで実測: 10枚中 頭4枚・末尾8枚)。
+ */
+export function overlayEnableExpr(atFrame: number, frames: number): string {
+  return "between(n," + atFrame + "," + (atFrame + frames - 1) + ")";
+}
+
+/** 重ねる連番の setpts 式。フレーム番号 ÷ fps を ffmpeg 側で割らせ、丸めを持ち込まない */
+export function overlayPtsExpr(atFrame: number, fps: number): string {
+  return "PTS-STARTPTS+" + atFrame + "/" + fps + "/TB";
 }
 
 /**
@@ -357,6 +373,7 @@ export function figureOverlaysForChunk(
       startNumber: s - e.startFrame,
       frames: t - s,
       atSec: ((s - baseFrame) / fps).toFixed(3),
+      atFrame: s - baseFrame,
     });
   }
   return out;

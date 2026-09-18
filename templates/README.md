@@ -209,11 +209,13 @@ npm run check:readings episodes/<ep>   # 誤読リスクの機械抽出(既知�
 npm run diff:readings episodes/<ep>    # 期待読み(expected-readings.md)と VOICEVOX 実読みの機械diff(未知の誤読。差分行だけ出す)
 npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記(終了画面は Studio で人間が置く)
 npm run check:h3 -- <ep> [章ID] [--dump <出力先>]   # 【H3】生成前のプロンプト検査(BLOCKゼロまで生成しない)
+#   ADVISE A13: overall_soundscape で広帯域の持続音(steady wind + continuous rustle 等)を2つ以上重ねるとノイズ床になる(2026-09-18)
 npm run h3:pod -- status|up|down                    # 【H3】Pod の状態・起動(要確認・H3_ALLOW_GPU=1)・停止(必ず)
 H3_ALLOW_GPU=1 npm run h3:run -- <ep> <章ID> --url <PodURL>   # 【H3】章の生成(初回は --only で1〜2本)
 npm run h3:inspect -- <ep> <章ID>                   # 【H3】章のコンタクトシート(検品材料)
 npm run h3:reject -- <ep> <clipId,..>               # 【H3】不合格クリップの隔離(再生成対象へ戻す)
 npm run h3:audio-cues -- <ep> && npm run audio-mix episodes/<ep> && npm run h3:ambient -- <ep>   # 【H3】音声
+#   h3:ambient はクリップごとの noise floor を報告する(ambient.json の noiseFloorMaxDb 既定 -40 / autoExclude で自動除外)
 npm run h3:subs <ep> && npm run h3:figures -- <ep> && npm run h3:assemble -- <ep>   # 【H3】字幕・図解を焼いて組み立て(最終物)
 npm run check:assets episodes/<ep>  # 絵コンテの使用素材と実装の突合(既定は報告のみ)
 npm run qa:frames episodes/<ep>  # レンダー後の空フレーム検出(何も描かれていないclip)

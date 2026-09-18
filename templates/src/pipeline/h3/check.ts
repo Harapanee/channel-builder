@@ -39,6 +39,10 @@ const TRANSITION_WORDS = ["cross-dissolve", "cross-dissolves", "dissolves to", "
  * **カメラ文脈に限った言い回しだけを列挙する。** 単語だけで弾くと、動物名(crane=鶴、
  * mole=モグラ)が被写体として正当に出てくるこのチャンネルでは誤検知になる。
  */
+/** 広帯域ノイズ的に描かれる持続音(A13)。形容(steady/continuous/constant/…)+ 名詞の組で1件 */
+const BROADBAND_SUSTAINED =
+  /\b(?:steady|continuous|constant|unbroken|ceaseless|endless)\b(?:\s+\w+){0,4}?\s+(?:wind|winds|rustle|rustling|hiss|hissing|hum|humming|roar|roaring|rush|rushing|static|drone|droning|buzz|buzzing|whoosh)\b/gi;
+
 const FORBIDDEN_CAMERA =
   /\b(dolly (in|out|forward|back)|dollies (in|out|forward|back)|crane shot|craning|orbits? around|handheld|steadicam|whip pans?|swoops? (in|down|over)|drone shot|camera flies (over|through))\b/i;
 
@@ -166,6 +170,22 @@ export function checkPromptText(
         message: "[Shot " + m[1] + "] の境界に公式の転換語が無い(カット動詞5句・cross-dissolve/fade/wipe のいずれも)",
       });
     }
+  }
+
+  // --- A13: 広帯域の持続音の重ね書き(2026-09-18) ------------------------------
+  // `a broad steady wind` + `a continuous dense dry rustle` のように、風・ざわめき・hiss・hum の類を
+  // 「steady / continuous / constant」で2つ以上重ねると、H3 は時間変化のない広帯域ノイズ床を描く
+  // (ep039 cL23/cL86/cL115/cL97 の実測。seed・設定では消えず、文面を変えると noise floor が 11 dB 下がる)。
+  // 音の欄(overall_soundscape)だけを見る。本文の風は絵の指示なので数えない。
+  const soundText = (core.split(/\n\noverall_soundscape:/)[1] ?? "").split(/\n\nnon_diegetic_music:/)[0];
+  const sustained = [...soundText.matchAll(BROADBAND_SUSTAINED)].map((m) => m[0]);
+  if (sustained.length >= 2) {
+    out.push({
+      level: "ADVISE",
+      id,
+      rule: "A13",
+      message: "広帯域の持続音を重ねている「" + sustained.join("」「") + "」— H3 はノイズ床として描く。持続音は1つまで、残りは時刻つきの点音にする",
+    });
   }
 
   // --- B6: 尺 ---------------------------------------------------------------
@@ -441,7 +461,7 @@ export function checkJobSet(
  */
 const CUT_KEYS = new Set([
   "lineIds", "seconds", "place", "subject", "role",
-  "chain", "chainFrom", "hi", "text", "card", "holdSlow", "noSub",
+  "chain", "chainFrom", "hi", "text", "card", "holdSlow", "noSub", "skipHeadFrames",
 ]);
 
 export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): Finding[] {

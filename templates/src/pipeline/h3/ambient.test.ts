@@ -4,7 +4,7 @@ import { DEFAULT_AMBIENT, ambientPlan, resolveAmbientConfig, unknownAmbientKeys 
 import type { Segment } from "./assemble";
 
 const seg = (clipId: string, frames: number, offsetFrames: number): Segment =>
-  ({ clipId, lineIds: [], startSec: offsetFrames / 24, frames, offsetFrames, holdSlow: false, noSub: false });
+  ({ clipId, lineIds: [], startSec: offsetFrames / 24, frames, offsetFrames, holdSlow: false, skipHeadFrames: 0, noSub: false });
 
 const SEGS: Segment[] = [seg("cL01", 48, 0), seg("cL02", 72, 48), seg("cL03", 24, 120)];
 
@@ -66,4 +66,56 @@ test("perClip のキーが cuts.json に無ければ検出する", () => {
 test("exclude と perClip の両方に無いIDがあれば、重複なく両方とも出す", () => {
   const config = resolveAmbientConfig({ exclude: ["cL25", "cL99"], perClip: { cL99: { gainDb: -30 } } });
   assert.deepEqual(unknownAmbientKeys(config, CUT_IDS), ["cL25", "cL99"]);
+});
+
+/* ---- noise floor による検出と自動除外(2026-09-18 channel-refine) ---- */
+
+import { applyNoiseExclusion, flagNoisyClips, parseNoiseFloorDb } from "./ambient";
+
+const ASTATS = [
+  "[Parsed_astats_0 @ 0x7f] Overall",
+  "[Parsed_astats_0 @ 0x7f] DC offset: 0.000001",
+  "[Parsed_astats_0 @ 0x7f] Peak level dB: -25.815321",
+  "[Parsed_astats_0 @ 0x7f] RMS level dB: -40.395602",
+  "[Parsed_astats_0 @ 0x7f] Noise floor dB: -33.601739",
+  "[Parsed_astats_0 @ 0x7f] Flat factor: 0.000000",
+].join("\n");
+
+test("parseNoiseFloorDb: ffmpeg astats の Overall から Noise floor を読む", () => {
+  assert.equal(parseNoiseFloorDb(ASTATS), -33.601739);
+});
+
+test("parseNoiseFloorDb: 見つからなければ null(黙って 0 にしない)", () => {
+  assert.equal(parseNoiseFloorDb("no stats here"), null);
+});
+
+test("flagNoisyClips: 閾値を超えたクリップだけを、うるさい順に返す", () => {
+  const flagged = flagNoisyClips({ cL23: -33.6, cL95: -58.2, cL86: -41.6, cL01: -60.1 }, -40);
+  assert.deepEqual(flagged, [{ clipId: "cL23", noiseFloorDb: -33.6 }]);
+  const wider = flagNoisyClips({ cL23: -33.6, cL95: -58.2, cL86: -41.6 }, -45);
+  assert.deepEqual(wider.map((f) => f.clipId), ["cL23", "cL86"]);
+});
+
+test("flagNoisyClips: 閾値ちょうどは超えていない", () => {
+  assert.deepEqual(flagNoisyClips({ cL01: -40 }, -40), []);
+});
+
+test("applyNoiseExclusion: autoExclude が真なら exclude に足す(元の exclude は残す)", () => {
+  const c = resolveAmbientConfig({ exclude: ["cL10"], noiseFloorMaxDb: -40, autoExclude: true });
+  const next = applyNoiseExclusion(c, [{ clipId: "cL23", noiseFloorDb: -33.6 }]);
+  assert.ok(next.exclude.has("cL10"));
+  assert.ok(next.exclude.has("cL23"));
+  assert.ok(!c.exclude.has("cL23"), "元の設定は書き換えない");
+});
+
+test("applyNoiseExclusion: autoExclude が偽(既定)なら何も足さない=報告のみ", () => {
+  const c = resolveAmbientConfig({ noiseFloorMaxDb: -40 });
+  assert.equal(c.autoExclude, false);
+  const next = applyNoiseExclusion(c, [{ clipId: "cL23", noiseFloorDb: -33.6 }]);
+  assert.equal(next.exclude.size, 0);
+});
+
+test("resolveAmbientConfig: noiseFloorMaxDb の既定は -40、null で検査を切る", () => {
+  assert.equal(resolveAmbientConfig(undefined).noiseFloorMaxDb, -40);
+  assert.equal(resolveAmbientConfig({ noiseFloorMaxDb: null }).noiseFloorMaxDb, null);
 });

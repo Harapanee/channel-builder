@@ -139,7 +139,7 @@ test("束ねたカットは行ぶんだけ字幕を見る", () => {
 
 test("missingMaterials は noSub のカットの字幕を要求しない", () => {
   const seg = (clipId: string, lineIds: string[], noSub: boolean): Segment =>
-    ({ clipId, lineIds, startSec: 0, frames: 120, offsetFrames: 0, holdSlow: false, noSub });
+    ({ clipId, lineIds, startSec: 0, frames: 120, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub });
   const segments = [seg("cL01", ["L01"], true), seg("cL02", ["L02"], false)];
   const m = missingMaterials(segments, () => true, () => false);
   assert.deepEqual(m.subs, ["L02"]);

@@ -202,7 +202,7 @@ function main(): void {
   const missing = missingMaterials(
     segments,
     (id) => existsSync(join(clipsDir(epId), id + ".mp4")),
-    (id) => overlayWindows({ clipId: "", lineIds: [id], startSec: 0, frames: 0, offsetFrames: 0, holdSlow: false, noSub: false }, lineById, 0, OUT_FPS, ledger).every((o) => existsSync(subPath(o))),
+    (id) => overlayWindows({ clipId: "", lineIds: [id], startSec: 0, frames: 0, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub: false }, lineById, 0, OUT_FPS, ledger).every((o) => existsSync(subPath(o))),
   );
   if (missing.clips.length > 0) {
     console.error("❌ この章の素材が足りません: " + missing.clips.length + "本(まだ生成されていないカット)");

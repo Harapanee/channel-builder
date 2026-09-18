@@ -35,10 +35,16 @@ export const COMFY_CLI = resolve(ROOT, "../tools/comfy-runpod");
  * ワークフローJSON側の値がそのまま効く)。差し込むのはプロンプト・尺・シード・サイズ・
  * 参照画像・出力名だけ。null にするとコードで結線を組む従来経路(buildT2V)へ戻る。
  *
- * 2026-08-27 ep019-pillbug から。Volume 上の実体は turbo 4step LoRA v1.1(強度1.2)/
- * steps 6 / euler / sigma shift 6·3 / SageAttention auto / 2Kアップスケーラーはバイパス済み。
+ * 2026-08-27 ep019-pillbug から `h3_youtube_2k_fast_4step_sage`(turbo 4step LoRA v1.1(強度1.2)/
+ * steps 6 / euler / sigma shift 6·3 / SageAttention auto / 2Kアップスケーラーはバイパス済み)。
+ *
+ * 2026-09-18 から `h3_youtube_2k_fast_6step_sol` = 上に ComfyUI 0.35+ のコアノード
+ * BlockSparseAttention(sol-attn, tau 1.3, start 0.2, sink exact_kv_and_rows)を足したもの。
+ * ep039 の6カット A/B で画は同一(PSNR 18〜28 dB)のまま 1本あたり −19%。**Pod の ComfyUI が
+ * 0.36.0 以上であること**(Volume 上で更新済み。0.30 のままだとノードが無く BLOCK される)。
+ * 根拠: docs/superpowers/notes/2026-09-18-h3-latest-and-quality-options.md §5
  */
-export const WORKFLOW: string | null = "h3_youtube_2k_fast_4step_sage";
+export const WORKFLOW: string | null = "h3_youtube_2k_fast_6step_sol";
 
 /** 【WORKFLOW が null のときだけ効く】 */
 export const LORA = {

@@ -653,3 +653,35 @@ test("A11: 語彙帳の否定形は項目ごとに1件。body の A6 で語彙�
   ];
   assert.deepEqual(dropVocabOriginA6(a6, vocab).map((x) => x.id), ["cL02", "cL03"]);
 });
+
+// --- A13: 広帯域の持続音の重ね書き(2026-09-18) --------------------------------
+
+const withSound = (sound: string) => OK.replace("overall_soundscape: A low underwater hum.", "overall_soundscape: " + sound);
+
+test("A13: steady wind + continuous rustle の重ね書きは ADVISE(BLOCK にはしない)", () => {
+  const f = checkPromptText("cL23", withSound("A high open plain heard from above, a broad steady wind, and a continuous dense dry rustle of countless small bodies moving over sand."), CTX);
+  assert.ok(rules(f).includes("A13"));
+  assert.ok(!rules(blocks(f)).includes("A13"));
+});
+
+test("A13: 持続音が1つだけなら指摘しない", () => {
+  const f = checkPromptText("cL95", withSound("A wide open desert under a broad steady wind, one thin sharp falcon call high overhead at 00:02.400."), CTX);
+  assert.ok(!rules(f).includes("A13"));
+});
+
+test("A13: constant hum + continuous hiss も拾う(語は wind/rustle に限らない)", () => {
+  const f = checkPromptText("x", withSound("A constant low hum of the hive and a continuous hiss of air through the wax."), CTX);
+  assert.ok(rules(f).includes("A13"));
+});
+
+test("A13: 本文(body)側の steady wind は数えない(音の欄だけを見る)", () => {
+  const f = checkPromptText("x", inBody("A steady wind bends the grass and a continuous rustle runs across the field.").replace("overall_soundscape: A low underwater hum.", "overall_soundscape: Almost silent, one dry click at 00:01.400."), CTX);
+  assert.ok(!rules(f).includes("A13"));
+});
+
+test("A13: 指摘文に該当した2語が入る", () => {
+  const f = checkPromptText("x", withSound("a steady wind and a continuous rustle"), CTX).filter((x) => x.rule === "A13");
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /steady wind/);
+  assert.match(f[0].message, /continuous rustle/);
+});

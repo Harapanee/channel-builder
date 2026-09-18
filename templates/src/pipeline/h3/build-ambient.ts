@@ -11,15 +11,24 @@
  * exit: 0 = OK / 2 = 実行エラー
  */
 import Ajv from "ajv";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { OUT_FPS, ROOT, clipsDir, epBase } from "./config";
 import { buildSegments, durationOf, runFfmpeg } from "./assemble";
-import { ambientPlan, resolveAmbientConfig, unknownAmbientKeys } from "./ambient";
+import { ambientPlan, applyNoiseExclusion, flagNoisyClips, parseNoiseFloorDb, resolveAmbientConfig, unknownAmbientKeys } from "./ambient";
 import type { TimingLine } from "./plan";
 import type { CutsFile } from "./types";
 
 const SAMPLE_RATE = 48000;
+
+/** クリップの音の noise floor(dBFS)。ffmpeg astats の Overall を stderr から読む。測れなければ null */
+function measureNoiseFloorDb(path: string): number | null {
+  const r = spawnSync("ffmpeg", ["-i", path, "-vn", "-af", "astats=measure_perchannel=none", "-f", "null", "-"],
+    { encoding: "utf8" });
+  if (r.status !== 0) return null;
+  return parseNoiseFloorDb(r.stderr ?? "");
+}
 
 function main(): void {
   const epId = process.argv[2];
@@ -45,7 +54,7 @@ function main(): void {
       process.exit(2);
     }
   }
-  const config = resolveAmbientConfig(raw);
+  let config = resolveAmbientConfig(raw);
 
   // exclude/perClip の打ち間違いを黙って握り潰さない(指摘3)。集合/レコードへの
   // Has/キー参照は存在しないIDを渡しても素通りするだけなので、ここで cuts.json と突き合わせる
@@ -56,16 +65,40 @@ function main(): void {
   }
 
   const segments = buildSegments(cutsFile.cuts, timing.lines, timing.totalDurationSec, OUT_FPS);
-  const pieces = ambientPlan(segments, config);
+  const used = [...new Set(segments.map((s) => s.clipId).filter((id) => !config.exclude.has(id)))];
 
-  const missing = pieces
-    .filter((p) => p.clipId && !existsSync(join(clipsDir(epId), p.clipId + ".mp4")))
-    .map((p) => p.clipId);
+  const missing = used.filter((id) => !existsSync(join(clipsDir(epId), id + ".mp4")));
   if (missing.length > 0) {
     console.error("❌ クリップが無い: " + missing.slice(0, 10).join(", ") +
       (missing.length > 10 ? " ほか" + (missing.length - 10) + "件" : ""));
     process.exit(2);
   }
+
+  // noise floor の検出(2026-09-18)。H3 は「steady wind + continuous rustle」の文面を広帯域ノイズ床として
+  // 描く(ep039 実測)。文面側は check:h3 A13 が生成前に拾うが、実物も測って報告する。
+  // autoExclude が真のときだけ無音に置換する(既定は報告のみ=従来の挙動)
+  if (config.noiseFloorMaxDb !== null) {
+    const floors: Record<string, number> = {};
+    const unmeasured: string[] = [];
+    for (const id of used) {
+      const db = measureNoiseFloorDb(join(clipsDir(epId), id + ".mp4"));
+      if (db === null) unmeasured.push(id); else floors[id] = db;
+    }
+    const flagged = flagNoisyClips(floors, config.noiseFloorMaxDb);
+    if (unmeasured.length > 0) console.log("⚠️ noise floor を測れなかった: " + unmeasured.join(", "));
+    if (flagged.length > 0) {
+      console.log("⚠️ noise floor が " + config.noiseFloorMaxDb + " dB を超えるクリップ " + flagged.length + "本" +
+        (config.autoExclude ? "(autoExclude: 無音に置換する)" : "(報告のみ。無音にするなら ambient.json の exclude か autoExclude: true)"));
+      for (const f of flagged) console.log("   " + f.clipId + "  " + f.noiseFloorDb.toFixed(1) + " dB");
+    } else {
+      // 閾値は暫定(ep039 実測から)。境界付近を人が見られるよう、上位3本は常に出す
+      const top = flagNoisyClips(floors, -Infinity).slice(0, 3).map((f) => f.clipId + " " + f.noiseFloorDb.toFixed(1) + " dB");
+      console.log("noise floor: 全 " + used.length + "本が " + config.noiseFloorMaxDb + " dB 以下(上位: " + top.join(" / ") + ")");
+    }
+    config = applyNoiseExclusion(config, flagged);
+  }
+
+  const pieces = ambientPlan(segments, config);
 
   // 中間 wav は h3/episodes/<epId>/ (git 追跡下) ではなく epBase(epId)
   // (= scratchpad_gen/minimax-style/<epId>/、.gitignore 済み) に置く。
