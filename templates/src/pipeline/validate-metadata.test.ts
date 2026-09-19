@@ -20,7 +20,7 @@ function setup(meta: Record<string, unknown>): { root: string; ep: string } {
 }
 
 const base = {
-  title: "テストに転生したら最悪だった件",
+  title: "テスト用タイトル",
   description: `要約\n\n${NOTES}\n#test`,
   tags: ["a"],
   categoryId: "27",
