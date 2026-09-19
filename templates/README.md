@@ -243,4 +243,4 @@ cat .channel-system.json         # 状態
 
 また `npm run validate` は全チャンネル共通で**必須props検査(Rule 10)**を行う: コンポーネント別の必須props欠落(例: ComparisonSplit の left/right/mode)・絵コンテ残骸 `placeholderAssets` を検出する(プレースホルダpropsのままレンダーへ進む事故の防止)。チャンネル固有の必須propsは `channel/required-props.json`(任意。例: `{"Outro": ["channelName"]}`)で拡張できる。
 
-`publish/metadata.json` は `aiDisclosure`(YouTubeの改変コンテンツ開示。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。通常はfalse)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。
+`publish/metadata.json` は `aiDisclosure`(YouTubeの改変コンテンツ開示。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。通常はfalse)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。`memberEarlyAccess: {hours}`(任意)はメンバーシップの先行公開の宣言で、`publishAt` と概要欄の定型行「メンバーシップに加入すると、本編を一般公開の<N>時間前に見られます。」を validate:metadata が要求する(Studio の「メンバーに先行公開」は API に無く、人間が工程12で有効にする)。

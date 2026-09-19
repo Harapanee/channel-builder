@@ -11,8 +11,14 @@ import Ajv from "ajv";
  *  3. thumbnail の実ファイル存在
  *  4. productionNotes が description に含まれること
  *  5. publishAt の整合
+ *  6. memberEarlyAccess(メンバー先行公開)は publishAt 必須+概要欄に定型行
  * 失敗は exit 1(理由を列挙)。
  */
+
+/** 概要欄に入れるメンバーシップ案内の定型行(bible §13 / publisher と逐語一致) */
+export function memberEarlyAccessNotice(hours: number): string {
+  return `メンバーシップに加入すると、本編を一般公開の${hours}時間前に見られます。`;
+}
 export function validateMetadata(
   episodeDirArg: string,
   projectRoot: string = process.cwd()
@@ -54,6 +60,7 @@ export function validateMetadata(
     productionNotes: string;
     publishAt?: string;
     privacyStatus?: string;
+    memberEarlyAccess?: { hours: number };
   };
   if (meta.thumbnail !== undefined) {
     if (!isSafeRel(meta.thumbnail)) {
@@ -80,6 +87,21 @@ export function validateMetadata(
     if (meta.privacyStatus !== undefined && meta.privacyStatus !== "private") {
       errors.push(
         "publishAt 指定時は privacyStatus は private(YouTubeの公開予約仕様)"
+      );
+    }
+  }
+
+  // メンバー先行公開: 予約公開が前提。概要欄の案内は hours と一致した定型行
+  if (meta.memberEarlyAccess !== undefined) {
+    if (meta.publishAt === undefined) {
+      errors.push(
+        "memberEarlyAccess 指定時は publishAt(公開予約)が必須(先行公開は予約公開の前段)"
+      );
+    }
+    const notice = memberEarlyAccessNotice(meta.memberEarlyAccess.hours);
+    if (!meta.description.includes(notice)) {
+      errors.push(
+        `description にメンバーシップ案内の定型行が無い(逐語で必要): ${notice}`
       );
     }
   }

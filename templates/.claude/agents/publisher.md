@@ -92,9 +92,12 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
   "privacyStatus": "private",
   "thumbnail": "publish/thumb-1.png",
   "aiDisclosure": false,
-  "productionNotes": "<制作工程・AI利用の開示の定型ブロック(下記)>"
+  "productionNotes": "<制作工程・AI利用の開示の定型ブロック(下記)>",
+  "publishAt": "<公開予約日時 ISO8601(任意)>",
+  "memberEarlyAccess": { "hours": 24 }
 }
 ```
+(`publishAt`・`memberEarlyAccess` は任意。後者は bible §13 がメンバー先行公開を規定するチャンネルのみ)
 
 - `privacyStatus` は常に `"private"`(公開操作は人間がYouTube Studioで行う)
 - `tags` はハッシュタグの語+検索語(人物の別表記・関連事件)を8〜15個
@@ -106,6 +109,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
   この動画は当チャンネルのオリジナル制作です。台本は資料調査に基づくオリジナル執筆、映像は自作プログラム(Remotion)による独自描画、ナレーションは合成音声(VOICEVOX)です。
 
 - `publishAt`(任意)は公開予約日時(ISO8601)。書く場合は `privacyStatus: "private"` のまま(公開予約はアップロード側が処理)
+- `memberEarlyAccess: { "hours": <N> }`(任意)はメンバーシップの先行公開の宣言。**bible §13 がメンバー先行公開を規定するチャンネルの本編でのみ**書く。書く場合は `publishAt` が必須になり、概要欄のクレジットの後(productionNotes の前)に定型行「メンバーシップに加入すると、本編を一般公開の<N>時間前に見られます。」を**逐語**で入れる(validate-metadata が hours と突合する)。Studio 側の「メンバーに先行公開」は API に無いので人間が工程12で有効にする(review-checklist の `@human`)。ショートには書かない
 
 # 出力4: `channel/episode-ledger.json` への追記
 
@@ -134,6 +138,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 - [ ] metadata.json がPUBLISH.mdの採用案と一致し、`npm run validate:metadata` がOK
 - [ ] 諸説のある数字をタイトル・サムネで断定していない(「一説」「約」等はサムネでは省略可だが、概要欄の補足に必ず注記)
 - [ ] metadata.json に aiDisclosure: false と productionNotes(定型逐語)があり、description にも同文が含まれる
+- [ ] (bible §13 にメンバー先行公開の規定があるチャンネルのみ)本編の metadata.json に publishAt と memberEarlyAccess があり、概要欄に定型行が逐語で入っている
 - [ ] channel/episode-ledger.json にこのエピソードのエントリを追記した(既存エントリは無変更)。`npm run validate:ledger` がOK
 - [ ] 一言が感情中立・具体(感嘆詞・絶叫調・煽り語彙でない。docs/thumbnail-principles.md 原則2。bible §13が別の語調様式を明示する場合はbible優先で、その旨をPUBLISH.mdに一言記す)
 - [ ] 各案の注目オブジェクトが少数(bible §13の構造要素+補助アクセント1個以内。同 原則1)

@@ -113,6 +113,7 @@ const IDENTICAL = [
   "src/pipeline/voicevox-user-dict.test.ts",
   "src/pipeline/next-videos.ts",
   "src/pipeline/next-videos.test.ts",
+  "src/pipeline/validate-metadata.test.ts",
   "src/schemas/thumb-test.schema.json",
   "src/schemas/analytics.schema.json",
   "src/scenes/shorts/core/RankCard.tsx",
