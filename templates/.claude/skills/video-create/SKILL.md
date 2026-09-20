@@ -134,6 +134,7 @@ v1 は絵コンテの演出記述(HyperFrames用のDOM/GSAP指示)をそのま�
 - **定数は必要最小限にする。** 語彙が増えるほど章をまたいだ画の同一性が崩れる。迷ったら足さずに既存の定数で書けないか先に試す
 - **`places` の定数には、被写体と無関係に動き続ける小さな要素を必ず1つ以上入れる**(雛形の `SEA` の "a few small pale specks drifting slowly" / `RIVER` の "small pale bubbles rising slowly" がその例)。**画面の広い面を「plain cream paper」だけで終わらせない** —— 空・氷原・雪原など無地になりやすい面には、遠景の要素(遠い稜線・低い雲の帯・遠くの群れ・舞う粒)を定数の側で持たせる。ここが空だと、全カットが「無地の紙の上に被写体1つ」になる(実測の反省)
 - 英文だけを書く(日本語は JSDoc コメントへ)。起こしたら `npm run typecheck:h3` を通す(定数名の綴り違いはここで捕まる)
+- **`subjects` の各定数は「種を決める4か所」を肯定形で必ず書く**(2026-09-20): (a) **口** — 位置と大きさ(例: `a tiny round mouth opening at the very tip of the snout, as narrow as the tongue`)、(b) **接地** — 何がどう地面・枝・板に触れているか(例: `hanging upside down by its two small hooked feet` / `resting flat on its belly with the folded wings tucked against its sides`)、(c) **似た動物との識別点**(例: バッタ `two long hind legs folded like a Z along its sides`・タスマニアデビル `a broad heavy head and one white band across its chest`)、(d) **目の数と位置**。**台本が身体の事実を言う行(歯がない・後ろにも進める・翼で歩く等)は、その事実を該当 subject の英文に肯定形で先に書く**(語彙帳を起こすときは `script.md` も入力に含め、身体の事実を述べる行を拾う)。書かないと H3 の既定(歯のある口・四つ足の哺乳類・近い種の姿)が出る。否定形(`no teeth`)は効かない(check:h3 A6)。コメント実測より: ep034「歯が見えた」・ep038「コウモリは四つん這いにならない」・ep039「どうみてもG」・ep037「ワンコにしか見えない」・ep020「ワタリアホウドリで別の鳥」
 
 **人間の承認を得てから工程6.5へ進む。** 語彙帳はこの先の全カットが参照する土台で、あとから足すほど同一性が崩れる。定数名・英文・用途の一覧を提示して承認を取る(ヘッドレスでは `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない** — この種別の承認は夜間レンダーキューへの自動登録を起こす)。
 
