@@ -21,6 +21,14 @@ import { endFramePrompt } from "./end-frame";
 import { speedupRatios, type TimingLine } from "./plan";
 import type { CutsFile, Finding, ShotDecl, Vocab } from "./types";
 
+/** .channel-system.json の h3Pipeline.firstWorstDeadlineSec(null=規則なし・未指定=45秒) */
+function firstWorstDeadline(): number | null | undefined {
+  const p = join(ROOT, ".channel-system.json");
+  if (!existsSync(p)) return undefined;
+  const v = (JSON.parse(readFileSync(p, "utf8")) as { h3Pipeline?: { firstWorstDeadlineSec?: number | null } }).h3Pipeline?.firstWorstDeadlineSec;
+  return v;
+}
+
 /** 畳んだ結果の1行ぶん。ids は出た順 */
 export interface FoldedFinding {
   rule: string;
@@ -136,7 +144,7 @@ async function main(): Promise<void> {
   }
   findings.push(...checkJobSet(jobs));
   // B14: 冒頭45秒(全章を対象にしたときだけ。章指定の部分検査で毎回止めない)
-  if (timing && only.length === 0) findings.push(...checkFirstWorst(cuts, timing.lines));
+  if (timing && only.length === 0) findings.push(...checkFirstWorst(cuts, timing.lines, firstWorstDeadline()));
   if (timing && only.length === 0) findings.push(...checkKeyframePresence(cuts.cuts));
   // A17: 使われない語彙定数(全章を対象にしたときだけ)
   if (only.length === 0) findings.push(...checkUnusedVocab(vocab, authored));

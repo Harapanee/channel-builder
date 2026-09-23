@@ -20,3 +20,9 @@ test("B14: 45秒より後・章カードのカット・timing に無い行は BL
   assert.ok(checkFirstWorst({ cuts, firstWorstLineId: "L02" }, LINES).some((f) => /章カード/.test(f.message)));
   assert.ok(checkFirstWorst({ cuts, firstWorstLineId: "L99" }, LINES).length > 0);
 });
+test("B14: 期限を null にしたチャンネルでは検査しない(人物転生 Bernard 型・2026-09-23)", () => {
+  assert.deepEqual(checkFirstWorst({ cuts }, LINES, null), []);
+});
+test("B14: 期限を引数で変えられる", () => {
+  assert.deepEqual(checkFirstWorst({ cuts, firstWorstLineId: "L04" }, LINES, 60), []);
+});

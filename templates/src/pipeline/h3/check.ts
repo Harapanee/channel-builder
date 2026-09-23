@@ -743,7 +743,10 @@ export const FIRST_WORST_DEADLINE_SEC = 45;
 export function checkFirstWorst(
   cutsFile: Pick<CutsFile, "cuts" | "firstWorstLineId">,
   lines: { lineId: string; startSec: number }[],
+  deadlineSec: number | null = FIRST_WORST_DEADLINE_SEC,
 ): Finding[] {
+  // null = このチャンネルは冒頭45秒規則を持たない(.channel-system.json h3Pipeline.firstWorstDeadlineSec)
+  if (deadlineSec === null) return [];
   const id = cutsFile.firstWorstLineId;
   if (!id) {
     return [{ level: "BLOCK", id: "cuts.json", rule: "B14", message: "firstWorstLineId が無い(宣告から45秒以内に最初の最悪を言う行を台帳に書く。bible §4)" }];
@@ -751,8 +754,8 @@ export function checkFirstWorst(
   const line = lines.find((l) => l.lineId === id);
   if (!line) return [{ level: "BLOCK", id: "cuts.json", rule: "B14", message: "firstWorstLineId の " + id + " が timing.json に無い" }];
   const out: Finding[] = [];
-  if (line.startSec > FIRST_WORST_DEADLINE_SEC) {
-    out.push({ level: "BLOCK", id: "cuts.json", rule: "B14", message: "最初の最悪(" + id + ")が " + line.startSec.toFixed(1) + "秒から。" + FIRST_WORST_DEADLINE_SEC + "秒以内に置く(台本の順序を直すか、行を選び直す)" });
+  if (line.startSec > deadlineSec) {
+    out.push({ level: "BLOCK", id: "cuts.json", rule: "B14", message: "最初の最悪(" + id + ")が " + line.startSec.toFixed(1) + "秒から。" + deadlineSec + "秒以内に置く(台本の順序を直すか、行を選び直す)" });
   }
   const hit = Object.entries(cutsFile.cuts).find(([, c]) => c.lineIds.includes(id));
   if (!hit) out.push({ level: "BLOCK", id: "cuts.json", rule: "B14", message: "最初の最悪(" + id + ")を持つカットが無い" });
