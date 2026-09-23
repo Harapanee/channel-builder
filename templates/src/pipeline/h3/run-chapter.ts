@@ -1,6 +1,6 @@
 /**
  * 章単位の生成。
- *   npm run h3:run -- <epId> <章ID> [--plan|--dry] [--only cL01,cL02] [--seed 7] [--url https://…]
+ *   npm run h3:run -- <epId> <章ID> [--plan|--dry] [--only cL01,cL02] [--seed 7] [--regen-end cL67,…] [--url https://…]
  * exit 0=正常 / 2=引数不正・投入前検査で BLOCK / 3=GPU 課金ロック(H3_ALLOW_GPU 無し)
  *
  * --plan / --dry は計画と検査だけを行い、GPU を使わない。
@@ -14,13 +14,21 @@
  * 砦として遅すぎる(章をまたぐ鎖を順不同に回すと必ず踏む)。
  * ただし**ジョブは先に全部組んで一括で検査する**(basename の一意性は集合でしか見られない)。
  * **常駐監視ループは作らない。** 欠けを自動検出して投げる仕組みは意図しない課金を起こす。
+ *
+ * Pod の見張り役(tools/comfy-runpod/lib/watchdog.mjs)向けに、クリップごとに heartbeat を touch する。
+ * 例外・Ctrl-C・SIGTERM で抜けるときは batch.mjs を止め、down の案内を出して heartbeat を止める
+ * (以後は見張りの無操作判定で Pod が落ちる)。
  */
 import { basename, join } from "node:path";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { COMFY_CLI, LORA, ROOT, SAMPLER, SIGMA_SHIFT, SIZE_DEFAULT, SIZE_HI, STEPS, WORKFLOW, assertGpuAllowed, clipsDir, framesDir, podUrl } from "./config";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { COMFY_CLI, HEARTBEAT_FILE, LORA, ROOT, SAMPLER, SIGMA_SHIFT, SIZE_DEFAULT, SIZE_HI, STEPS, WORKFLOW, assertGpuAllowed, clipsDir, framesDir, podUrl, rejectedDir } from "./config";
+import { isUsable } from "./assemble";
+import { findStaleChains } from "./chain-stale";
+import { freeName } from "./reject-clips";
 import { chapterCard, composePrompt } from "./compose";
-import { checkJobSet, checkLedger, checkPromptText } from "./check";
+import { checkEndStateVocab, checkJobSet, checkLedger, checkPromptText } from "./check";
+import { endFramePath, genEndFrame } from "./end-frame";
 import type { Cut, CutsFile, Finding, ShotDecl, Vocab } from "./types";
 
 export interface Job {
@@ -31,6 +39,8 @@ export interface Job {
   height: number;
   seed: number;
   firstFrameFile?: string;
+  /** keyframe カットの終点画像(FL2VA の last_frame)。Task 3 の genEndFrame が作る */
+  lastFrameFile?: string;
 }
 
 /** 章カードは chapterCard() の定型に書き手の宣言を重ねる(check-h3-prompt と同じ順序) */
@@ -84,18 +94,45 @@ export function buildJob(
   vocab: Vocab,
   firstFrameFile?: string,
   chapterSeed?: number,
+  lastFrameFile?: string,
 ): Job {
   const size = cut.hi ? SIZE_HI : SIZE_DEFAULT;
   const full = fullDecl(decl);
   return {
     id,
-    prompt: composePrompt(full, vocab, { firstFrame: Boolean(firstFrameFile) }),
+    prompt: composePrompt(full, vocab, lastFrameFile ? { firstFrame: true, lastFrameAt: cut.seconds } : { firstFrame: Boolean(firstFrameFile) }),
     seconds: cut.seconds,
     width: size.width,
     height: size.height,
     seed: resolveSeed(full, chapterSeed),
     ...(firstFrameFile ? { firstFrameFile } : {}),
+    ...(lastFrameFile ? { lastFrameFile } : {}),
   };
+}
+
+/** `--regen-end cL67,cL70`: 終点画像を消して作り直すカット */
+export function parseRegenEnd(args: string[]): string[] {
+  const at = args.indexOf("--regen-end");
+  if (at < 0) return [];
+  const raw = args[at + 1];
+  if (raw === undefined || raw.startsWith("--") || raw.trim() === "") throw new Error("--regen-end にカットIDがありません(例: --regen-end cL67)");
+  return raw.split(/[,\s]+/).filter(Boolean);
+}
+
+/**
+ * `--regen-end` の ID を検証する。生成済みクリップは対象(targets)から外れるので、黙って無効になるのを防ぐ。
+ * 戻り値は問題メッセージの配列(空なら OK)。
+ */
+export function validateRegenEnd(regenEnd: string[], targets: string[], cuts: Record<string, Cut>): string[] {
+  const out: string[] = [];
+  for (const id of regenEnd) {
+    if (!targets.includes(id)) {
+      out.push("--regen-end " + id + " は今回の生成対象にありません(生成済みか章外)。生成済みなら先に `npm run h3:reject -- <epId> " + id + "` で隔離してから");
+    } else if (!cuts[id]?.keyframe) {
+      out.push("--regen-end " + id + " は keyframe カットではありません(終点画像を持たない)");
+    }
+  }
+  return out;
 }
 
 /**
@@ -188,6 +225,91 @@ export function missingChainSources(
   return out;
 }
 
+/** ff 画像を抽出し直すか。**クリップの方が新しいときだけ**(毎回抽出すると終点画像の再生成が暴発する) */
+export function needsFrameExtract(clipMtimeMs: number, ffMtimeMs: number | null): boolean {
+  return ffMtimeMs === null || clipMtimeMs > ffMtimeMs;
+}
+
+/** 見張り役への「生きている」印。**失敗しても例外を投げない**(見張りの都合で生成を止めない) */
+export function touchHeartbeat(path = HEARTBEAT_FILE): void {
+  try {
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, new Date().toISOString() + "\n");
+    const t = new Date();
+    utimesSync(path, t, t);
+  } catch {
+    // heartbeat が止まれば見張りが無操作で Pod を落とすだけ
+  }
+}
+
+/** 抜けるときの案内。正常終了・例外・割り込みのどれでも down を促す */
+export function exitNotice(kind: "done" | "error" | "signal", signal?: string): string[] {
+  const head = kind === "signal"
+    ? "⚠️ " + (signal ?? "シグナル") + " で中断しました。生成中のクリップは保存されていません(次の h3:run で作り直されます)"
+    : kind === "error" ? "⚠️ エラーで中断しました" : "";
+  return [
+    ...(head ? [head] : []),
+    "※ Pod は動いたままです。作業を終えるときは必ず `npm run h3:pod -- down` を実行してください",
+    "   状態の確認: `npm run h3:pod -- status`",
+    "   (止め忘れても見張り役が無操作 30 分 / 起動から 6 時間(既定)で自動停止します)",
+  ];
+}
+
+type Killable = { kill: (signal?: NodeJS.Signals | number) => boolean };
+
+/**
+ * SIGINT / SIGTERM の処理。子(batch.mjs)を止め、案内を出して 128+n で抜ける。
+ * 子を止めないと、run-chapter が死んだあとも batch.mjs が heartbeat を打ち続けて見張りが落とせない。
+ */
+export function createInterruptHandler(deps: {
+  getChild: () => Killable | null;
+  log?: (m: string) => void;
+  exit?: (code: number) => void;
+}): (signal: NodeJS.Signals) => void {
+  const log = deps.log ?? ((m: string) => console.error(m));
+  const exit = deps.exit ?? ((c: number) => process.exit(c));
+  let handled = false;
+  return (signal) => {
+    const child = deps.getChild();
+    try { child?.kill("SIGTERM"); } catch { /* 既に死んでいる */ }
+    if (!handled) {
+      handled = true;
+      log("");
+      for (const m of exitNotice("signal", signal)) log(m);
+    }
+    exit(signal === "SIGINT" ? 130 : 143);
+  };
+}
+
+/**
+ * 尺の読めないクリップ(書きかけ)を隔離する。batch.mjs は「ファイルがある」だけで飛ばすので、
+ * 置いたままだと作り直されない。移した先を返す(移さなければ null)。
+ */
+export function quarantineUnusable(clipPath: string, rejectDir: string, id: string, usable: (p: string) => boolean = isUsable): string | null {
+  if (!existsSync(clipPath) || usable(clipPath)) return null;
+  mkdirSync(rejectDir, { recursive: true });
+  const to = freeName(rejectDir, id);
+  renameSync(clipPath, to);
+  return to;
+}
+
+/** `--plan` の警告: 章内の下流クリップが起点クリップより古い(起点を作り直したのに下流が古いまま) */
+export function staleChainWarnings(ledger: { chapters: { id: string; cuts: string[] }[]; cuts: Record<string, Cut> }, chapterId: string, mtimeOf: (id: string) => number | null): string[] {
+  const inChapter = new Set(ledger.chapters.find((c) => c.id === chapterId)?.cuts ?? []);
+  return findStaleChains(ledger, mtimeOf).filter((id) => inChapter.has(id)).map((id) => {
+    const cut = ledger.cuts[id];
+    let from = cut.chainFrom;
+    if (!from) {
+      for (const ch of ledger.chapters) {
+        const at = ch.cuts.indexOf(id);
+        if (at > 0) { from = ch.cuts[at - 1]; break; }
+      }
+    }
+    return id + " は鎖の起点 " + from + " より古いクリップです(起点を作り直したあと下流を作り直していない)。" +
+      "`npm run h3:reject -- <epId> " + id + "` で隔離して作り直す";
+  });
+}
+
 /** 投入前の不整合はすべて exit 2 に寄せる(check:h3 と同じ契約。生スタックを出さない) */
 function orExit<T>(fn: () => T): T {
   try {
@@ -204,8 +326,28 @@ function lastFrame(epId: string, clipId: string): string {
   if (!existsSync(src)) throw new Error(clipId + " がまだ生成されていません(鎖の起点が無い)");
   mkdirSync(framesDir(epId), { recursive: true });
   const dest = join(framesDir(epId), clipId + "-last.png");
-  execFileSync("ffmpeg", ["-v", "error", "-sseof", "-0.1", "-i", src, "-frames:v", "1", "-y", dest]);
+  // クリップの方が新しいときだけ抽出し直す(毎回抽出すると ff の mtime が上がり、終点画像の再生成が暴発する)
+  const ffMtime = existsSync(dest) ? statSync(dest).mtimeMs : null;
+  if (needsFrameExtract(statSync(src).mtimeMs, ffMtime)) {
+    execFileSync("ffmpeg", ["-v", "error", "-sseof", "-0.1", "-i", src, "-frames:v", "1", "-y", dest]);
+  }
   return dest;
+}
+
+let currentChild: ReturnType<typeof spawn> | null = null;
+
+/** batch.mjs を子として回す(割り込み時に止められるよう非同期で持つ) */
+function runBatch(args: string[]): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn("node", ["batch.mjs", ...args], { cwd: COMFY_CLI, stdio: "inherit" });
+    currentChild = child;
+    child.on("error", (e) => { currentChild = null; reject(e); });
+    child.on("exit", (code, signal) => {
+      currentChild = null;
+      if (code === 0) resolvePromise();
+      else reject(new Error("batch.mjs が " + (signal ? "シグナル " + signal : "exit " + code) + " で終了"));
+    });
+  });
 }
 
 async function main(): Promise<void> {
@@ -217,7 +359,8 @@ async function main(): Promise<void> {
   const onlyAt = args.indexOf("--only");
   const only = onlyAt >= 0 ? (args[onlyAt + 1] ?? "").split(/[,\s]+/).filter(Boolean) : undefined;
   const seed = orExit(() => parseSeed(args));
-  if (!epId || !chapterId) { console.error("使い方: npm run h3:run -- <epId> <章ID> [--plan|--dry] [--only cL01,cL02] [--seed 7] [--url <URL>]"); process.exit(2); }
+  const regenEnd = orExit(() => parseRegenEnd(args));
+  if (!epId || !chapterId) { console.error("使い方: npm run h3:run -- <epId> <章ID> [--plan|--dry] [--only cL01,cL02] [--seed 7] [--regen-end cL67,…] [--url <URL>]"); process.exit(2); }
   if (only && only.length === 0) { console.error("--only にカットIDがありません(例: --only cL01,cL02)"); process.exit(2); }
 
   const CLIPS = clipsDir(epId);
@@ -230,10 +373,18 @@ async function main(): Promise<void> {
 
   // 鎖の解決は**章全体**で行う(--only で絞っても起点の対応は壊さない)
   const chain = orExit(() => resolveChain(chapter.cuts, cutsFile.cuts));
-  const hasClip = (id: string): boolean => existsSync(join(CLIPS, id + ".mp4"));
+  // 「存在する」ではなく「尺が読める」で生成済みを判定する(書きかけを完成品と誤認しない)
+  const hasClip = (id: string): boolean => isUsable(join(CLIPS, id + ".mp4"));
   const existing = new Set(chapter.cuts.filter(hasClip));
   const pending = plan ? chapter.cuts : chapter.cuts.filter((id) => !existing.has(id));
   const targets = orExit(() => selectTargets(chapter.cuts, pending, only));
+
+  // --regen-end が黙って無効になるのを防ぐ(生成済みは targets から外れる)
+  const regenProblems = validateRegenEnd(regenEnd, targets, cutsFile.cuts);
+  if (regenProblems.length > 0) {
+    for (const m of regenProblems) console.error("❌ " + m);
+    process.exit(2);
+  }
 
   // 宣言と台帳の欠けは投げる文面が別物になるので、ジョブを組む前に止める
   const undeclared = targets.filter((id) => !shots[id] || !cutsFile.cuts[id]);
@@ -249,15 +400,18 @@ async function main(): Promise<void> {
   // --- ジョブを先に全部組んで一括検査(basename の一意性は集合でしか見られない) ---
   const jobs = targets.map((id) => {
     const from = chain.get(id);
+    // keyframe カットは終点画像の**予定パス**を先に載せる(検査で FL2VA 行を見るため。実体は投入ループで作る)
     return buildJob(id, shots[id], cutsFile.cuts[id], vocab,
-      from ? join(framesDir(epId), from + "-last.png") : undefined, seed);
+      from ? join(framesDir(epId), from + "-last.png") : undefined, seed,
+      cutsFile.cuts[id].keyframe ? endFramePath(epId, id) : undefined);
   });
   const findings: Finding[] = [
     // 台帳と宣言の食い違いは「検査した文面」と「実際に投げる文面」を別物にする
     // (鎖の有無 = I2V 指示行の有無が変わる)。鎖は台帳から解決しているのでここで突合する
     ...targets.flatMap((id) => checkLedger(id, fullDecl(shots[id]), cutsFile.cuts[id])),
+    ...targets.flatMap((id) => checkEndStateVocab(id, shots[id], cutsFile.cuts[id], vocab)),
     ...jobs.flatMap((j) => checkPromptText(j.id, j.prompt, {
-      seconds: j.seconds, hasFirstFrame: Boolean(j.firstFrameFile),
+      seconds: j.seconds, hasFirstFrame: Boolean(j.firstFrameFile), hasLastFrame: Boolean(j.lastFrameFile),
     })),
     ...checkJobSet(jobs),
   ];
@@ -298,14 +452,21 @@ async function main(): Promise<void> {
       const from = chain.get(j.id);
       console.log("  [" + (plan ? "plan" : "dry") + "] " + j.id + " " + j.seconds.toFixed(3) + "秒 " +
         j.width + "x" + j.height + (j.seed === 0 ? "" : " seed=" + j.seed) +
-        (from ? " ← " + from : "") + (existing.has(j.id) ? " (生成済み)" : ""));
+        (from ? " ← " + from : "") + (j.lastFrameFile ? " ⇒ " + basename(j.lastFrameFile) : "") + (existing.has(j.id) ? " (生成済み)" : ""));
     }
     const chained = jobs.filter((j) => Boolean(j.firstFrameFile)).length;
     const hi = jobs.filter((j) => j.width === SIZE_HI.width).length;
-    console.log("内訳: 鎖 " + chained + "本 / 高解像度 " + hi + "本 / t2v " + (jobs.length - chained) + "本");
+    console.log("内訳: 鎖 " + chained + "本 / 高解像度 " + hi + "本 / t2v " + (jobs.length - chained) + "本" +
+      " / keyframe " + jobs.filter((j) => j.lastFrameFile).length + "本");
     for (const m of missing) {
       console.log("⚠️  " + m.id + " の鎖の起点 " + m.from + " がまだ生成されていません(この実行でも作られません)");
     }
+    // 起点を作り直したのに下流が古いままの鎖(つなぎ目で絵が飛ぶ)
+    const clipMtime = (id: string): number | null => {
+      const p = join(CLIPS, id + ".mp4");
+      return existsSync(p) ? statSync(p).mtimeMs : null;
+    };
+    for (const w of staleChainWarnings(cutsFile, chapterId, clipMtime)) console.log("⚠️  " + w.replace("<epId>", epId));
     if (missing.length > 0) {
       console.log("   先に " + [...new Set(missing.map((m) => m.from))].join(", ") + " を生成してください。この状態では実投入は止まります");
     }
@@ -328,30 +489,54 @@ async function main(): Promise<void> {
   const resolvedUrl = podUrl(url);
   mkdirSync(join(epDir, "jobs"), { recursive: true });
 
+  const onSignal = createInterruptHandler({ getChild: () => currentChild });
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  let outcome: "done" | "error" = "error";
   try {
     for (const job of jobs) {
+      touchHeartbeat();
+      // 書きかけ(尺が読めない)の mp4 が残っていると batch.mjs が飛ばすので、先に隔離する
+      const moved = quarantineUnusable(join(CLIPS, job.id + ".mp4"), rejectedDir(epId), job.id);
+      if (moved) console.log("⚠️  " + job.id + " は尺が読めない(書きかけ)ので隔離して作り直します → " + moved);
       const from = chain.get(job.id);
       if (from) {
         const ff = lastFrame(epId, from); // 実体を作る
-        const exists = checkJobSet([{ ...job, firstFrameFile: ff }], { requireExists: true })
+        // 終点画像(lastFrameFile)はこの下の genEndFrame が作るので、ここでは始点だけを実在検査する
+        // (予定パスのまま検査すると keyframe カットは必ずここで止まる。2026-09-22 ep044 cL92 実機で発覚)
+        const exists = checkJobSet([{ ...job, firstFrameFile: ff, lastFrameFile: undefined }], { requireExists: true })
           .filter((f) => f.level === "BLOCK");
         if (exists.length > 0) throw new Error(job.id + ": " + exists[0].message);
         job.firstFrameFile = ff;
       }
+      if (cutsFile.cuts[job.id].keyframe) {
+        const size = cutsFile.cuts[job.id].hi ? SIZE_HI : SIZE_DEFAULT;
+        job.lastFrameFile = genEndFrame({
+          epId, cutId: job.id, refPng: job.firstFrameFile!, endState: shots[job.id].endState!,
+          size, force: regenEnd.includes(job.id),
+          // 鮮度は ff 画像ではなく起点クリップで見る(ff の抽出し直しで終点を作り直さない)
+          ...(from ? { sourceClip: join(CLIPS, from + ".mp4") } : {}),
+        });
+        const ex = checkJobSet([job], { requireExists: true }).filter((f) => f.level === "BLOCK");
+        if (ex.length > 0) throw new Error(job.id + ": " + ex[0].message);
+      }
       const specPath = join(epDir, "jobs", "job-" + job.id + ".json");
       writeFileSync(specPath, JSON.stringify(jobSpecFor(job), null, 1) + "\n");
-      execFileSync("node", ["batch.mjs", "--jobs", specPath, "--out", CLIPS, "--url", resolvedUrl],
-        { cwd: COMFY_CLI, stdio: "inherit" });
-      // batch.mjs は全ジョブ失敗でも exit 0 を返すので、出力の実在で判定する
-      if (!existsSync(join(CLIPS, job.id + ".mp4"))) {
-        throw new Error(job.id + ": batch は終了したがクリップが出ていない");
+      await runBatch(["--jobs", specPath, "--out", CLIPS, "--url", resolvedUrl]);
+      touchHeartbeat();
+      // batch.mjs は全ジョブ失敗でも exit 0 を返すので、出力で判定する(存在ではなく尺が読めるか)
+      if (!isUsable(join(CLIPS, job.id + ".mp4"))) {
+        throw new Error(job.id + ": batch は終了したが使えるクリップが出ていない");
       }
     }
+    outcome = "done";
     console.log(chapterId + ": 完了");
   } finally {
+    // 以後 heartbeat は打たない(見張りの無操作判定で Pod が落ちる)
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
     console.error("");
-    console.error("※ Pod は自動では止まりません。作業を終えるときは必ず `npm run h3:pod -- down` を実行してください");
-    console.error("   状態の確認: `npm run h3:pod -- status`");
+    for (const m of exitNotice(outcome)) console.error(m);
   }
 }
 

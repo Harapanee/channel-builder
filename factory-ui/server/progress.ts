@@ -34,13 +34,17 @@ function withCache<T>(key: string, compute: () => T): T {
 // video-create の工程レール(調査/台本/音声/絵コンテ/素材/実装/検査/最終レビュー/公開準備/承認/レンダー)
 // に対する episode.json の status → 完了工程数。status は video-create スキルが各工程完了時に更新する
 // 「中断・再開の基盤」であり、<stage>マーカーより信頼できる進捗の正とする。
-// implemented は素材(index 4)と実装(index 5)の両方が済んだ状態(素材のみ完了のstatusは無い)。
+// implemented は素材(index 4)と実装(index 5)の両方が済んだ状態。
+// assets_ready は素材だけ完了(2026-08-02 新設。工程7と工程8をフェーズ分割したため、
+// 「素材は済んだが実装は未着手」を表す語彙が要る。枠切れ中断からの再開で素材を
+// 丸ごとやり直さないための目印でもある)。
 // qa_passed は旧フロー(preview+QA)互換で検査済相当に写す。final は夜間レンダー成功時にサーバーが書く。
 const STATUS_DONE_COUNT: Record<string, number> = {
   researched: 1,
   scripted: 2,
   voiced: 3,
   storyboarded: 4,
+  assets_ready: 5,
   implemented: 6,
   prechecked: 7,
   qa_passed: 7,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSegments, type Segment } from "./assemble";
-import { audioTrimFilter, chapterSlice, findChapter, missingMaterials, parseArgs } from "./preview-chapter";
+import { audioTrimFilter, chapterSlice, findChapter, missingMaterials, parseArgs, splitPreviewFreshness } from "./preview-chapter";
 import type { Chapter, Cut } from "./types";
 import type { TimingLine } from "./plan";
 
@@ -143,4 +143,31 @@ test("missingMaterials は noSub のカットの字幕を要求しない", () =>
   const segments = [seg("cL01", ["L01"], true), seg("cL02", ["L02"], false)];
   const m = missingMaterials(segments, () => true, () => false);
   assert.deepEqual(m.subs, ["L02"]);
+});
+
+/* ───────────────────────── 2026-09-23 C5: assemble と同じ組み立て ───────────────────────── */
+
+test("missingMaterials は章カードの生成クリップを要求しない(assemble と同じく紙色で合成する)", () => {
+  const seg = (clipId: string, card: boolean): Segment =>
+    ({ clipId, lineIds: [clipId.replace("c", "")], startSec: 0, frames: 120, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub: false, card });
+  const m = missingMaterials([seg("cL01", true), seg("cL02", false)], () => false, () => true);
+  assert.deepEqual(m.clips, ["cL02"]);
+});
+
+test("splitPreviewFreshness: 図解の古さは警告(図解なしで焼く)、字幕・音の古さは止める", () => {
+  const r = splitPreviewFreshness({
+    stale: [
+      { name: "figures/index.json", changed: ["timing"], rebuild: "npm run h3:figures -- x" },
+      { name: "subs/subs.json", changed: ["timing"], rebuild: "npm run h3:subs x" },
+    ],
+    legacy: [],
+  });
+  assert.equal(r.figuresStale, true);
+  assert.deepEqual(r.blocking.stale.map((s) => s.name), ["subs/subs.json"]);
+});
+
+test("splitPreviewFreshness: 図解だけが古ければ止めない", () => {
+  const r = splitPreviewFreshness({ stale: [{ name: "figures/index.json", changed: ["cuts"], rebuild: "x" }], legacy: [] });
+  assert.equal(r.figuresStale, true);
+  assert.deepEqual(r.blocking.stale, []);
 });

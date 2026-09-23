@@ -44,6 +44,12 @@ export interface ShotDecl {
    * ここに書けば台帳と一緒に残るので、採用した take を後から再現できる。
    * 台帳(cuts.json)側に対応するキーは無い(checkLedger の突合対象ではない)。
    */
+  /**
+   * keyframe カットの終点画像の描写。画像モデル(gen-image.ts)へ固定テンプレと共に渡す。
+   * 到達状態を肯定形で、参照画像(始点)から**変わる部位だけ**を書く。画風・構図・体色はテンプレが固定する。
+   * 語彙帳の基本形定数(ADULT 等)を丸ごと入れない(B15)。
+   */
+  endState?: string;
   seed?: number;
 }
 
@@ -77,6 +83,13 @@ export interface Cut {
    * 鎖のカットでは前カットの終端フレームが1コマ目なので、捨てても連続性は壊れない。
    */
   skipHeadFrames?: number;
+  /**
+   * 種固有の形が変わる動作(射出・滑空・脱皮・擬態・発光・膨張 など)を、
+   * 始点=鎖の最終コマ・終点=画像モデルの1枚絵で FL2VA 生成する(2026-09-21)。
+   * H3 は文面ではこの形を描けない(docs/superpowers/notes/2026-09-21-h3-fl2va-jaw-spike.md)。
+   * chain または chainFrom が必須。宣言側は endState を持つ。
+   */
+  keyframe?: true;
   /**
    * このカットの字幕を敷かない。**画面内に文字を出すカット(`text: true`)用**。
    * 画面の文字と字幕が同時に出ると視聴者は同じ意味を二度読むことになる。

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_AMBIENT, ambientPlan, resolveAmbientConfig, unknownAmbientKeys } from "./ambient";
+import { DEFAULT_AMBIENT, ambientClipIds, ambientPieceArgs, ambientPlan, resolveAmbientConfig, unknownAmbientKeys } from "./ambient";
 import type { Segment } from "./assemble";
 
 const seg = (clipId: string, frames: number, offsetFrames: number): Segment =>
@@ -118,4 +118,49 @@ test("applyNoiseExclusion: autoExclude が偽(既定)なら何も足さない=�
 test("resolveAmbientConfig: noiseFloorMaxDb の既定は -40、null で検査を切る", () => {
   assert.equal(resolveAmbientConfig(undefined).noiseFloorMaxDb, -40);
   assert.equal(resolveAmbientConfig({ noiseFloorMaxDb: null }).noiseFloorMaxDb, null);
+});
+
+/* ---- 2026-09-23 レビュー指摘 C3/C4 ---- */
+
+const cardSeg = (clipId: string, frames: number, offsetFrames: number): Segment => ({ ...seg(clipId, frames, offsetFrames), card: true });
+
+test("章カード(card)の区間は exclude に書かなくても無音になる", () => {
+  const plan = ambientPlan([seg("cL01", 48, 0), cardSeg("cL02", 72, 48)], resolveAmbientConfig(undefined));
+  assert.deepEqual(plan.map((p) => p.clipId), ["cL01", null]);
+  assert.deepEqual(plan.map((p) => p.frames), [48, 72]);
+});
+
+test("既存の exclude(章カードと同じ集合を手書きしたもの)もそのまま有効", () => {
+  const plan = ambientPlan([seg("cL01", 48, 0), cardSeg("cL02", 72, 48)], resolveAmbientConfig({ exclude: ["cL01", "cL02"] }));
+  assert.deepEqual(plan.map((p) => p.clipId), [null, null]);
+});
+
+test("ambientClipIds: 音を使うクリップは章カードと exclude を除いたもの", () => {
+  const ids = ambientClipIds([seg("cL01", 48, 0), cardSeg("cL02", 72, 48), seg("cL03", 24, 120)], resolveAmbientConfig({ exclude: ["cL03"] }));
+  assert.deepEqual(ids, ["cL01"]);
+});
+
+test("断片は skipHeadFrames を持つ(映像で捨てた冒頭の音も捨てる)", () => {
+  const plan = ambientPlan([{ ...seg("cL01", 48, 0), skipHeadFrames: 6 }], resolveAmbientConfig(undefined));
+  assert.equal(plan[0].skipHeadFrames, 6);
+});
+
+test("ambientPieceArgs: skipHeadFrames があれば -ss k/fps で頭を捨ててから区間ぶん切る", () => {
+  const args = ambientPieceArgs({ clipId: "cL01", frames: 48, gainDb: -18, skipHeadFrames: 6 }, "/c/cL01.mp4", "/w/0000.wav", 24, 48000);
+  const ss = args.indexOf("-ss");
+  assert.ok(ss >= 0 && ss < args.indexOf("-i"), args.join(" "));
+  assert.equal(args[ss + 1], "0.250000");
+  assert.equal(args[args.indexOf("-t") + 1], "2.000000");
+  assert.equal(args[args.length - 1], "/w/0000.wav");
+});
+
+test("ambientPieceArgs: skipHeadFrames が 0 なら -ss を付けない(従来と同じ引数)", () => {
+  const args = ambientPieceArgs({ clipId: "cL01", frames: 48, gainDb: -18, skipHeadFrames: 0 }, "/c/cL01.mp4", "/w/0000.wav", 24, 48000);
+  assert.deepEqual(args, ["-y", "-i", "/c/cL01.mp4", "-vn",
+    "-af", "aresample=48000,apad,volume=-18dB", "-ac", "2", "-t", "2.000000", "-c:a", "pcm_s16le", "/w/0000.wav"]);
+});
+
+test("ambientPieceArgs: 無音の断片は anullsrc", () => {
+  const args = ambientPieceArgs({ clipId: null, frames: 24, gainDb: -18, skipHeadFrames: 0 }, "", "/w/0001.wav", 24, 48000);
+  assert.deepEqual(args, ["-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1.000000", "-c:a", "pcm_s16le", "/w/0001.wav"]);
 });

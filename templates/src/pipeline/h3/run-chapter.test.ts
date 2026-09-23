@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildJob, declaredSeedOverrides, jobSpecFor, missingChainSources, onlyAlreadyGenerated, parseSeed, resolveChain, selectTargets } from "./run-chapter";
+import { buildJob, declaredSeedOverrides, jobSpecFor, missingChainSources, onlyAlreadyGenerated, parseRegenEnd, parseSeed, resolveChain, selectTargets, validateRegenEnd } from "./run-chapter";
+import { fl2vLine } from "./compose";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -227,4 +228,134 @@ test("渡したジョブは書き換えられない(defaults は別のオブジ�
   const spec = jobSpecFor(JOB);
   assert.equal(spec.jobs[0], JOB);
   assert.equal("sampler" in JOB, false);
+});
+
+test("keyframe: lastFrameFile を渡すと FL2VA 行が付き、lastFrameFile が job に載る", () => {
+  const j = buildJob("cL67", { ...decl, endState: "x".repeat(40) }, cut({ chain: true, keyframe: true, seconds: 7.4 }), VOCAB, "/tmp/cL66-last.png", undefined, "/tmp/cL67-end.png");
+  assert.equal(j.firstFrameFile, "/tmp/cL66-last.png");
+  assert.equal(j.lastFrameFile, "/tmp/cL67-end.png");
+  assert.ok(j.prompt.startsWith(fl2vLine(7.4)));
+});
+test("--regen-end の読み取り", () => {
+  assert.deepEqual(parseRegenEnd(["ep", "ch05", "--regen-end", "cL67,cL70"]), ["cL67", "cL70"]);
+  assert.deepEqual(parseRegenEnd(["ep", "ch05"]), []);
+  assert.throws(() => parseRegenEnd(["ep", "ch05", "--regen-end"]));
+});
+
+test("validateRegenEnd: 対象外(生成済み)と keyframe でない ID を止める", () => {
+  const kf: Cut = { lineIds: ["L67"], seconds: 7.4, place: "P", subject: "S", role: "peak", chain: true, keyframe: true };
+  const plain: Cut = { lineIds: ["L66"], seconds: 6.0, place: "P", subject: "S", role: "peak" };
+  const cuts = { cL66: plain, cL67: kf, cL70: kf };
+  assert.deepEqual(validateRegenEnd([], ["cL67"], cuts), []);
+  assert.deepEqual(validateRegenEnd(["cL67"], ["cL67"], cuts), []);
+  const notTarget = validateRegenEnd(["cL70"], ["cL67"], cuts);
+  assert.equal(notTarget.length, 1);
+  assert.match(notTarget[0], /cL70/);
+  assert.match(notTarget[0], /npm run h3:reject -- <epId> cL70/);
+  const notKf = validateRegenEnd(["cL66"], ["cL66", "cL67"], cuts);
+  assert.equal(notKf.length, 1);
+  assert.match(notKf[0], /cL66.*keyframe/);
+  const unknown = validateRegenEnd(["cL99"], ["cL67"], cuts);
+  assert.equal(unknown.length, 1);
+});
+
+// --- Pod・GPU の安全(2026-09-23 ストリーム B) ------------------------------------
+import { createInterruptHandler, exitNotice, needsFrameExtract, quarantineUnusable, staleChainWarnings, touchHeartbeat } from "./run-chapter";
+import { HEARTBEAT_FILE } from "./config";
+import { existsSync, readdirSync, statSync, utimesSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+
+test("B6: ff 画像が無ければ抽出する", () => {
+  assert.equal(needsFrameExtract(1000, null), true);
+});
+
+test("B6: クリップの方が新しいときだけ抽出し直す(毎回抽出すると終点画像の再生成が暴発する)", () => {
+  assert.equal(needsFrameExtract(2000, 1000), true);
+  assert.equal(needsFrameExtract(1000, 2000), false);
+  assert.equal(needsFrameExtract(1000, 1000), false);
+});
+
+test("heartbeat のパスは comfy-runpod の見張りが読むパスと一致する", async () => {
+  // 別リポジトリの .mjs(型なし)。指定子を変数にして型解決させない
+  const spec = "../../../../tools/comfy-runpod/lib/watchdog.mjs";
+  const lib = (await import(spec)) as { HEARTBEAT_PATH: string };
+  assert.equal(HEARTBEAT_FILE, lib.HEARTBEAT_PATH);
+});
+
+test("touchHeartbeat は mtime を今にする。失敗しても例外を投げない", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hb-"));
+  const p = join(dir, ".heartbeat");
+  touchHeartbeat(p);
+  const old = new Date(Date.now() - 3600_000);
+  utimesSync(p, old, old);
+  touchHeartbeat(p);
+  assert.ok(statSync(p).mtimeMs > old.getTime() + 1000);
+  assert.doesNotThrow(() => touchHeartbeat("/dev/null/x/.heartbeat"));
+});
+
+test("B5: 抜けるときの案内は必ず down と status を出し、見張りの自動停止に触れる", () => {
+  for (const kind of ["done", "error", "signal"] as const) {
+    const text = exitNotice(kind, "SIGINT").join("\n");
+    assert.match(text, /npm run h3:pod -- down/);
+    assert.match(text, /npm run h3:pod -- status/);
+    assert.match(text, /見張り/);
+  }
+  assert.match(exitNotice("signal", "SIGTERM").join("\n"), /SIGTERM/);
+});
+
+test("B5: 割り込みで子(batch.mjs)を止め、案内を出して 128+n で抜ける", () => {
+  const killed: string[] = [];
+  const logs: string[] = [];
+  let code: number | undefined;
+  const handler = createInterruptHandler({
+    getChild: () => ({ kill: (s?: NodeJS.Signals | number) => { killed.push(String(s)); return true; } }),
+    log: (m) => logs.push(m),
+    exit: (c) => { code = c; },
+  });
+  handler("SIGINT");
+  assert.deepEqual(killed, ["SIGTERM"]);
+  assert.equal(code, 130);
+  assert.match(logs.join("\n"), /h3:pod -- down/);
+  handler("SIGTERM"); // 2度目も落ちない
+});
+
+test("B5: 子がいなくても案内を出して抜ける(SIGTERM は 143)", () => {
+  let code: number | undefined;
+  createInterruptHandler({ getChild: () => null, log: () => {}, exit: (c) => { code = c; } })("SIGTERM");
+  assert.equal(code, 143);
+});
+
+test("B7: 尺の読めないクリップは隔離して作り直しの対象にする(batch は存在だけで飛ばすため)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "qu-"));
+  const clips = join(dir, "clips");
+  const rej = join(dir, "rej");
+  execFileSync("mkdir", ["-p", clips]);
+  const broken = join(clips, "cL01.mp4");
+  writeFileSync(broken, "half-written");
+  const moved = quarantineUnusable(broken, rej, "cL01", () => false);
+  assert.ok(moved && moved.startsWith(rej));
+  assert.ok(!existsSync(broken));
+  assert.deepEqual(readdirSync(rej), ["cL01.mp4"]);
+  // 使えるクリップ・無いクリップは触らない
+  writeFileSync(broken, "ok");
+  assert.equal(quarantineUnusable(broken, rej, "cL01", () => true), null);
+  assert.ok(existsSync(broken));
+  assert.equal(quarantineUnusable(join(clips, "none.mp4"), rej, "none", () => false), null);
+});
+
+test("B8: --plan は章内の古い鎖を警告する(他章のものは出さない)", () => {
+  const cutsFile = {
+    chapters: [{ id: "ch00", title: "", name: "", cuts: ["cL01", "cL02"] }, { id: "ch01", title: "", name: "", cuts: ["cL03"] }],
+    cuts: {
+      cL01: cut(), cL02: cut({ chain: true }), cL03: cut({ chainFrom: "cL02" }),
+    },
+  };
+  const mt: Record<string, number> = { cL01: 10, cL02: 5, cL03: 1 };
+  const w0 = staleChainWarnings(cutsFile, "ch00", (id) => mt[id] ?? null);
+  assert.equal(w0.length, 1);
+  assert.match(w0[0], /cL02/);
+  assert.match(w0[0], /cL01/);
+  const w1 = staleChainWarnings(cutsFile, "ch01", (id) => mt[id] ?? null);
+  assert.equal(w1.length, 1);
+  assert.match(w1[0], /cL03/);
 });

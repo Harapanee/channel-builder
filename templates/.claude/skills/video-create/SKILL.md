@@ -15,8 +15,11 @@ description: このチャンネルの新規エピソード動画を制作する�
 **H3経路の砦(逐語で守る。破ると無人でGPU課金が走るか、完成品が黙って消える)**:
 
 1. **factory-ui の manual モードでのみ走らせる。** semi モードは「途中の確認ポイントは自分で採用して先へ進んでよい(`<gate>` を出さない)」、auto モードは「`<gate>` は一切出力しない」と指示され、サーバー側も auto では全ゲートを・semi では `render-check` 以外を自動承認する。semi が実運用の既定になりやすく、工程7のプロンプト承認ゲートと工程8のPod起動確認は semi/auto では自動突破される。**H3経路のジョブが semi/auto で来たら、工程7のゲートより先へ進まずに停止し、manual での再実行をユーザーに求める**
-2. **GPUを使うコマンドは `H3_ALLOW_GPU=1` が無ければ exit 3**(`src/pipeline/h3/config.ts` の二重ロック)。恒久設定にしない — 人間が manual で明示操作する1コマンドにだけ付ける
-3. **H3経路のエピソードを夜間レンダーキューへ投入しない。** `scripts/render-episode.sh` は `composition.html` があればHF経路で焼くため、投入するとエラーにならずにHF実装を再レンダーして `out/final.mp4` を上書きし、H3の成果物を黙って捨てる(`out/` は .gitignore でgitから復元できない)。**`<stage>レンダー</stage>` も出さない**(サーバーのバックストップが `kind:"render-check"` ゲートを強制発行し、それを承認するとキューへ自動登録される)
+2. **GPUを使うコマンドは `H3_ALLOW_GPU=1`(`"1"` の完全一致)が無ければ exit 3**(`src/pipeline/h3/config.ts` の二重ロック)。恒久設定にしない — 生成・起動の1コマンドにだけ付ける。`tools/comfy-runpod/` の `pod.mjs up|wait-up`・`batch.mjs` の直叩きは PreToolUse フック `scripts/hooks/guard-gpu.mjs` がブロックする(`npm run h3:pod` / `h3:run` 経由だけが通る)
+3. **H3経路のエピソードを夜間レンダーキューへ投入しない。** 機械でも拒否される(`scripts/render-episode.sh`・`render-queue.sh add` は `h3Pipeline.episodes` の回を exit 3、factory-ui のキュー登録口は 409 `not_ready: h3 pipeline episode`、キューに残った H3 回は `failed(h3_pipeline)`)。拒否が無ければ、`composition.html` を持つ回は HF 実装を再レンダーして `out/final.mp4` を上書きし、H3の成果物を黙って捨てる(`out/` は .gitignore でgitから復元できない)。**`<stage>レンダー</stage>` も `kind:"render-check"` のゲートも出さない**。抜け道は無い — H3 回を HF で焼き直すなら `h3Pipeline.episodes` から外す
+4. **Pod には見張り役が付く**: `h3:pod -- up` / `wait-up` は起動と同時に watchdog を切り離しで立て、起動から6時間か無操作30分(`.heartbeat` 未更新。`h3:run` がクリップごとに打つ)で自動 down する(`--max-hours` / `--pod-max-hours` / `--idle-min`。上限なしにはできない)。**それでも作業後の `down` は必須**(見張りは保険であって停止手順ではない)
+
+**H3経路の運用モードとゲート**: 人間ゲートは 題材選定(0-a)・語彙帳承認(6.4)・プロンプト承認(7)・Pod 起動(8)・最終承認(12)。対話セッションでは各ゲートで AskUserQuestion を出して待つ。factory-ui ヘッドレスは manual のみ(砦1)で、各ゲートで `<gate>` を出して停止する。**自走**(ユーザーが対話セッションで「自走で進めてよい」と明示して離席したセッション)では、題材選定・語彙帳承認・プロンプト承認・Pod 起動(見張り役の既定上限のまま)・最終承認を**通過扱い**で進めてよい。その場合は終了前に HANDOFF.md(あれば。無ければ最終報告)へ「**自走で通過扱いにしたゲート**」を1つずつ根拠つきで列挙し、**起床後の人間目視を最終ゲート**とする。**自走でも越えてはいけないもの**: 公開(アップロード・公開設定・公開予約の変更)・公開済み回の差し替え・Pod の上限解除(`--max-hours` を既定より上げる・`--idle-min 0`・見張り役を止める)
 
 **運用原則(モデル非依存)**: メインセッションの役割は監査・ゲート管理・ユーザー対話である。
 台本(script-director)・絵コンテとショット(visual-director)・調査と検証(fact-checker)・
@@ -57,6 +60,8 @@ description: このチャンネルの新規エピソード動画を制作する�
    JSON を自分で読み書きしない。契約(episode.schema.json の enum)で検証され、
    後戻りと綴り違いを止める。ep002 実測ではメインの Bash 12回が status 更新の
    python heredoc だった。
+6. **【H3経路】修正役はまとめて起動する**: h3-fix-writer は**1周につき1回**、全章の BLOCK・REVISE・検品の不合格を「章ID→カットIDの一覧」で1体に渡す(章ごとに起動しない)。h3-prompt-reviewer は章ごとに並列で1周だけ(再レビューしない)
+7. **待ち時間の前後でセッションを区切る**: 5分を超える待ち(Pod の在庫待ち `wait-up`・長い生成・人の承認待ち)を跨いで同じセッションを続けると、プロンプトキャッシュが失効して待ち明けの最初のターンで履歴全体が再書き込みされる(実測で1回数百万トークン)。**待ちに入る前に引き継ぎ(HANDOFF.md があれば更新)を書いて区切り、再開は新しいセッションで行う**。ポーリングで待たない
 
 ## 0-a. 題材の決定(引数なしで呼ばれた場合)
 
@@ -120,25 +125,19 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 
 ### 【H3経路】
 
-storyboard.md は上のとおり作る(章割・体験設計はH3でも使う)。ただし **clip表の「演出記述」列をH3に渡さない**。H3が storyboard から読んでよいのは `## 1. 体験設計` 節だけである。
+**visual-director を「H3 モード」で1回だけ起動する**(Phase A のみ・timing.json 不要なので、台本の審査が済んだら工程4の TTS と同じメッセージで並行起動できる)。成果物は storyboard.md の **§1 体験設計・§4 図解オーバーレイの申し送り・§5 SE・BGM設計** だけで、clip表(§3)・章グループ分担(§2)・不足素材(§6)は書かせない。
+**H3 が storyboard から読んでよいのは §1 だけ**(h3-cut-planner の入力)。§4 は figure-planner、§5 は bgm-planner の入力。clip表の「演出記述」を H3 に渡す経路は設計上の禁則である。メインは §1 の章の切れ目・中心の問いの開閉・冒頭の要件(bible §4)を監査する。
 v1 は絵コンテの演出記述(HyperFrames用のDOM/GSAP指示)をそのまま英訳してH3へ渡し、画面内日本語80本・抽象装置79本・**ナレーションに無い文字を出したカット76件**を生んだ(ユーザーは7分20秒で視聴を放棄)。この入力経路は設計上の禁則として固定する。
 
 ## 6.4 語彙帳の用意 → `h3/vocab/<epId>.ts`(H3経路のみ)
 
 **新規エピソードはここから始まる。** 工程6.5以降(`cuts.json` / `shots/<章ID>.ts` / `check:h3` / `h3:run` / `h3:assemble`)は**すべて `h3/vocab/<epId>.ts` の実在を前提**にしており、無ければモジュール未検出で落ちる。語彙は題材固有(雛形のサケなら `SEA` / `RIVER` / `HATCHERY` / `EGG` / `FRY`)なので**他の題材へ流用できない**。
 
-**雛形は `h3/vocab/example-salmon.ts`(scaffold 時に持ち込まれるサケの例)。これを写して `<epId>.ts` を作る。**
+**h3-vocab-writer へ委譲**。渡すのは `episodes/<epId>/script.md` / `episodes/<epId>/research.md` / `episodes/<epId>/storyboard.md`(§1)/ 雛形 `h3/vocab/example-salmon.ts`(scaffold 時に持ち込まれるサケの例。チャンネルに実績の語彙帳があればそれでもよい)/ 直近の語彙帳1本(あれば)の**パスだけ**。画風定数(`STYLE` / `CLOSE` / `CLOSE_H` / `CLOSE_TEXT` / `CLOSEUP_GUARD`)の一字一句の写し・肯定形・種を決める4か所(口・接地・識別点・目)・台本が言う身体の事実・場所の動く要素・定数の最小化・`typecheck:h3` は定義に内蔵。
 
-- **`STYLE` / `CLOSE` / `CLOSE_H` / `CLOSE_TEXT` / `CLOSEUP_GUARD` は画風の定義なので据え置く**(雛形から**そのまま写す。一字一句変えない**。画風の実値は bible §8 に合わせて channel-builder 時に一度だけ直す)。題材ごとに書き換えるとチャンネルの画風が話ごとにぶれる。ここは題材の語彙ではない
-- **`places` / `subjects` / `props` を題材に合わせて起こす**。場所は「どのカットもそこから書き始められる」粒度で、被写体は成長段階・状態の別に定数を分ける(雛形の `EGG` / `FRY` / `ADULT` がその例)
-- **定数は必要最小限にする。** 語彙が増えるほど章をまたいだ画の同一性が崩れる。迷ったら足さずに既存の定数で書けないか先に試す
-- **`places` の定数には、被写体と無関係に動き続ける小さな要素を必ず1つ以上入れる**(雛形の `SEA` の "a few small pale specks drifting slowly" / `RIVER` の "small pale bubbles rising slowly" がその例)。**画面の広い面を「plain cream paper」だけで終わらせない** —— 空・氷原・雪原など無地になりやすい面には、遠景の要素(遠い稜線・低い雲の帯・遠くの群れ・舞う粒)を定数の側で持たせる。ここが空だと、全カットが「無地の紙の上に被写体1つ」になる(実測の反省)
-- 英文だけを書く(日本語は JSDoc コメントへ)。起こしたら `npm run typecheck:h3` を通す(定数名の綴り違いはここで捕まる)
-- **`subjects` の各定数は「種を決める4か所」を肯定形で必ず書く**(2026-09-20): (a) **口** — 位置と大きさ(例: `a tiny round mouth opening at the very tip of the snout, as narrow as the tongue`)、(b) **接地** — 何がどう地面・枝・板に触れているか(例: `hanging upside down by its two small hooked feet` / `resting flat on its belly with the folded wings tucked against its sides`)、(c) **似た動物との識別点**(例: バッタ `two long hind legs folded like a Z along its sides`・タスマニアデビル `a broad heavy head and one white band across its chest`)、(d) **目の数と位置**。**台本が身体の事実を言う行(歯がない・後ろにも進める・翼で歩く等)は、その事実を該当 subject の英文に肯定形で先に書く**(語彙帳を起こすときは `script.md` も入力に含め、身体の事実を述べる行を拾う)。書かないと H3 の既定(歯のある口・四つ足の哺乳類・近い種の姿)が出る。否定形(`no teeth`)は効かない(check:h3 A6)。コメント実測より: ep034「歯が見えた」・ep038「コウモリは四つん這いにならない」・ep039「どうみてもG」・ep037「ワンコにしか見えない」・ep020「ワタリアホウドリで別の鳥」
+**人間の承認を得てから工程6.5へ進む。** 語彙帳はこの先の全カットが参照する土台で、あとから足すほど同一性が崩れる。報告の定数一覧(定数名・英文・用途)を提示して承認を取る(ヘッドレスでは `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない** — この種別の承認は夜間レンダーキューへの自動登録を起こす)。自走では通過扱いにできる。
 
-**人間の承認を得てから工程6.5へ進む。** 語彙帳はこの先の全カットが参照する土台で、あとから足すほど同一性が崩れる。定数名・英文・用途の一覧を提示して承認を取る(ヘッドレスでは `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない** — この種別の承認は夜間レンダーキューへの自動登録を起こす)。
-
-工程6.5以降で語彙が足りないと分かったら(planner の `needsVocab` / writer の報告)、**この工程へ戻って承認を取り直す。** planner も writer も自分で語彙を増やさない。
+工程6.5以降で語彙が足りないと分かったら(planner の `needsVocab` / writer の報告)、**h3-vocab-writer に「追加」として再発注し、承認を取り直す。** planner も writer も自分で語彙を増やさない。
 
 ## 6.5 カット割り台帳 → `h3/episodes/<epId>/cuts.json`(H3経路のみ)
 
@@ -163,7 +162,7 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
 
 1. **章ごとに h3-prompt-writer を並列起動する**(**1つのメッセージに章の数だけ Agent tool_use を並べて同時発行する** — 冒頭原則の「並列起動の実行形」)。渡すのは `h3/episodes/<epId>/cuts.json` の担当章と `h3/vocab/<epId>.ts` のパスだけ。成果物は `h3/episodes/<epId>/shots/<章ID>.ts`。1体25カット前後でターン予算(80)の内側に収まる
 1.5. **同じターンで figure-planner を1体、並列起動する**(図解オーバーレイの宣言 `h3/episodes/<epId>/figures.json`。渡すのは `episodes/<epId>/script.md` / `episodes/<epId>/timing.json` / `h3/episodes/<epId>/cuts.json` のパスだけ)。成果物は宣言だけで、焼くのは工程9。**H3経路の本編は図解を必須にしている**(bible §8・2026-09-04。`h3:assemble` は figures.json が無いと止まる。置かない判断は人間が `--no-figures` で明示する)。報告の「見送った数字の行」を工程7のゲートで人間に見せ、追加があれば宣言へ足して `npm run h3:figures -- <epId> --check` を通す
-2. **課金前の砦を通す**: `npm run check:h3 -- <epId>`(exit 0=緑 / 1=ADVISEのみ / 2=BLOCKあり)。**BLOCK がゼロになるまで生成へ進まない。** BLOCK は h3-fix-writer に直させる(台帳側の問題なら `cuts.json` を直す)。出力は既定で同じ指摘を1行に畳む — 全件を1カット1行で見たいときだけ `--verbose`
+2. **課金前の砦を通す**: `npm run check:h3 -- <epId> > <出力先>/check-h3.txt`(exit 0=緑 / 1=ADVISEのみ / 2=BLOCKあり。出力はファイルに書き、修正役にはそのパスを渡す)。**BLOCK がゼロになるまで生成へ進まない。** BLOCK は h3-fix-writer に直させる(台帳側の問題なら `cuts.json` を直す)。ADVISE A15(内部ショット)・A16【強】(Shot 間で寄り引きの段が変わる)は差し戻しの主因になりやすいので原則直す。出力は既定で同じ指摘を1行に畳む — 全件を1カット1行で見たいときだけ `--verbose`
 3. **全文を章ごとに書き出す**: **章の数だけ、章IDと章別の出力先を指定して回す**(実際にモデルへ渡る全文を1カット1ファイルで書く)
 
     ```
@@ -172,7 +171,7 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
 
     **1ディレクトリへまとめて出さない。** レビュアーは Bash も `cuts.json` も持たないので、フラットに並んだカットのどれが自分の章かを判別できない
 4. **章ごとに h3-prompt-reviewer を並列起動する**【ADVISE】。渡すのは**担当章の dump 先(`<出力先>/<章ID>`)**と `episodes/<epId>/timing.json` の**パスだけ**(このエージェントは Bash を持たないため全文はファイル経由で渡す)
-5. **REVISE があれば h3-fix-writer で直す。再レビューはしない(1周で確定)** — 直したら `npm run check:h3 -- <epId> <章ID>` を通して次へ進む
+5. **全章の BLOCK と REVISE を1回の起動にまとめて h3-fix-writer へ渡す**(章ID→カットIDの一覧+根拠のパス。章ごとに起動しない)。**再レビューはしない(1周で確定)** — 直ったら `npm run check:h3 -- <epId>` を通して次へ進む
 6. **人間ゲート(プロンプト承認)**: `--dump` の出力先と `check:h3` の要約を提示して承認を得る。ヘッドレス(Factory UI)では `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない**(この種別の承認は夜間レンダーキューへの自動登録を起こす) — `kind:"h3-prompt-check"` を明示し、`gateId` に `render-check` を含めない。対話セッションでは AskUserQuestion で承認を得る
 
 承認を得たら `npm run status episodes/<epId> assets_ready` を実行し、工程8へは進まずに `<done>` を出して終了する(フェーズの区切りはHF経路と同じ)。
@@ -214,7 +213,7 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
 **この工程は新しいセッションで始まる**(`<stage>実装</stage>`)。**課金が発生する唯一の工程である。**
 
 1. **状態を確認する**: `npm run h3:pod -- status`(起動状況と概算コストが出る。課金を増やさないのでロック不要)
-2. **Pod起動は要ユーザー確認**: `npm run h3:pod -- up` を勝手に実行しない。ユーザーの明示的な確認を取ってから起動する(manual 限定なのはこのため)。**課金が始まるのはこの瞬間である**($1.23/h・自動停止なし)ため、`up` / `wait-up` も `H3_ALLOW_GPU=1` が無ければ exit 3 で止まる
+2. **Pod起動は要ユーザー確認**(自走では通過扱い可): `npm run h3:pod -- up` を勝手に実行しない。ユーザーの明示的な確認を取ってから起動する。**課金が始まるのはこの瞬間である**ため、`up` / `wait-up` も `H3_ALLOW_GPU=1` が無ければ exit 3 で止まる。起動と同時に見張り役(起動から6時間/無操作30分で自動 down。砦4)が付く。在庫が無く `wait-up` で待つなら、待ちに入る前にセッションを区切る(コンテキスト規律7)
 
     ```
     H3_ALLOW_GPU=1 npm run h3:pod -- up
@@ -234,12 +233,13 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
     H3_ALLOW_GPU=1 npm run h3:run -- <epId> <章ID> --only cL01 --url <PodのURL>
     ```
 
-4. **章ごとに回す**: `H3_ALLOW_GPU=1 npm run h3:run -- <epId> <章ID> --url <PodのURL>`。**章カード(`card`)のカットは生成しなくてよい**(2026-09-05: 文字は工程9の `h3:figures` が不透明な板として焼き、assemble は生成クリップが無ければ紙色で合成する。`--only` で章カード以外を名指しするか、生成しても差は無いのでそのまま回してもよい。検品の対象からは外す)。`--plan` / `--dry` は計画と検査だけでGPUを使わない。**常駐監視ループを作らない**(欠けを自動検出して投げ直す仕組みは意図しない課金を起こす)
+4. **章ごとに回す**: `H3_ALLOW_GPU=1 npm run h3:run -- <epId> <章ID> --url <PodのURL>`。**章カード(`card`)のカットは生成しなくてよい**(2026-09-05: 文字は工程9の `h3:figures` が不透明な板として焼き、assemble は生成クリップが無ければ紙色で合成する。`--only` で章カード以外を名指しするか、生成しても差は無いのでそのまま回してもよい。検品の対象からは外す)。`--plan` / `--dry` は計画と検査だけでGPUを使わない(`--plan` は古い鎖=下流クリップが起点より古いものを警告する)。**常駐監視ループを作らない**(欠けを自動検出して投げ直す仕組みは意図しない課金を起こす)
 5. **章ごとに h3-clip-inspector を並列起動して検品する**(章シートとストリップを自分で焼き、絵を見て判定する)。成果物は **`h3/episodes/<epId>/defects/<章ID>.md`** への追記。**章ごとにファイルを分ける**(並列起動した検品エージェントが1つのファイルへ同時追記すると混線する)
    - **破綻を検出できる機械指標は存在しない**(較正で実証)。**検品は目視が唯一の手段である。** `h3:inspect` が出す「契約違反」は申告どおりの尺と解像度かだけで、破綻の有無とは無関係
-6. **不合格は h3-fix-writer で文面を直し、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する**(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
+6. **不合格は周ごとに h3-fix-writer を1回・全章まとめて起動して文面を直し**(inspector の判断 `skip` は渡さない)、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
    - **鎖の途中を作り直すと下流は古い起点のまま残る。鎖区間は入口から隔離する**(対象IDは h3-fix-writer が報告に列挙する)
-7. **全章合格したら `npm run h3:pod -- down` を必ず実行する。** そのあと `npm run h3:pod -- status` で停止を確認してから次工程へ進む(止め忘れが最大の課金事故)。**`down` と `status` にロックは掛かっていない** — 止める道具をロックすると「止められない」事故になるため
+7. **全章合格後、h3-cut-planner を「生成後フェーズ」で1回起動**し、各カットの `skipHeadFrames`(冒頭のゴミコマの切り捨て)を決める(`npm run h3:head-scan -- <epId>` の候補+冒頭一覧の目視 → `--apply`。`--apply` は既存値を小さくしない。**同じ明るさの別の絵(顔・手)は head-scan で拾えないので目視は続ける**)
+8. **`npm run h3:pod -- down` を必ず実行する。** そのあと `npm run h3:pod -- status` で停止を確認してから次工程へ進む(止め忘れが最大の課金事故。`down` は停止の失敗・残存で exit 1 — そのときは状態を見て再実行する)。**`down` と `status` にロックは掛かっていない** — 止める道具をロックすると「止められない」事故になるため
 
 工程8.4(音声ミックス)まで終えたら `npm run status episodes/<epId> implemented` を実行して `<done>`。**`narration/master.mp3` が無いと工程9の組み立てが止まる**(H3は生成クリップの音を捨てない。ナレーション+BGMの `master.mp3` に加え、`h3:ambient` が生成音を `narration/ambient.wav` へまとめてその下に敷く)。
 
@@ -290,7 +290,7 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 
 **この工程を飛ばすとBGMもSEも一切鳴らない。** 工程として書かれていなかった時期に、あるエピソードが全編無音のまま check緑 → レンダー → 承認 → コミットまで通った(2026-08-01 の /system-refine で工程化)。
 
-1. **BGM の計画を書く** — `episodes/<epId>/bgm-plan.json`(包絡線 `envelope` × 曲の割り当て `assignment`。契約は `src/schemas/bgm-plan.schema.json`)。
+1. **BGM の計画を bgm-planner に委譲する** — `episodes/<epId>/bgm-plan.json`(包絡線 `envelope` × 曲の割り当て `assignment`。契約は `src/schemas/bgm-plan.schema.json`)。渡すのは storyboard.md・timing.json・`channel/bgm-policy.json`(あれば)・`assets/audio/LICENSES.md` のパスだけ。dry-run OK の報告を受けてから次へ進む。
    storyboard の「BGM」節が正本で、これはその機械可読版。曲を差し替える指示は `assignment` だけを書き換える(包絡線を写し直さない)
 2. `npm run audio-cues episodes/<epId>` — **SEキューを composition の台帳から、BGMキューを bgm-plan.json から機械生成する**(手で書かない)。
    scene-implementer が出す `window.__G<n>_SE_CUES` が入力。台帳が無い/素材が見つからない場合はここで止まるので、実装へ差し戻す
@@ -302,14 +302,14 @@ npx tsx src/pipeline/scaffold-composition.ts episodes/<epId> --groups "cL01-cL50
 
 **H3は生成クリップの音を捨てない。** ナレーション+BGMの `narration/master.mp3` に加え、生成音を `narration/ambient.wav` として別トラックにまとめ、組み立ての最終muxで master.mp3 の下に敷く。手順は上の1・3を共通で使い、2だけ差し替えて4(環境音)を足す(5は実行しない):
 
-1. BGMの計画 `episodes/<epId>/bgm-plan.json` と、**SEの計画 `episodes/<epId>/se-plan.json`** を書く。**SE設計の正本は storyboard.md §5「SE設計」と §3 clip表のSE列**で、se-plan.json はその機械可読版である(HF経路の `window.__G<n>_SE_CUES` に相当する台帳がH3には無いため、宣言で代替する)。形: `{ "se": [ { "clipId": "cL001", "start": 0.0, "src": "assets/audio/se/pop-3-nyu.mp3" } ] }`(`start` は clip表の開始秒。音量は書かない — audio-mix が素材ごとに -22 LUFS へ揃える)
+1. **bgm-planner へ委譲する**: BGMの計画 `episodes/<epId>/bgm-plan.json` と、**SEの計画 `episodes/<epId>/se-plan.json`**。渡すのは storyboard.md(§5)・timing.json・`channel/bgm-policy.json`(あれば)・`assets/audio/LICENSES.md`・`h3/episodes/<epId>/cuts.json` のパスだけ。dry-run OK の報告を受けてから次へ進む。**SE設計の正本は storyboard.md §5「SE・BGM設計」**で、se-plan.json はその機械可読版である(HF経路の `window.__G<n>_SE_CUES` に相当する台帳がH3には無いため、宣言で代替する)。形: `{ "se": [ { "clipId": "cL001", "start": 0.0, "src": "assets/audio/se/pop-3-nyu.mp3" } ] }`(`start` は clip表の開始秒。音量は書かない — audio-mix が素材ごとに -22 LUFS へ揃える)
 2. `npm run h3:audio-cues -- <epId>` — cues を **timing.json(総尺)+ bgm-plan.json + se-plan.json** から作る。`composition.html` は読まない。**SEは se-plan.json があればそこから載る**(無ければ従来どおり0件)。**環境音は SE として通さない** — audio-mix はテンプレート同期でバイト一致が要求され改変できないうえ、SEを1本ずつ -22 LUFS へ正規化する設計のため、静かな環境音を通すと持ち上がって鳴り続けてしまう。環境音は 4 の `h3:ambient` が別トラックで敷く。`seLedgerHash` は書かず、宣言の内容ハッシュを **`sePlanHash`** に残す(HF経路の上書き保護と同名にすると自分自身を弾くため別名にしてある)。BGMの計算はHF経路と同一(`build-bgm-cues.ts` を共有。`npm run audio-cues` の出力と全区間一致することを実証済み)
    - HF実装が同居するエピソードでは `audio-cues.json` がHF経路の産物(`seLedgerHash` を持つ)なので上書きを拒む。別名にするなら `--out <名前>`、承知の上で上書きするなら `--force`
    - **`--out` で別名にしたものを `audio-mix` は読まない**(読むのは `audio-cues.json` だけ)。突き合わせ用の出力であって、焼くための入力にはならない
 3. `npm run audio-mix episodes/<epId>` — 共通。`composition.html` が無いエピソードでは `<audio src>` の差し替えが素通りし、master.mp3 を焼くだけになる
 4. `npm run h3:ambient -- <epId>` — 生成音を環境音トラック(`narration/ambient.wav`)へまとめる。
    **この工程を飛ばすと環境音が敷かれない**(assemble は ambient.wav が無ければ黙って従来どおり焼く)。
-   敷き量・除外は `h3/episodes/<epId>/ambient.json` で調整する
+   敷き量・除外は `h3/episodes/<epId>/ambient.json` で調整する(章カードの区間は書かなくても自動で無音。`skipHeadFrames` は音にも効く)
 5. **`npm run check:audio` はH3経路では実行しない** — composition のSE台帳との突合が前提の検査で、H3には台帳が無い。master.mp3 の存在は工程9の `h3:assemble` が入口で検査する
 
 `npm run audio-cues`(HF用)はH3経路では使わない。SE台帳の入力に `composition.html` を要求するため、composition を持たない新規エピソードでは「composition.html がありません(HF経路専用です)」で止まる。
@@ -349,7 +349,10 @@ npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localho
 2. **組み立てる**: `npm run h3:assemble -- <epId>` — クリップを区間の尺へ早回しで収め、図解(映像の上・字幕の下)と字幕を重ね、`narration/master.mp3` を載せて1本にする
    - **既定の出力先 `episodes/<epId>/out/final.mp4` に既存ファイルがあれば1バイトも書かずに exit 2 する。** HF版の final.mp4 が現存するエピソードでは `--out final-h3.mp4` のように別名へ出す(`out/` は .gitignore でgitから復元できない)
    - **組み立ての直前に master.mp3 を検査して止める**(HF経路の `check:audio` が持つ砦のうち、H3で成立する2つ):音の床(0.1秒窓RMSの下位10%点)が -60dB 未満なら `no_bed`(BGMが乗っていない)、`audio-cues.json` より master.mp3 が古ければ `master_stale`(工程8.4の `audio-mix` を忘れている)。閾値と計測は `check-audio.ts` のものを共有する。`--plan` でも走るので、焼く前に確かめられる
+   - ほかに入口で止まるもの: **SE 0件**(明示の `--no-se` で通す)・**古い鎖**(`--allow-stale-chains`)・0バイトの素材・skipHeadFrames 後の引き伸ばし超過(`--allow-head-shortfall`)・**入力ハッシュの不一致 `inputs_stale` / `ambient_stale`**(下記)。出力は `final.mp4.tmp` に書いて rename する
 3. **総尺を確かめる**: 出力の総尺が `episodes/<epId>/timing.json` の `totalDurationSec` と一致すること。尺の基準は**タイムライン区間**であり、発話区間で組むと実測で130秒短くなる
+
+**台本/TTS をやり直したら、`h3:subs` / `h3:figures` / `h3:audio-cues` → `audio-mix` / `h3:ambient` を焼き直す**(subs.json・figures/index.json・audio-cues.json・`narration/ambient.inputs.json` が timing/cuts のハッシュを持ち、忘れると assemble が exit 2 で焼き直すコマンドを表示する。inputs の無い古い成果物は警告で通る)。
 
 総尺が一致したら → `npm run status episodes/<epId> prechecked`。**`<stage>レンダー</stage>` は出さない**(H3経路にレンダー工程は無い。出すとサーバーのバックストップが `render-check` ゲートを強制発行する)。
 
@@ -410,9 +413,9 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 
 **承認後の完了処理(H3経路の終点)**:
 
-- `npm run finalize episodes/<epId> -- --images <サムネ生成数>` を実行する(status を `render_ready` にし、metrics追記・backlog消し込み・git commit まで行う)
-- **`scripts/render-queue.sh` へ投入しない。キュー登録の curl も打たない。Factory UI の「夜間レンダーキューへ」も押さない。** 工程9の assemble の完了が最終物である
-- **assemble(工程9)を必ず先に済ませてから finalize すること。** サーバーはジョブ成功時に「status が `render_ready` かつ `episodes/<epId>/out/final.mp4` が無い」エピソードを自動でキューへ登録する。final.mp4 が既にあれば登録されない
+- **assemble(工程9)を先に済ませてから** `npm run finalize episodes/<epId>` を実行する。H3 回は終端 status を **`final`** にし、metrics(所要時間・コストはセッション記録から機械計測。画像生成数はサムネ・keyframe 終点・library 素材を実数で数え、数えられなければ記録しない。`--images` は既定で不要)・backlog 消し込み・git commit(`h3/episodes/<epId>`・`h3/vocab/<epId>.ts`・`publish/upload-result.json` を含む)まで行う
+- **`scripts/render-queue.sh` へ投入しない。キュー登録の curl も打たない。** 工程9の assemble の完了が最終物である(キュー・レンダー・factory-ui の登録口は H3 回を機械的に拒否し、エピソード詳細に「夜間レンダーキューへ」は出ない)
+- 工程8-7 の head-scan の結果と反映した skipHeadFrames も提示物に含める(顔・手のゴミコマは目視でしか拾えない)。自走で通過扱いにした場合は、上の提示物と「自走で通過扱いにしたゲート」を引き継ぎに列挙する
 - ここで `<done>` を出して終了する。**auto / semi モードではこの工程に到達しない**(H3経路は manual 限定 — 冒頭の砦1)
 
 ### 【HF経路・既定】
@@ -426,7 +429,7 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 
 **承認後の完了処理(このジョブの終点。レンダーはしない):**
 
-- `npm run finalize episodes/<epId> -- --images <画像生成数>` を実行する。**所要時間とコストは finalize がセッション記録(サブエージェントの記録を含む)から機械計測する**(episode.json の `startedAt` が起点。人の申告値を渡さない)。出力に出る**ターン予算超過のエージェント**が次回の是正対象
+- `npm run finalize episodes/<epId>` を実行する(画像生成数はサムネ・library 素材を実数で数える。数えられなければ記録しない。`--images <n>` は明示で上書きしたいときだけ)。**所要時間とコストは finalize がセッション記録(サブエージェントの記録を含む)から機械計測する**(episode.json の `startedAt` が起点。人の申告値を渡さない)。出力に出る**ターン予算超過のエージェント**が次回の是正対象
   (status更新・metrics追記・backlog消し込み・git commit を一括実行。手作業で個別に行わない)
 - キュー登録の確認: Factory UI 経由(ヘッドレス)ならゲート承認時にサーバーが自動登録済み。**対話セッションの場合のみ** `curl -s -X POST http://127.0.0.1:4700/api/render-queue/enqueue -H 'Content-Type: application/json' -d '{"dir":"<チャンネルフォルダ名>","epId":"<epId>"}'` で登録する(サーバー未起動で失敗したら、Factory UI のエピソード詳細から「夜間レンダーキューへ」を押すようユーザーへ案内)
 - ここで `<done>` を出して終了する。**status "final" は夜のレンダー成功時にサーバーが書く**(このジョブでは書かない)
@@ -447,4 +450,6 @@ QA落ち・レンダー失敗は朝の Factory UI に赤表示される → 日�
 ## 13. 朝: 確認・アップロード(手動)
 
 Factory UI でQA結果と final.mp4 を確認し、YouTube Studio へ手動アップロードする。サムネ3枚は「テストと比較」へ投入しABテストする。
-「テストと比較」の結果が出たら、factory-ui のエピソード詳細から `publish/thumb-test.json` に勝者と所感を記録する(channel-refineの入力になる)。
+「テストと比較」の結果が出たら、factory-ui のエピソード詳細か `npm run record:thumb-test -- <epId> --winner <1|2|3> [--shares a,b,c] [--note ...]` で `publish/thumb-test.json` に勝者と所感を記録する(channel-refineの入力になる)。
+
+**アナリティクスを取り直したとき**(手で回す。定期実行しない): スナップショットと Studio「コンテンツ」の CSV を `docs/analytics/` に置いた後、`npm run analytics:ledger -- docs/analytics/<日付>-snapshot.json docs/analytics/<日付>-studio-content.csv [--dry-run]` — 公開後7日以上の回の実測を台帳 `performance` へ、選定時の採点を `themeScores` へ書き、`docs/analytics/<asOf>-axis-check.md`(題材採点の軸と実測の順位相関)を出す。

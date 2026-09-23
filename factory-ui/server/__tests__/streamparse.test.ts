@@ -242,6 +242,33 @@ describe('extractGate — text から最初の <gate>...</gate> を JSON.parse',
     };
     expect(extractGate(`<gate>${JSON.stringify(g)}</gate>`)?.kind).toBeUndefined();
   });
+
+  // H3 経路の回では approve+revise のゲート(文面承認・検品の差し戻し等)が多く、補完すると
+  // render-check 扱い(夜間キュー登録・レンダー決定文)に化ける。h3 のときは補完しない
+  it('h3: true なら approve+revise ペアでも gateId に render-check を含んでも kind を補完しない', () => {
+    const pair = {
+      gateId: 'ep045-ch02-prompt-approve',
+      question: 'q',
+      options: [
+        { id: 'approve', label: '承認' },
+        { id: 'revise', label: '差し戻し' },
+      ],
+      context: 'c',
+    };
+    expect(extractGate(`<gate>${JSON.stringify(pair)}</gate>`, { h3: true })?.kind).toBeUndefined();
+    const named = { gateId: 'ep045-render-check', question: 'q', options: [], context: 'c' };
+    expect(extractGate(`<gate>${JSON.stringify(named)}</gate>`, { h3: true })?.kind).toBeUndefined();
+  });
+
+  it('h3: true でも kind が明示された render-check はそのまま', () => {
+    const g = { gateId: 'x', kind: 'render-check', question: 'q', options: [], context: 'c' };
+    expect(extractGate(`<gate>${JSON.stringify(g)}</gate>`, { h3: true })?.kind).toBe('render-check');
+  });
+
+  it('h3: false / 省略は従来どおり補完する', () => {
+    const g = { gateId: 'ep009-render-check', question: 'q', options: [], context: 'c' };
+    expect(extractGate(`<gate>${JSON.stringify(g)}</gate>`, { h3: false })?.kind).toBe('render-check');
+  });
 });
 
 describe('stripMarkers', () => {

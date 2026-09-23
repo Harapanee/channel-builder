@@ -14,21 +14,35 @@
  * **尺の基準はタイムライン区間である。** 発話区間の合計にすると ep015 で 130.05秒短くなる
  * (Σ(endSec - startSec) = 844.89秒 に対し総尺 974.94秒)。
  *
- *   npm run h3:assemble -- <epId> [--out <名前.mp4>] [--plan]
+ *   npm run h3:assemble -- <epId> [--out <名前.mp4>] [--plan] [--no-figures] [--no-se] [--allow-stale-chains]
  *
  * 既定の出力先 episodes/<epId>/out/final.mp4 に**既存ファイルがあれば1バイトも書かずに exit 2**。
  * HyperFrames 版の完成品が同じ場所にあり、episodes/<epId>/out/ は .gitignore なので復元できない。
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { SILENCE_FLOOR_DB, percentile, windowRmsDb } from "../check-audio";
-import { OUT_FPS, ROOT, clipsDir, epBase } from "./config";
+import { OUT_FPS, ROOT, clipsDir, epBase, framesDir } from "./config";
 import type { TimingLine } from "./plan";
 import type { Cut, CutsFile } from "./types";
-import { figureOverlaysForChunk, overlayEnableExpr, overlayPtsExpr } from "./figures";
+import { figureOverlaysForChunk } from "./figures";
 import type { FigureChunkOverlay, FigureIndex } from "./figures";
+import { buildChunkArgs, effectiveSourceFrames, isSynthCard } from "./chunk-filter";
+import {
+  checkAmbientRecord, currentAmbientRecord, formatFreshness, loadEpisodeFreshness, readSubsLedger,
+} from "./freshness";
+import type { AmbientRecord, Inputs } from "./freshness";
+import { findStaleChains } from "./chain-stale";
+import { HEAD_SKIP_MAX_STRETCH, headSkipShortfalls, pngsIn, zeroByteFiles } from "./material-guards";
+import type { ChainLedger, MtimeOf } from "./chain-stale";
+
+/*
+ * 組み立てのフィルタ部品は chunk-filter.ts へ移した(preview-chapter.ts と一本化するため。2026-09-23 C5)。
+ * 既存の import 口(テスト・他スクリプト)を壊さないよう、ここから再輸出する。
+ */
+export { headTrimFilter, speedFilter, videoFilter } from "./chunk-filter";
 
 export interface Segment {
   clipId: string;
@@ -113,15 +127,7 @@ export interface AmbientAudioFacts {
 
 /** ambient.wav の契約違反を判定する(純粋関数 — I/Oを持たない) */
 export function checkAmbient(facts: AmbientAudioFacts): string[] {
-  const out: string[] = [];
-  const diff = Math.abs(facts.ambientDurationSec - facts.totalDurationSec);
-  if (diff > 0.05) {
-    out.push(
-      "ambient_duration_mismatch: ambient.wav が " + facts.ambientDurationSec.toFixed(2) + "秒"
-        + " / 総尺 " + facts.totalDurationSec.toFixed(2) + "秒(差 " + diff.toFixed(2) + "秒)。"
-        + "npm run h3:ambient -- <epId> で焼き直してください"
-    );
-  }
+  const out: string[] = checkAmbientDuration(facts.ambientDurationSec, facts.totalDurationSec);
   if (facts.timingMtimeMs > facts.ambientMtimeMs) {
     out.push(
       "ambient_stale: timing.json のほうが ambient.wav より新しいです。"
@@ -135,6 +141,82 @@ export function checkAmbient(facts: AmbientAudioFacts): string[] {
     );
   }
   return out;
+}
+
+/**
+ * ambient.wav の尺だけの検査。入力記録(narration/ambient.inputs.json)を持つ ambient.wav は
+ * 鮮度を freshness.checkAmbientRecord(中身のハッシュ+クリップの指紋)で見るので、mtime の検査は使わない。
+ */
+export function checkAmbientDuration(ambientDurationSec: number, totalDurationSec: number): string[] {
+  const diff = Math.abs(ambientDurationSec - totalDurationSec);
+  if (diff <= 0.05) return [];
+  return [
+    "ambient_duration_mismatch: ambient.wav が " + ambientDurationSec.toFixed(2) + "秒"
+      + " / 総尺 " + totalDurationSec.toFixed(2) + "秒(差 " + diff.toFixed(2) + "秒)。"
+      + "npm run h3:ambient -- <epId> で焼き直してください",
+  ];
+}
+
+/** ambient.wav の入力記録の場所(build-ambient.ts が書き、assemble / preview が読む) */
+export function ambientRecordPath(epId: string): string {
+  return join(ROOT, "episodes", epId, "narration", "ambient.inputs.json");
+}
+
+/**
+ * SE が1件も無い完成品を止める(2026-09-23 C8)。H3 の SE は se-plan.json → h3:audio-cues →
+ * audio-mix で master.mp3 に焼かれる。se-plan.json を書き忘れても h3:audio-cues は「SE 0件」で
+ * 正常終了するので、ここで止める。SE を置かない判断は --no-se で明示する。
+ * cues が無い(null)ときも SE を確かめられないので同じ扱い。
+ */
+export function checkSeCues(cues: { se?: unknown[] } | null, allowNoSe: boolean): string[] {
+  if (allowNoSe) return [];
+  if (cues === null) {
+    return ["no_se: audio-cues.json が無いので SE が乗っているか確かめられません。"
+      + "se-plan.json → npm run h3:audio-cues → npm run audio-mix を通すか、SE を置かない判断なら --no-se"];
+  }
+  if ((cues.se ?? []).length === 0) {
+    return ["no_se: audio-cues.json の SE が0件です。se-plan.json を書いて npm run h3:audio-cues -- <epId> → "
+      + "npm run audio-mix episodes/<epId>。SE を置かない判断なら --no-se"];
+  }
+  return [];
+}
+
+/**
+ * 鎖の古さで止める(2026-09-23 C9)。鎖のカットは起点クリップの最終コマを1コマ目にして生成するので、
+ * 起点を作り直して下流を作り直していないと、つなぎ目で絵が飛ぶ(h3:reject は下流を連れて行かない)。
+ * 判定は chain-stale.ts(ストリーム B)の findStaleChains。人間が見て許容したなら --allow-stale-chains。
+ */
+export function staleChainProblems(ledger: ChainLedger, mtimeOf: MtimeOf, allow: boolean): string[] {
+  if (allow) return [];
+  const stale = findStaleChains(ledger, mtimeOf);
+  if (stale.length === 0) return [];
+  return ["stale_chain: 起点クリップより古い鎖のカットが " + stale.length + "本あります(起点を作り直したのに下流が古い起点の絵から始まっている): "
+    + stale.slice(0, 20).join(", ") + (stale.length > 20 ? " ..." : "")
+    + "。npm run h3:reject → npm run h3:run で下流を作り直すか、見て許容するなら --allow-stale-chains"];
+}
+
+/** 完成品を書く途中の名前 */
+export function tmpPathFor(outPath: string): string {
+  return outPath + ".tmp";
+}
+
+/**
+ * 完成品を `<名前>.tmp` に書かせてから rename する(2026-09-23 C6)。
+ * mux の途中で落ちると半端な final.mp4 が残り、次の実行は「既にある」で止まり、
+ * 人間は壊れた完成品を完成品と取り違える。書き手が落ちたら tmp を消す。
+ * 焼いている間に同名の完成品ができていたら(別の実行)上書きしない。
+ */
+export function writeViaTmp(outPath: string, write: (tmpPath: string) => void): void {
+  const tmp = tmpPathFor(outPath);
+  rmSync(tmp, { force: true });
+  try {
+    write(tmp);
+    if (!existsSync(tmp)) throw new Error("書き出しが " + tmp + " を作りませんでした");
+    if (existsSync(outPath)) throw new Error(outPath + " が焼いている間にできています。上書きしません");
+    renameSync(tmp, outPath);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }
 
 /** narration/ambient.wav の場所。assemble.ts と preview-chapter.ts で共有する(プレビューと本番の一致が要) */
@@ -199,31 +281,6 @@ export function buildSegments(
   });
 }
 
-/** 元のフレーム数を目標フレーム数へ合わせる setpts フィルタ */
-export function speedFilter(srcFrames: number, dstFrames: number): string {
-  return "setpts=" + (dstFrames / srcFrames).toFixed(6) + "*PTS";
-}
-
-/**
- * クリップを区間へ収めるフィルタ。
- *
- * 既定は `setpts` で目標フレーム数へ詰める(早回し)。**holdSlow のときは伸縮しない** —
- * 後段の `trim=end_frame=<目標>` が頭から必要ぶんだけ切るので、等速のまま尺が合う。
- * 代わりにクリップ後半の絵は落ちるので、書き手は先頭で完結する構図にする必要がある。
- */
-export function videoFilter(srcFrames: number, dstFrames: number, holdSlow = false): string {
-  return holdSlow ? "null" : speedFilter(srcFrames, dstFrames);
-}
-
-/**
- * 先頭 k フレームを捨てるフィルタ(cuts.json の skipHeadFrames)。k=0 なら空文字。
- * videoFilter の**前**に置く(捨てたあとの残りフレーム数を目標へ詰める)。
- */
-export function headTrimFilter(skipHeadFrames: number): string {
-  const k = Math.max(0, Math.floor(skipHeadFrames || 0));
-  return k > 0 ? "trim=start_frame=" + k + ",setpts=PTS-STARTPTS," : "";
-}
-
 export interface OverlayWindow {
   lineId: string;
   /** 字幕PNG(台帳 subs.json の png)。無ければ sub_<lineId>.png */
@@ -232,6 +289,13 @@ export interface OverlayWindow {
   from: string;
   /** 同・表示終了。発話の終わり(endSec)で消す。次の行が始まるまでの無音では字幕を出さない */
   to: string;
+  /**
+   * 区間の先頭を 0 としたフレーム番号の窓 [fromFrame, toFrame)(半開区間)。
+   * ffmpeg の enable はこちらで組む(秒の between は両端を含み、境界の1コマに2枚重なる。2026-09-23 C7)。
+   * from/to(秒の文字列)は表示と part の鍵のために残す。
+   */
+  fromFrame: number;
+  toFrame: number;
 }
 
 /**
@@ -267,10 +331,11 @@ export function overlayWindows(
   // noSub のカットは画面の中に文字を持っている。字幕を重ねると同じ意味を二度読ませることになる。
   // **表示窓を返さないだけで、字幕PNG の有無は問わない**(呼び出し側の存在検査も noSub を飛ばす)。
   if (segment.noSub) return [];
-  const win = (start: number, end: number) => ({
-    from: ((Math.round(start * fps) - baseFrames) / fps).toFixed(3),
-    to: ((Math.round(end * fps) - baseFrames) / fps).toFixed(3),
-  });
+  const win = (start: number, end: number) => {
+    const fromFrame = Math.round(start * fps) - baseFrames;
+    const toFrame = Math.round(end * fps) - baseFrames;
+    return { from: (fromFrame / fps).toFixed(3), to: (toFrame / fps).toFixed(3), fromFrame, toFrame };
+  };
   return segment.lineIds.flatMap((lineId) => {
     const line = lineById.get(lineId);
     if (!line) throw new Error("timing.json に " + lineId + " がありません(cuts.json と食い違っている)");
@@ -366,6 +431,12 @@ interface Options {
   plan: boolean;
   /** 図解を置かない(figures.json 無しを明示的に許す) */
   noFigures: boolean;
+  /** SE を置かない(SE 0件を明示的に許す。2026-09-23 C8) */
+  noSe: boolean;
+  /** 起点より古い鎖のカットを許す(人間が見て許容した場合。2026-09-23 C9) */
+  allowStaleChains: boolean;
+  /** skipHeadFrames を捨てた残りが区間を割るカットを許す(スロー再生を人間が見て許容した場合。2026-09-23) */
+  allowHeadShortfall: boolean;
 }
 
 export function parseArgs(argv: string[]): Options {
@@ -373,6 +444,9 @@ export function parseArgs(argv: string[]): Options {
   let outName = "final.mp4";
   let plan = false;
   let noFigures = false;
+  let noSe = false;
+  let allowStaleChains = false;
+  let allowHeadShortfall = false;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--out") {
@@ -382,17 +456,23 @@ export function parseArgs(argv: string[]): Options {
       plan = true;
     } else if (a === "--no-figures") {
       noFigures = true;
+    } else if (a === "--no-se") {
+      noSe = true;
+    } else if (a === "--allow-stale-chains") {
+      allowStaleChains = true;
+    } else if (a === "--allow-head-shortfall") {
+      allowHeadShortfall = true;
     } else if (!a.startsWith("--")) {
       epId = a;
     } else {
       throw new Error("知らない引数です: " + a);
     }
   }
-  if (!epId) throw new Error("使い方: npm run h3:assemble -- <epId> [--out <名前.mp4>] [--plan] [--no-figures]");
+  if (!epId) throw new Error("使い方: npm run h3:assemble -- <epId> [--out <名前.mp4>] [--plan] [--no-figures] [--no-se] [--allow-stale-chains] [--allow-head-shortfall]");
   if (!outName || outName !== basename(outName) || outName.startsWith(".")) {
     throw new Error("--out はファイル名だけで指定してください(out/ の外へは書きません): " + outName);
   }
-  return { epId, outName, plan, noFigures };
+  return { epId, outName, plan, noFigures, noSe, allowStaleChains, allowHeadShortfall };
 }
 
 function ffprobeJson(path: string): { streams?: { nb_frames?: string; r_frame_rate?: string }[]; format?: { duration?: string } } {
@@ -469,6 +549,39 @@ export function maxVolumeDb(path: string): number {
   return Number(m[1]);
 }
 
+/**
+ * ambient.wav の検査(assemble / preview 共通)。入力記録(narration/ambient.inputs.json)があれば
+ * 入力のハッシュとクリップの指紋で突き合わせる(C2: h3:reject → h3:run の差し替えを拾う)。
+ * 記録の無い古い ambient.wav は従来の mtime 検査で見て、警告を出して通す(後方互換)。
+ */
+export function ambientProblems(
+  epId: string,
+  segments: Segment[],
+  clipPath: (s: Segment) => string,
+  totalDurationSec: number,
+  timingPath: string,
+  cutsPath: string,
+): string[] {
+  const wav = ambientPath(epId);
+  const recPath = ambientRecordPath(epId);
+  if (existsSync(recPath)) {
+    const rec = JSON.parse(readFileSync(recPath, "utf8")) as AmbientRecord;
+    return [
+      ...checkAmbientDuration(durationOf(wav), totalDurationSec),
+      ...checkAmbientRecord(rec, currentAmbientRecord(ROOT, epId, segments, clipPath)),
+    ];
+  }
+  console.log("⚠️ ambient.wav に入力記録(ambient.inputs.json)がありません。古い ambient.wav として mtime だけで見ます"
+    + "(クリップの差し替えは検出できません。確実にするなら npm run h3:ambient -- " + epId + ")");
+  return checkAmbient({
+    ambientDurationSec: durationOf(wav),
+    totalDurationSec,
+    ambientMtimeMs: statSync(wav).mtimeMs,
+    timingMtimeMs: statSync(timingPath).mtimeMs,
+    cutsMtimeMs: statSync(cutsPath).mtimeMs,
+  });
+}
+
 function main(): void {
   let opts: Options;
   try {
@@ -512,18 +625,14 @@ function main(): void {
    */
   // 章カードは生成クリップがあっても使わない(2026-09-09: 板の窓の外へ1コマ漏れたとき H3 が描いた章カードが
   // チカッと見えた。下地を紙色にしておけば、万一漏れても板と同色で見えない)
-  const synth = (s: Segment): boolean => Boolean(s.card);
+  const synth = isSynthCard;
   // skipHeadFrames ぶんは捨てるので、伸縮・不足判定はいずれも「残りのフレーム数」で行う
-  const srcFrames = (s: Segment): number => (synth(s) ? s.frames : Math.max(1, sourceFrames(clipPath(s)) - s.skipHeadFrames));
+  const srcFrames = (s: Segment): number => (synth(s) ? s.frames : effectiveSourceFrames(s, sourceFrames(clipPath(s))));
   const srcMtime = (s: Segment): number => (synth(s) ? 0 : statSync(clipPath(s)).mtimeMs);
-  const PAPER = "0xF4F1E7";
-  const clipInputArgs = (s: Segment): string[] => synth(s)
-    ? ["-f", "lavfi", "-i", "color=c=" + PAPER + ":s=1920x1080:r=" + OUT_FPS + ":d=" + (s.frames / OUT_FPS + 0.5).toFixed(3)]
-    : ["-i", clipPath(s)];
   const subPath = (o: { lineId: string; png?: string }): string => o.png ?? join(subsDir, "sub_" + o.lineId + ".png");
   const ledgerPath = join(subsDir, "subs.json");
   const ledger = existsSync(ledgerPath)
-    ? subsByLine(JSON.parse(readFileSync(ledgerPath, "utf8")) as { id: string; png: string; start: number; end: number }[])
+    ? subsByLine(readSubsLedger(JSON.parse(readFileSync(ledgerPath, "utf8"))).entries)
     : undefined;
 
   const missingClips = segments.filter((s) => !existsSync(clipPath(s)) && !s.card);
@@ -534,6 +643,19 @@ function main(): void {
     console.error("   " + missingClips.slice(0, 20).map((s) => s.clipId).join(", ") + (missingClips.length > 20 ? " ..." : ""));
     process.exit(1);
   }
+  {
+    // 鎖の古さ(C9)。章カードは合成なので生成クリップの有無にかかわらず判定から外す
+    const problems = staleChainProblems(cutsFile, (id) => {
+      if (cutsFile.cuts[id]?.card) return null;
+      const p = join(clipsDir(epId), id + ".mp4");
+      return existsSync(p) ? statSync(p).mtimeMs : null;
+    }, opts.allowStaleChains);
+    if (problems.length > 0) {
+      for (const m of problems) console.error("❌ " + m);
+      process.exit(1);
+    }
+    if (opts.allowStaleChains) console.log("⚠️ --allow-stale-chains: 鎖の古さを検査しません");
+  }
   const missingSubs = segments.filter((s) => !s.noSub)
     .flatMap((s) => overlayWindows(s, lineById, 0, OUT_FPS, ledger))
     .filter((o) => !existsSync(subPath(o))).map((o) => o.lineId);
@@ -541,6 +663,26 @@ function main(): void {
     console.error("❌ 字幕PNGが足りません: " + missingSubs.length + "枚(" + missingSubs.slice(0, 10).join(", ") + ")");
     console.error("   先に: python3 src/pipeline/h3/render-subs.py " + epId);
     process.exit(1);
+  }
+  {
+    // 0バイトの生成物(ep032 ④: cL06 が 0バイトのまま通った)。クリップ・鎖の起点 ff・字幕PNG・図解PNG を一度に見る
+    const figDirs = (() => {
+      const p = join(ROOT, "h3/episodes", epId, "figures", "index.json");
+      if (!existsSync(p)) return [] as string[];
+      return (JSON.parse(readFileSync(p, "utf8")) as FigureIndex).entries.map((e) => e.dir);
+    })();
+    const empty = zeroByteFiles([
+      ...segments.filter((s) => !synth(s)).map(clipPath),
+      ...pngsIn(framesDir(epId)),
+      ...segments.filter((s) => !s.noSub).flatMap((s) => overlayWindows(s, lineById, 0, OUT_FPS, ledger)).map(subPath),
+      ...figDirs.flatMap(pngsIn),
+    ]);
+    if (empty.length > 0) {
+      console.error("❌ 0バイトの素材があります: " + empty.length + "件(生成・書き出しの失敗。作り直してから焼く)");
+      for (const p of empty.slice(0, 20)) console.error("   " + p);
+      if (empty.length > 20) console.error("   ...ほか " + (empty.length - 20) + "件");
+      process.exit(1);
+    }
   }
 
   const totalFrames = segments.reduce((s, x) => s + x.frames, 0);
@@ -572,6 +714,29 @@ function main(): void {
     for (const x of slow) {
       console.log("   " + x.s.clipId + " 目標 " + x.s.frames + "F / 素材 " + srcFrames(x.s)
         + "F → ×" + x.ratio.toFixed(4));
+    }
+  }
+
+  // skipHeadFrames を捨てた残りが区間を割るカット(ep042 cL119=50 で ×1.24 のスロー)。setpts が黙って引き伸ばすので、
+  // 許容(HEAD_SKIP_MAX_STRETCH)を超えるものは止める。許容内は表示だけ
+  {
+    const short = headSkipShortfalls(segments, (id) => sourceFrames(join(clipsDir(epId), id + ".mp4")));
+    const line = (x: (typeof short)[number]) => "   " + x.clipId + " 区間 " + x.frames + "F / 素材 " + x.raw + "F − skip " + x.skip
+      + "F = " + x.remain + "F(×" + x.stretch.toFixed(3) + ")";
+    const soft = short.filter((x) => !x.block);
+    const hard = short.filter((x) => x.block);
+    if (soft.length > 0) {
+      console.log("skipHeadFrames で区間をわずかに割るカット(×" + HEAD_SKIP_MAX_STRETCH + " 以下なので通す): " + soft.length + "件");
+      for (const x of soft) console.log(line(x));
+    }
+    if (hard.length > 0) {
+      const say = opts.allowHeadShortfall ? console.log : console.error;
+      say((opts.allowHeadShortfall ? "⚠️ --allow-head-shortfall: " : "❌ ") + "skipHeadFrames を捨てると区間に届かず ×" + HEAD_SKIP_MAX_STRETCH + " を超えて引き伸ばされるカット: " + hard.length + "件");
+      for (const x of hard) say(line(x));
+      if (!opts.allowHeadShortfall) {
+        console.error("   skipHeadFrames を減らす・cuts.json の seconds を伸ばして作り直す、のどちらか。スローを見て許すなら --allow-head-shortfall");
+        process.exit(1);
+      }
     }
   }
 
@@ -615,6 +780,26 @@ function main(): void {
       for (const m of problems) console.error("❌ " + m);
       process.exit(1);
     }
+    // SE 0件を止める(C8)。se-plan.json を書き忘れても h3:audio-cues は正常終了するため
+    const seProblems = checkSeCues(existsSync(cuesPath) ? JSON.parse(readFileSync(cuesPath, "utf8")) as { se?: unknown[] } : null, opts.noSe);
+    if (seProblems.length > 0) {
+      for (const m of seProblems) console.error("❌ " + m);
+      process.exit(1);
+    }
+    if (opts.noSe) console.log("⚠️ --no-se: SE の有無を検査しません");
+  }
+
+  /* 入力ハッシュによる鮮度(C1)。字幕台帳・図解 index・audio-cues が「焼いたときの timing/cuts/宣言」と
+     今のそれが同じかを見る。mtime だけでは timing.json を直したあとの焼き直し漏れを拾えなかった。
+     inputs を持たない古い成果物は警告だけで通す(後方互換) */
+  {
+    const fr = formatFreshness(loadEpisodeFreshness(ROOT, epId));
+    for (const w of fr.warnings) console.log("⚠️ " + w);
+    if (fr.errors.length > 0) {
+      for (const m of fr.errors) console.error("❌ " + m);
+      console.error("   焼き直しの順: h3:subs / h3:figures / h3:audio-cues → audio-mix(どれも timing.json を読む)");
+      process.exit(2);
+    }
   }
 
   /* 図解(h3:figures の出力)。無ければ従来どおり字幕だけ。あれば宣言より新しいことを確かめる。
@@ -636,11 +821,12 @@ function main(): void {
       console.error("❌ figures.json はあるのに figures/index.json がありません。先に: npm run h3:figures -- " + epId);
       process.exit(1);
     }
-    if (statSync(figIndexPath).mtimeMs < statSync(figDeclPath).mtimeMs) {
+    const idx = JSON.parse(readFileSync(figIndexPath, "utf8")) as FigureIndex & { inputs?: Inputs };
+    // inputs を持つ index は上の鮮度検査(ハッシュ)で見た。持たない古い index だけ従来の mtime で見る
+    if (idx.inputs === undefined && statSync(figIndexPath).mtimeMs < statSync(figDeclPath).mtimeMs) {
       console.error("❌ figures.json が figures/index.json より新しい(焼き直し漏れ)。先に: npm run h3:figures -- " + epId);
       process.exit(1);
     }
-    const idx = JSON.parse(readFileSync(figIndexPath, "utf8")) as FigureIndex;
     if (idx.fps !== OUT_FPS) { console.error("❌ figures/index.json の fps が " + idx.fps + "(期待 " + OUT_FPS + ")"); process.exit(1); }
     figEntries = idx.entries;
     for (const e of figEntries) {
@@ -658,6 +844,21 @@ function main(): void {
       process.exit(1);
     }
     console.log("図解: " + figEntries.filter((e) => e.kind !== "card").length + "本 + 章カード " + figEntries.filter((e) => e.kind === "card").length + "本を重ねます");
+  }
+
+  // ambient.wav は前段(h3:ambient)が焼いた環境音。無いエピソード(未焼き・旧作)は
+  // 従来どおり master.mp3 だけを載せる経路へ落とす。検査は焼き始める前に行う(C2)
+  const ambientWav = ambientPath(epId);
+  const hasAmbient = existsSync(ambientWav);
+  if (hasAmbient) {
+    const problems = ambientProblems(epId, segments, clipPath, timing.totalDurationSec, timingPath, cutsPath);
+    if (problems.length > 0) {
+      for (const m of problems) console.error("❌ " + m);
+      process.exit(1);
+    }
+    console.log("環境音: ambient.wav を敷きます(検査OK)");
+  } else {
+    console.log("環境音: ambient.wav が無いので敷きません");
   }
 
   if (opts.plan) {
@@ -698,39 +899,10 @@ function main(): void {
       return;
     }
 
-    const args = ["-y"];
-    for (const s of chunk) args.push(...clipInputArgs(s));
-    for (const o of overlays) args.push("-i", subPath(o));
-    // 図解の連番は必要な範囲だけ読む(-start_number)。入力番号は字幕の後ろに続く
-    for (const g of figs) args.push("-framerate", String(OUT_FPS), "-start_number", String(g.startNumber), "-i", join(g.dir, "f%05d.png"));
-
-    const f = chunk.map((s, i) =>
-      "[" + i + ":v]" + (synth(s) ? "" : headTrimFilter(s.skipHeadFrames)) + videoFilter(srcFrames(s), s.frames, s.holdSlow)
-      + ",fps=" + OUT_FPS + ",trim=start_frame=0:end_frame=" + s.frames + ",setpts=PTS-STARTPTS"
-      + ",scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,format=yuv420p[v" + i + "]");
-    f.push(chunk.map((_, i) => "[v" + i + "]").join("") + "concat=n=" + chunk.length + ":v=1:a=0[cat]");
-
-    let chain = "[cat]";
-    // 図解は映像の上・字幕の下に重ねる(暗転は図解側に焼き込み済み)
-    figs.forEach((g, k) => {
-      const inIdx = chunk.length + overlays.length + k;
-      // フレーム番号で閉じる(秒の丸めで窓の両端が1コマ落ち、下のクリップが見える事故の恒久修正。2026-09-09)
-      f.push("[" + inIdx + ":v]trim=end_frame=" + g.frames + ",setpts=" + overlayPtsExpr(g.atFrame, OUT_FPS) + "[fg" + k + "]");
-      f.push(chain + "[fg" + k + "]overlay=0:0:eof_action=pass:enable='" + overlayEnableExpr(g.atFrame, g.frames) + "'[g" + k + "]");
-      chain = "[g" + k + "]";
+    const args = buildChunkArgs({
+      chunk, overlays, figs, fps: OUT_FPS, clipPath, subPath,
+      rawSourceFrames: (s) => sourceFrames(clipPath(s)), dest,
     });
-    if (overlays.length === 0) {
-      f.push(chain + "null[vout]");
-    } else {
-      overlays.forEach((o, k) => {
-        const label = k === overlays.length - 1 ? "[vout]" : "[o" + k + "]";
-        f.push(chain + "[" + (chunk.length + k) + ":v]overlay=0:0:enable='between(t," + o.from + "," + o.to + ")'" + label);
-        chain = "[o" + k + "]";
-      });
-    }
-
-    args.push("-filter_complex", f.join(";"), "-map", "[vout]",
-      "-c:v", "h264_videotoolbox", "-b:v", "12M", "-pix_fmt", "yuv420p", dest);
     const t0 = Date.now();
     runFfmpeg(args);
     console.log("  区間 " + (ci + 1) + "/" + chunks.length + "(" + ((Date.now() - t0) / 1000).toFixed(1) + "秒)");
@@ -748,38 +920,15 @@ function main(): void {
   }
 
   mkdirSync(outDir, { recursive: true });
-  // ambient.wav は前段(h3:ambient)が焼いた環境音。無いエピソード(未焼き・旧作)は
-  // 従来どおり master.mp3 だけを載せる経路へ落とす
-  const ambientWav = ambientPath(epId);
-  const hasAmbient = existsSync(ambientWav);
-  if (hasAmbient) {
-    // ambient.wav の鮮度・尺を検査する(指摘2: master.mp3 と非対称にしないため)。
-    // amix=duration=first は長さの食い違いを完全に隠すので、ここで止めないと
-    // 古い/尺のずれた ambient.wav がそのまま完成品に乗る
-    const facts: AmbientAudioFacts = {
-      ambientDurationSec: durationOf(ambientWav),
-      totalDurationSec: timing.totalDurationSec,
-      ambientMtimeMs: statSync(ambientWav).mtimeMs,
-      timingMtimeMs: statSync(timingPath).mtimeMs,
-      cutsMtimeMs: statSync(cutsPath).mtimeMs,
-    };
-    const problems = checkAmbient(facts);
-    if (problems.length > 0) {
-      for (const m of problems) console.error("❌ " + m);
-      process.exit(1);
-    }
-    console.log("環境音: ambient.wav を敷きます(検査OK)");
-  } else {
-    console.log("環境音: ambient.wav が無いので敷きません");
-  }
-  runFfmpeg(hasAmbient
+  // final.mp4.tmp へ書いてから rename(C6)。mux の途中で落ちても半端な final.mp4 を残さない
+  writeViaTmp(outPath, (tmp) => runFfmpeg(hasAmbient
     ? ["-y", "-i", silent, "-i", masterPath, "-i", ambientWav,
        // normalize=0 が要る。既定の normalize=1 は入力数で割ってナレーションを半分にする
        "-filter_complex", "[1:a][2:a]amix=inputs=2:duration=first:normalize=0[aout]",
        "-map", "0:v", "-map", "[aout]",
-       "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", outPath]
+       "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-f", "mp4", tmp]
     : ["-y", "-i", silent, "-i", masterPath, "-map", "0:v", "-map", "1:a",
-       "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", outPath]);
+       "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-f", "mp4", tmp]));
   // 中間ファイルは残さない(ディスクの空きが十数GBしかない)
   rmSync(parts, { recursive: true, force: true });
   console.log("できました: " + outPath + "(" + durationOf(outPath).toFixed(2) + "秒)");

@@ -39,6 +39,7 @@ describe('videoCreateDoneCount', () => {
     expect(videoCreateDoneCount({ status: 'scripted' })).toBe(2);
     expect(videoCreateDoneCount({ status: 'voiced' })).toBe(3);
     expect(videoCreateDoneCount({ status: 'storyboarded' })).toBe(4);
+    expect(videoCreateDoneCount({ status: 'assets_ready' })).toBe(5); // 素材のみ完了
     expect(videoCreateDoneCount({ status: 'implemented' })).toBe(6); // 素材+実装まで完了
     expect(videoCreateDoneCount({ status: 'prechecked' })).toBe(7);
     expect(videoCreateDoneCount({ status: 'qa_passed' })).toBe(7); // 旧フロー互換(検査済相当)
@@ -53,6 +54,22 @@ describe('videoCreateDoneCount', () => {
     expect(videoCreateDoneCount({ status: 'scripted', hasPreview: true })).toBe(8);
     expect(videoCreateDoneCount({ status: 'scripted', hasFinal: true })).toBe(11);
     expect(videoCreateDoneCount({ status: 'render_ready', hasPreview: true })).toBe(10); // 前進のみ
+  });
+});
+
+describe('status → 工程レール', () => {
+  it('assets_ready は素材(5工程目)まで完了として写す', () => {
+    expect(videoCreateDoneCount({ status: 'assets_ready' })).toBe(5);
+  });
+
+  it('implemented は実装(6工程目)まで完了', () => {
+    expect(videoCreateDoneCount({ status: 'implemented' })).toBe(6);
+  });
+
+  it('assets_ready は implemented より手前に並ぶ', () => {
+    expect(videoCreateDoneCount({ status: 'assets_ready' })).toBeLessThan(
+      videoCreateDoneCount({ status: 'implemented' })
+    );
   });
 });
 

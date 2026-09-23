@@ -20,7 +20,48 @@
           "signatures": { "type": "array", "items": { "type": "string" }, "description": "使用したチャンネル署名" },
           "motifs": { "type": "array", "items": { "type": "string" }, "description": "ギャグ・モチーフ・決めレトリックのタグ" },
           "era": { "type": "string", "description": "時代・地域(多様性判定用)" },
-          "packagedAt": { "type": "string", "description": "公開パッケージ日(YYYY-MM-DD)" }
+          "packagedAt": { "type": "string", "description": "公開パッケージ日(YYYY-MM-DD)" },
+          "themeScores": {
+            "type": "object",
+            "description": "題材選定時の採点(任意)。channel/backlog.md の表(bible §14 の5軸+計)から analytics-ledger.ts が写す。済みの回は theme-scout の再採点で帳から点が消えるので、ここに残す。一度書いたら上書きしない",
+            "required": ["oddity", "recognition", "density", "misconception", "diversity", "total"],
+            "additionalProperties": false,
+            "properties": {
+              "oddity": { "type": "number", "minimum": 0, "maximum": 10, "description": "一目の異常さ(帳の「異常」)" },
+              "recognition": { "type": "number", "minimum": 0, "maximum": 10, "description": "認知度(帳の「認知」)" },
+              "density": { "type": "number", "minimum": 0, "maximum": 10, "description": "最悪ポイント密度(帳の「密度」)" },
+              "misconception": { "type": "number", "minimum": 0, "maximum": 10, "description": "誤解破壊(帳の「誤解」)" },
+              "diversity": { "type": "number", "minimum": 0, "maximum": 10, "description": "シリーズ内多様性(帳の「多様」。採点時点の直近3本との相対値)" },
+              "total": { "type": "number", "minimum": 0, "maximum": 50, "description": "計" },
+              "source": { "type": "string", "description": "写した版(channel/backlog.md@<git短縮ハッシュ> または @working-tree)" }
+            }
+          },
+          "performance": {
+            "type": "object",
+            "description": "公開後の実測(任意)。analytics-ledger.ts が API スナップショット+Studio「コンテンツ」CSV を動画IDで結合して書く。公開後7日未満の回は書かない(集計遅延でゼロが出るため)。手で書かない",
+            "required": ["asOf", "daysSincePublish", "views"],
+            "additionalProperties": false,
+            "properties": {
+              "asOf": { "type": "string", "description": "スナップショット取得日(JST・YYYY-MM-DD)" },
+              "daysSincePublish": { "type": "integer", "minimum": 0, "description": "asOf 時点の公開後日数" },
+              "views": { "type": "number", "minimum": 0, "description": "視聴回数(Studio CSV 優先・無ければ API)" },
+              "impressions": { "type": "number", "minimum": 0, "description": "サムネイルのインプレッション(Studio CSV のみ)" },
+              "ctr": { "type": "number", "minimum": 0, "description": "サムネイルのクリック率 %(Studio CSV のみ)" },
+              "avgViewPct": { "type": "number", "minimum": 0, "description": "平均視聴率 %" },
+              "subsPer1k": { "type": "number", "minimum": 0, "description": "登録者増加数 / 視聴回数 × 1000" },
+              "retention45s": { "type": "number", "minimum": 0, "description": "開始45秒時点の audienceWatchRatio(API 維持率カーブの線形補間)" },
+              "revenueEst": { "type": "number", "minimum": 0, "description": "推定収益 USD(Studio CSV のみ)" },
+              "sources": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["snapshot"],
+                "properties": {
+                  "snapshot": { "type": "string", "description": "docs/analytics の API スナップショットのファイル名" },
+                  "studioCsv": { "type": "string", "description": "docs/analytics の Studio CSV のファイル名" }
+                }
+              }
+            }
+          }
         }
       }
     }

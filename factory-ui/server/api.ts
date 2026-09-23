@@ -787,7 +787,7 @@ export function createApiRouter(deps: {
         res.status(400).type('text/plain').send('code / state がありません');
         return;
       }
-      if (!(await resolveChannelDir(root, state))) {
+      if (!(await resolveChannelDir(root, yt.stateToDir(state)))) {
         res.status(404).type('text/plain').send('channel not found');
         return;
       }

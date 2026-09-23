@@ -15,8 +15,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { OUT_FPS, ROOT, clipsDir, epBase } from "./config";
-import { buildSegments, durationOf, runFfmpeg } from "./assemble";
-import { ambientPlan, applyNoiseExclusion, flagNoisyClips, parseNoiseFloorDb, resolveAmbientConfig, unknownAmbientKeys } from "./ambient";
+import { ambientRecordPath, buildSegments, durationOf, runFfmpeg } from "./assemble";
+import {
+  ambientClipIds, ambientPieceArgs, ambientPlan, applyNoiseExclusion, flagNoisyClips, parseNoiseFloorDb, resolveAmbientConfig,
+  unknownAmbientKeys,
+} from "./ambient";
+import { currentAmbientRecord } from "./freshness";
+import type { AmbientRecord } from "./freshness";
 import type { TimingLine } from "./plan";
 import type { CutsFile } from "./types";
 
@@ -65,7 +70,16 @@ function main(): void {
   }
 
   const segments = buildSegments(cutsFile.cuts, timing.lines, timing.totalDurationSec, OUT_FPS);
-  const used = [...new Set(segments.map((s) => s.clipId).filter((id) => !config.exclude.has(id)))];
+  // 章カード(card)は exclude に書かなくても無音(2026-09-23 C3)
+  const used = ambientClipIds(segments, config);
+  const cardCount = segments.filter((s) => s.card).length;
+  if (cardCount > 0) console.log("章カード " + cardCount + "本は自動で無音にします(exclude への手書きは不要)");
+
+  // 何を読んで焼いたかの記録(C2)。読み始めの時点で取る(焼いている間に差し替わったら次の assemble が止める)。
+  // 古い記録は先に消す — 途中で落ちたら「記録なし = 古い ambient.wav」の扱いに落ちる
+  const clipOf = (s: { clipId: string }): string => join(clipsDir(epId), s.clipId + ".mp4");
+  const record: AmbientRecord = currentAmbientRecord(ROOT, epId, segments, clipOf);
+  rmSync(ambientRecordPath(epId), { force: true });
 
   const missing = used.filter((id) => !existsSync(join(clipsDir(epId), id + ".mp4")));
   if (missing.length > 0) {
@@ -113,16 +127,8 @@ function main(): void {
     const parts: string[] = [];
     pieces.forEach((p, i) => {
       const dest = join(work, String(i).padStart(4, "0") + ".wav");
-      const seconds = (p.frames / OUT_FPS).toFixed(6);
-      if (p.clipId === null) {
-        runFfmpeg(["-y", "-f", "lavfi", "-i", "anullsrc=r=" + SAMPLE_RATE + ":cl=stereo",
-          "-t", seconds, "-c:a", "pcm_s16le", dest]);
-      } else {
-        // apad + -t で「クリップが短い」場合も必ず区間ぶんの長さになる
-        runFfmpeg(["-y", "-i", join(clipsDir(epId), p.clipId + ".mp4"), "-vn",
-          "-af", "aresample=" + SAMPLE_RATE + ",apad,volume=" + p.gainDb + "dB",
-          "-ac", "2", "-t", seconds, "-c:a", "pcm_s16le", dest]);
-      }
+      // skipHeadFrames ぶんは映像と同じく捨てる(C4)。形式の統一・apad は ambientPieceArgs が持つ
+      runFfmpeg(ambientPieceArgs(p, p.clipId === null ? "" : join(clipsDir(epId), p.clipId + ".mp4"), dest, OUT_FPS, SAMPLE_RATE));
       parts.push(dest);
     });
 
@@ -148,6 +154,10 @@ function main(): void {
     console.error("❌ 尺が合いません(差 " + (got - want).toFixed(3) + "秒)");
     process.exit(2);
   }
+  const skipped = pieces.filter((p) => p.clipId !== null && p.skipHeadFrames > 0).length;
+  if (skipped > 0) console.log("skipHeadFrames: " + skipped + "本は映像と同じく冒頭を捨てて使いました");
+  writeFileSync(ambientRecordPath(epId), JSON.stringify(record, null, 1) + "\n");
+  console.log("記録: " + ambientRecordPath(epId) + "(assemble がクリップの差し替え・入力の変更をここと突き合わせる)");
 }
 
 if (process.argv[1] && basename(process.argv[1]) === "build-ambient.ts") main();

@@ -15,8 +15,9 @@
 import { basename, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { ROOT } from "./config";
-import { checkAdvisories, checkFirstWorst, checkJobSet, checkLedger, checkPromptText, checkSelfContained, checkSpeedup, checkVocabNegations, dropVocabOriginA6 } from "./check";
+import { checkAdvisories, checkEndStateVocab, checkFirstWorst, checkJobSet, checkKeyframePresence, checkLedger, checkPlaceholderLeak, checkPromptText, checkUnusedVocab, checkSelfContained, checkSpeedup, checkVocabNegations, dropVocabOriginA6 } from "./check";
 import { chapterCard, composePrompt } from "./compose";
+import { endFramePrompt } from "./end-frame";
 import { speedupRatios, type TimingLine } from "./plan";
 import type { CutsFile, Finding, ShotDecl, Vocab } from "./types";
 
@@ -95,6 +96,8 @@ async function main(): Promise<void> {
   findings.push(...checkVocabNegations(vocab));
   const jobs: { id: string; prompt: string; firstFrameFile?: string }[] = [];
   const declared = new Set<string>();
+  // A17 用: 合成前の文面(body・endState・sound)。語彙の値が現れるかを見る
+  const authored: string[] = [];
 
   for (const ch of chapters) {
     const shots = (await import(join(epDir, "shots", ch + ".ts"))).default as Record<string, ShotDecl>;
@@ -103,11 +106,17 @@ async function main(): Promise<void> {
       const decl: ShotDecl = raw.card ? { ...chapterCard(raw.card[0], raw.card[1]), ...raw } : raw;
       const cut = cuts.cuts[id];
       findings.push(...checkLedger(id, decl, cut));
+      findings.push(...checkEndStateVocab(id, decl, cut, vocab));
+      authored.push(decl.body ?? "", decl.endState ?? "", decl.sound ?? "");
       if (!cut) continue;
       const hasFirstFrame = Boolean(cut.chain || cut.chainFrom);
-      const prompt = composePrompt(decl, vocab, { firstFrame: hasFirstFrame });
-      findings.push(...checkPromptText(id, prompt, { seconds: cut.seconds, hasFirstFrame }));
-      findings.push(...checkAdvisories(id, decl.body ?? "", vocab));
+      const hasLastFrame = Boolean(cut.keyframe);
+      const prompt = composePrompt(decl, vocab, hasLastFrame ? { firstFrame: true, lastFrameAt: cut.seconds } : { firstFrame: hasFirstFrame });
+      findings.push(...checkPromptText(id, prompt, { seconds: cut.seconds, hasFirstFrame, hasLastFrame }));
+      findings.push(...checkAdvisories(id, decl.body ?? "", vocab, { keyframe: hasLastFrame }));
+      // B16: 書き出す(=H3 へ渡す)本文そのものに undefined / null / NaN が無いか。--dump の有無によらず見る
+      findings.push(...checkPlaceholderLeak(id, prompt));
+      if (cut.keyframe && decl.endState) findings.push(...checkPlaceholderLeak(id + ".endframe", endFramePrompt(decl.endState)));
       findings.push(...checkSelfContained(id, decl, { hasFirstFrame }));
       // basename の一意性だけを見る(実在検査は投入直前に run-chapter が行う)。
       // 鎖の起点は章のカット順から解決する。
@@ -118,12 +127,19 @@ async function main(): Promise<void> {
         findings.push({ level: "BLOCK", id, rule: "B11", message: "章の先頭で chain: true(鎖の起点になる前のカットが無い)" });
       }
       jobs.push({ id, prompt, ...(from ? { firstFrameFile: from + "-last.png" } : {}) });
-      if (dumpDir) writeFileSync(join(dumpDir, id + ".txt"), prompt + "\n");
+      if (dumpDir) {
+        writeFileSync(join(dumpDir, id + ".txt"), prompt + "\n");
+        // keyframe カットは終点画像の文面も書く(工程7の人間ゲートで終点文面を見られるように)
+        if (cut.keyframe && decl.endState) writeFileSync(join(dumpDir, id + ".endframe.txt"), endFramePrompt(decl.endState) + "\n");
+      }
     }
   }
   findings.push(...checkJobSet(jobs));
   // B14: 冒頭45秒(全章を対象にしたときだけ。章指定の部分検査で毎回止めない)
   if (timing && only.length === 0) findings.push(...checkFirstWorst(cuts, timing.lines));
+  if (timing && only.length === 0) findings.push(...checkKeyframePresence(cuts.cuts));
+  // A17: 使われない語彙定数(全章を対象にしたときだけ)
+  if (only.length === 0) findings.push(...checkUnusedVocab(vocab, authored));
 
   if (timing) {
     const targeted = Object.fromEntries(

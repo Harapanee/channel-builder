@@ -219,6 +219,31 @@ export interface BgmPolicy {
   openingTrack?: string;
   /** baseVolume の許容範囲(過去の実績値) */
   baseVolume?: { min: number; max: number };
+  /**
+   * envelope の gain(倍率)の範囲。**2026-09-23 に追加。** ep033 で envelope に倍率ではなく
+   * 絶対音量(0.12 など)を書き、baseVolume と二重に掛かって BGM が -12dB 沈んだまま完成品まで素通りした。
+   * peakMin: 全区間の最大 gain の下限(山が低すぎる=絶対音量の書き違い)/ max: 各区間の上限
+   */
+  envelopeGain?: { peakMin: number; max: number };
+  /**
+   * 曲ごとの配分(assignment の尺比)の下限。**2026-09-23 に追加。** ep041 で tense が 75% を占め
+   * 「ほぼピアノ」と指摘された(チャンネルの基調は wafu。bible §11)。例: `{ "wafu": 0.4 }`
+   */
+  trackShareMin?: Record<string, number>;
+}
+
+/** assignment の尺比(曲キー → 0〜1)。分母は assignment が覆う総尺 */
+export function trackShares(plan: BgmPlan): Record<string, number> {
+  const dur: Record<string, number> = {};
+  let total = 0;
+  for (const [s, e, key] of plan.assignment ?? []) {
+    const d = Math.max(0, e - s);
+    dur[key] = (dur[key] ?? 0) + d;
+    total += d;
+  }
+  const out: Record<string, number> = {};
+  for (const [k, d] of Object.entries(dur)) out[k] = total > 0 ? d / total : 0;
+  return out;
 }
 
 export function validateBgmPolicy(plan: BgmPlan, policy: BgmPolicy): string[] {
@@ -233,6 +258,28 @@ export function validateBgmPolicy(plan: BgmPlan, policy: BgmPolicy): string[] {
     const { min, max } = policy.baseVolume;
     if (plan.baseVolume < min || plan.baseVolume > max) {
       errors.push(`baseVolume ${plan.baseVolume} が方針の範囲 ${min}〜${max} の外(channel/bgm-policy.json)`);
+    }
+  }
+  if (policy.envelopeGain) {
+    const { peakMin, max } = policy.envelopeGain;
+    const gains = expandEnvelope(plan.envelope ?? []).map((s) => s[2]);
+    const over = gains.filter((g) => g > max);
+    if (over.length) {
+      errors.push(`envelope の gain ${[...new Set(over)].join(",")} が上限 ${max} を超えています(gain は baseVolume に掛ける倍率。channel/bgm-policy.json)`);
+    }
+    const peak = gains.length ? Math.max(...gains) : 0;
+    if (gains.length && peak < peakMin) {
+      errors.push(`envelope の最大 gain ${peak} が下限 ${peakMin} 未満です。gain は倍率(0〜1)で、絶対音量を書いていないか確認(ep033 の型。channel/bgm-policy.json)`);
+    }
+  }
+  if (policy.trackShareMin) {
+    const shares = trackShares(plan);
+    const pct = (x: number) => Math.round(x * 100) + "%";
+    for (const [key, min] of Object.entries(policy.trackShareMin)) {
+      const got = shares[key] ?? 0;
+      if (got < min) {
+        errors.push(`曲 ${key} の配分が ${pct(got)}(assignment の尺比)で下限 ${pct(min)} 未満です。基調の曲を減らしすぎていないか(ep041 の型: tense 75% で「ほぼピアノ」。channel/bgm-policy.json)`);
+      }
     }
   }
   return errors;

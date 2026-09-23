@@ -9,6 +9,15 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/guard-approved.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/guard-gpu.mjs\""
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -37,6 +37,7 @@
     "check:h3": "tsx src/pipeline/h3/check-h3-prompt.ts",
     "h3:pod": "tsx src/pipeline/h3/pod.ts",
     "h3:inspect": "tsx src/pipeline/h3/inspect-clips.ts",
+    "h3:head-scan": "tsx src/pipeline/h3/head-scan.ts",
     "h3:run": "tsx src/pipeline/h3/run-chapter.ts",
     "h3:reject": "tsx src/pipeline/h3/reject-clips.ts",
     "h3:subs": "python3 src/pipeline/h3/render-subs.py",
@@ -47,6 +48,8 @@
     "check:readings": "tsx src/pipeline/check-readings.ts",
     "h3:figures": "tsx src/pipeline/h3/render-figures.ts",
     "next-videos": "tsx src/pipeline/next-videos.ts",
+    "analytics:ledger": "tsx src/pipeline/analytics-ledger.ts",
+    "record:thumb-test": "tsx src/pipeline/record-thumb-test.ts",
     "diff:readings": "tsx src/pipeline/diff-readings.ts"
   },
   "dependencies": {

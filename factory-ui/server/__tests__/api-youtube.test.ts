@@ -5,7 +5,7 @@ import os from 'node:os';
 import express from 'express';
 import request from 'supertest';
 import { createApiRouter } from '../api';
-import { YoutubeManager, type YoutubeApi } from '../youtube';
+import { YoutubeManager, type YoutubeApi, encodeOAuthState } from '../youtube';
 
 // 既存 api.test.ts と同様に sessions/jobs/renderQueue はダミーで満たす
 function makeApp(youtube: YoutubeManager, root: string) {
@@ -79,7 +79,8 @@ describe('YouTube API ルート', () => {
     const app = makeApp(new YoutubeManager(root, () => fakeApi), root);
     const res = await request(app).post('/api/youtube/auth').send({ channel: 'ch-a' });
     expect(res.status).toBe(200);
-    expect(res.body.url).toContain('state=ch-a');
+    // state は base64url 符号化される(非ASCIIのdirで Google が 500 を返すため)
+    expect(res.body.url).toContain(`state=${encodeOAuthState('ch-a')}`);
     const app2 = makeApp(new YoutubeManager(root, () => null), root);
     expect((await request(app2).post('/api/youtube/auth').send({ channel: 'ch-a' })).status).toBe(503);
   });
@@ -92,6 +93,14 @@ describe('YouTube API ルート', () => {
     expect(res.text).toContain('連携');
     expect(fs.existsSync(path.join(root, 'ch-a', 'channel', 'youtube-oauth.json'))).toBe(true);
     expect((await request(app).get('/api/youtube/callback?state=ch-a')).status).toBe(400);
+    // 符号化された state(日本語dirを含む)でも復号して保存できる
+    fs.mkdirSync(path.join(root, '動物転生', 'channel'), { recursive: true });
+    fs.writeFileSync(path.join(root, '動物転生', '.channel-system.json'), '{}');
+    const enc = encodeOAuthState('動物転生');
+    expect(enc).toMatch(/^[A-Za-z0-9_-]+$/);
+    const res2 = await request(app).get(`/api/youtube/callback?code=c2&state=${enc}`);
+    expect(res2.status).toBe(200);
+    expect(fs.existsSync(path.join(root, '動物転生', 'channel', 'youtube-oauth.json'))).toBe(true);
   });
 
   it('callback: 不在チャンネルのstateは404', async () => {

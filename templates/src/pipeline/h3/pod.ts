@@ -6,14 +6,18 @@
  *   npm run h3:pod -- down
  *
  * 設計 §4 の二重ロックは「run-chapter と Pod 起動」の2口である。**課金が始まるのは
- * Pod 起動の瞬間**($1.23/h・自動停止なし・二重起動ガードのみ)であり、run-chapter だけを
- * ロックしても起動そのものは素通りしていた。ここがその2口目にあたる。
+ * Pod 起動の瞬間**であり、run-chapter だけをロックしても起動そのものは素通りしていた。
+ * ここがその2口目にあたる。ロックは `H3_ALLOW_GPU=1` の完全一致のみ(config.ts の gpuAllowed)。
+ *
+ * 2026-09-23 から pod.mjs の up / wait-up は見張り役を切り離しで立てる(起動から 6h か
+ * 無操作 30 分で自動 down。`--max-hours`(wait-up は `--pod-max-hours`)/ `--idle-min` で変更)。
+ * pod.mjs / batch.mjs の直叩きは PreToolUse フック scripts/hooks/guard-gpu.mjs がブロックする。
  *
  * ロックするのは**課金を増やすサブコマンドだけ**(`up` / `wait-up`)。`down` / `status` /
  * `stock` / `ssh` / `tunnel` はロックしない — とくに `down` は課金を止めるための道具なので、
  * ロックで止めると「止め忘れ」より悪い「止められない」事故になる。
  *
- * `tools/comfy-runpod/` は別リポジトリである。**1バイトも変えずに呼ぶだけ**にする。
+ * `tools/comfy-runpod/` は別リポジトリである。ここからは引数をそのまま渡して呼ぶだけにする。
  */
 import { basename } from "node:path";
 import { spawnSync } from "node:child_process";

@@ -17,6 +17,7 @@ import {
 } from './operations';
 import { parseLine, extractGate, extractStage, hasDone, stripMarkers } from './streamparse';
 import { stampLogLine } from './logstamp';
+import { isH3EpisodeSync } from './scanner';
 import {
   findEpisodeProgress,
   findShortIdForJob,
@@ -344,9 +345,12 @@ export class JobManager extends EventEmitter {
     // あわせて夜間レンダーキューへ登録し、登録できたら決定文を「レンダーせず完了処理」に変える
     // (エピソード未解決・フック未接続なら従来の「レンダー実行」にフォールバック=旧スキルを壊さない)
     let queuedForRender = false;
+    // H3 経路の回は夜間レンダーに入れない(assemble の out/final.mp4 が最終物。render-episode.sh は
+    // composition.html 由来の古い実装で上書きする)。キュー登録せず、決定文も H3 用に変える
+    const h3 = gate.kind === 'render-check' && this.isH3Job(j.detail);
     if (gate.kind === 'render-check' && optionId !== 'revise') {
       j.detail.renderApproved = true;
-      queuedForRender = this.tryEnqueueRender(j);
+      queuedForRender = h3 ? false : this.tryEnqueueRender(j);
       if (queuedForRender) j.detail.renderQueued = true;
     }
     const oldProc = j.proc;
@@ -355,7 +359,7 @@ export class JobManager extends EventEmitter {
     j.lastOptionId = optionId;
     this.removeGate(j); // 応答済みゲートの gate.json を消す(古い gate を UI が誤読しない)
     this.touch(j);
-    const decision = buildDecision(gate, opt, optionId, feedback, queuedForRender, j.detail.operation === 'short-create');
+    const decision = buildDecision(gate, opt, optionId, feedback, queuedForRender, j.detail.operation === 'short-create', h3);
     const absCwd = this.resolveCwd(j.detail.dir);
     // 先に startProc で世代を上げる → 旧プロセスの遅延/kill由来のexitは世代不一致で無害化される
     this.startProc(j, ['-p', '--resume', sid, decision, ...this.modelArgs(j), ...STREAM_ARGS], absCwd);
@@ -642,7 +646,11 @@ export class JobManager extends EventEmitter {
         // 同居しているケースがあるため、元textを maybeStage に通して工程前進を取りこぼさない
         // (openGate はゲートで工程を動かさないので、工程前進の経路はここだけ)
         this.maybeStage(internal, ev.text);
-        this.openGate(internal, ev.gate);
+        // パーサは回を知らずに kind を補完している。H3 回は補完なしで取り直す(streamparse.extractGate の注記)
+        this.openGate(
+          internal,
+          this.isH3Job(d) ? (extractGate(ev.text, { h3: true }) ?? ev.gate) : ev.gate,
+        );
         break;
       case 'text':
         if (hasDone(ev.text)) internal.sawDone = true;
@@ -753,7 +761,8 @@ export class JobManager extends EventEmitter {
   }
 
   private maybeGate(internal: Internal, text: string): void {
-    const gate = extractGate(text);
+    if (!text.includes('<gate>')) return; // 毎テキストで回の判定(ファイル読み)をしない
+    const gate = extractGate(text, { h3: this.isH3Job(internal.detail) });
     if (gate) this.openGate(internal, gate);
   }
 
@@ -915,6 +924,22 @@ export class JobManager extends EventEmitter {
   }
 
   /**
+   * ジョブの対象エピソードが H3 経路の回(.channel-system.json の h3Pipeline.episodes)か。
+   * エピソードを解決できない・ショート・読めない場合は false(従来動作)。
+   */
+  private isH3Job(d: JobDetail): boolean {
+    if (d.operation === 'short-create') return false;
+    if (d.operation !== 'video-create' && !d.request?.episodeId) return false;
+    try {
+      const ep = findEpisodeProgress(this.root, d.dir, d.request, d.title, d.createdAt);
+      if (!ep) return false;
+      return isH3EpisodeSync(path.join(this.root, d.dir), ep.episodeId);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * render-check承認時のキュー登録。ジョブに対応するエピソードを解決できたときだけ登録する。
    * video-create以外(channel-refine経由の再開など)は episodeId 明示時のみ対象
    * (タイトルからの推定解決は誤登録し得るため video-create に限る)。
@@ -950,6 +975,7 @@ export class JobManager extends EventEmitter {
     const d = internal.detail;
     if (!this.hooks.enqueueRender) return;
     if (d.operation !== 'video-create' && !d.request.episodeId) return;
+    if (this.isH3Job(d)) return; // H3 回は assemble の final.mp4 が最終物(夜間レンダー対象外)
     try {
       // キュー登録は一発勝負の判定のため、キャッシュされた進捗(最大2秒古い。スキルが
       // episode.json を render_ready に更新した直後に <done> 終了するケース)で誤判定しない
@@ -1123,11 +1149,21 @@ function buildDecision(
   feedback?: string,
   queuedForRender = false,
   isShort = false,
+  isH3 = false,
 ): string {
   const fb = feedback?.trim();
   if (gate.kind === 'render-check') {
     if (optionId === 'revise') {
       return `レンダー前の目視確認で修正依頼がありました。次のフィードバックを反映し、修正が終わったら再度 kind:"render-check" のゲートを発行して確認を求めてください: ${fb || '(記載なし)'}`;
+    }
+    if (isH3) {
+      let d =
+        `確認を承認しました(${opt.label})。この回は H3 経路です — assemble の out/final.mp4 が最終物で、` +
+        `夜間レンダーキューには登録していません(render-episode.sh は composition.html 由来の実装で final.mp4 を上書きするため、実行しないこと)。` +
+        `レンダーは実行せず、\`npm run finalize episodes/<epId>\` を実行して完了処理` +
+        `(status更新・metrics・backlog消し込み・git commit)を一括で行い、<done> で終了してください。`;
+      if (fb) d += ` あわせて次のフィードバックを反映してください: ${fb}`;
+      return d;
     }
     if (queuedForRender && isShort) {
       let d =
@@ -1143,7 +1179,7 @@ function buildDecision(
     if (queuedForRender) {
       let d =
         `レンダー前の一括確認を承認しました(${opt.label})。エピソードは夜間レンダーキューに登録済みです。` +
-        `レンダーは実行せず、\`npm run finalize episodes/<epId> -- --hours <実測> --images <実測>\` を実行して完了処理` +
+        `レンダーは実行せず、\`npm run finalize episodes/<epId>\` を実行して完了処理(所要時間・コスト・画像生成数は finalize が実測する。推測値を渡さない)` +
         `(status更新・metrics・backlog消し込み・git commit)を一括で行い、<done> で終了してください。`;
       if (fb) d += ` あわせて次のフィードバックを反映してください: ${fb}`;
       return d;

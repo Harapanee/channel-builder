@@ -12,7 +12,7 @@
 import { basename } from "node:path";
 import { existsSync } from "node:fs";
 import { MAX_FRAMES, TRAINED_MIN_FRAMES, framesForSeconds } from "./frames";
-import { I2V_LINE } from "./compose";
+import { I2V_LINE, fl2vLine } from "./compose";
 import { SPEEDUP_ADVISE, type SpeedupRow } from "./plan";
 import type { CutsFile, Cut, Finding, ShotDecl, Vocab } from "./types";
 
@@ -58,6 +58,30 @@ const COUNT_WORD: Record<string, number> = {
   eighteen: 18, nineteen: 19, twenty: 20,
 };
 
+/**
+ * 寄り引きの段(A16)。**ショットの名詞句の形(「〜 shot / view」・close-up)に限って拾う。**
+ * 単語だけで拾うと動詞の close("her eyes close")や "a hawk overhead" を誤って数える。
+ * 間に挟めるのは1語まで("close side view"・"wide empty shot")。extreme wide は俯瞰と同じ段に置く。
+ */
+export type ShotScale = "extreme-close" | "close" | "medium" | "wide" | "aerial";
+const SCALE_PATTERNS: [ShotScale, RegExp][] = [
+  ["extreme-close", /\bextreme(?:ly)?\s+close-?ups?\b|\bextreme(?:ly)?\s+close(?:[\s-]+[\w']+)?\s+(?:shot|view)\b|\bmacro(?:[\s-]+[\w']+)?\s+(?:shot|view)\b/i],
+  ["aerial", /\b(?:extreme\s+wide|aerial|overhead|top-down|bird's-eye|birds-eye)(?:[\s-]+[\w']+)?\s+(?:shot|view)\b/i],
+  ["close", /\bclose-?ups?\b|\b(?:very\s+)?(?:close|tight)(?:[\s-]+[\w']+)?\s+(?:shot|view)\b/i],
+  ["medium", /\b(?:medium|mid)(?:[\s-]+[\w']+)?\s+(?:shot|view)\b/i],
+  ["wide", /\b(?:wide|long|establishing|full)(?:[\s-]+[\w']+)?\s+(?:shot|view)\b/i],
+];
+
+/** ショット1区間の寄り引き。最初に現れた語で決める(「cuts to a close shot of …」の形) */
+export function shotScale(segment: string): { scale: ShotScale; word: string } | undefined {
+  let best: { scale: ShotScale; word: string; at: number } | undefined;
+  for (const [scale, re] of SCALE_PATTERNS) {
+    const m = re.exec(segment);
+    if (m && (best === undefined || m.index < best.at)) best = { scale, word: m[0], at: m.index };
+  }
+  return best && { scale: best.scale, word: best.word };
+}
+
 /** 引用符の中と <d>…</d> の中を落とす(画面内文字・台詞は原文のまま書くのが正しいため) */
 export function stripQuoted(text: string): string {
   return text.replace(/<d>[\s\S]*?<\/d>/g, "").replace(/"[^"]*"/g, "");
@@ -72,18 +96,27 @@ function parseMmSs(s: string): number {
 export function checkPromptText(
   id: string,
   prompt: string,
-  ctx: { seconds: number; hasFirstFrame: boolean },
+  ctx: { seconds: number; hasFirstFrame: boolean; hasLastFrame?: boolean },
 ): Finding[] {
   const out: Finding[] = [];
   const add = (rule: string, message: string) => out.push({ level: "BLOCK", id, rule, message });
 
   // --- B2: モード別の指示行 -------------------------------------------------
+  const flExpected = fl2vLine(ctx.seconds);
+  const hasFL = prompt.startsWith(flExpected + "\n\n");
+  const looksLikeFL = /^How the reference pictures align/.test(prompt);
   const hasLine = prompt.startsWith(I2V_LINE + "\n\n");
   const looksLikeLine = /^For the target video,/.test(prompt);
-  if (ctx.hasFirstFrame && !hasLine) add("B2", "first_frame があるのに I2VA の指示行が逐語一致で先頭に無い");
-  if (!ctx.hasFirstFrame && (hasLine || looksLikeLine)) add("B2", "first_frame が無いのに参照画像の指示行が付いている");
-
-  const core = hasLine ? prompt.slice(I2V_LINE.length + 2) : prompt;
+  if (ctx.hasLastFrame) {
+    if (!hasFL) add("B2", looksLikeFL
+      ? "last_frame があるが FL2VA 行の秒数がカットの秒数(" + ctx.seconds.toFixed(2) + "秒)と一致しない"
+      : "last_frame があるのに FL2VA の指示行が逐語一致で先頭に無い");
+  } else {
+    if (hasFL || looksLikeFL) add("B2", "last_frame が無いのに FL2VA の指示行が付いている");
+    if (ctx.hasFirstFrame && !hasLine) add("B2", "first_frame があるのに I2VA の指示行が逐語一致で先頭に無い");
+    if (!ctx.hasFirstFrame && (hasLine || looksLikeLine)) add("B2", "first_frame が無いのに参照画像の指示行が付いている");
+  }
+  const core = hasFL ? prompt.slice(flExpected.length + 2) : hasLine ? prompt.slice(I2V_LINE.length + 2) : prompt;
 
   // --- B1: 3フィールドの存在・順序・単一性 ----------------------------------
   const FIELDS = ["integrated_multimodal_description:", "overall_soundscape:", "non_diegetic_music:"];
@@ -186,6 +219,40 @@ export function checkPromptText(
       rule: "A13",
       message: "広帯域の持続音を重ねている「" + sustained.join("」「") + "」— H3 はノイズ床として描く。持続音は1つまで、残りは時刻つきの点音にする",
     });
+  }
+
+  // --- A15 / A16: 内部ショット(2026-09-23 レビュー F1) ----------------------
+  // ep033/039/040/043/044 の5話で、差し戻しの主因が [Shot 2] 以降の内部ショットだった
+  // (寄り引きの飛び・俯瞰の粒の鳥化など。memory: h3-shot2-and-chain-pitfalls)。
+  // 公式は内部ショットを許しているので BLOCK にはしない。時刻の妥当性は B3 が見続ける。
+  // A15 のメッセージは固定文にする(check-h3-prompt が規則+文面で章ごとに畳むため)。
+  const shotSegs = clean.split(/\[Shot \d+\]/).slice(1);
+  if (shotSegs.length >= 2) {
+    out.push({
+      level: "ADVISE",
+      id,
+      rule: "A15",
+      message: "内部ショット([Shot 2] 以降)がある — 差し戻しの主因(5話実測: 寄り引きの飛び・粒の鳥化)。単一ショットで書けないか検討する",
+    });
+    // 寄り引きの段が Shot 間で変わるものは特に壊れる(ep033 ch00 で4件・ch08 で2件)
+    let prevScale: { scale: ShotScale; word: string; shot: number } | undefined;
+    const jumps: string[] = [];
+    shotSegs.forEach((seg, i) => {
+      const s = shotScale(seg);
+      if (!s) return;
+      if (prevScale && prevScale.scale !== s.scale) {
+        jumps.push("Shot " + prevScale.shot + "「" + prevScale.word + "」→ Shot " + (i + 1) + "「" + s.word + "」");
+      }
+      prevScale = { ...s, shot: i + 1 };
+    });
+    if (jumps.length > 0) {
+      out.push({
+        level: "ADVISE",
+        id,
+        rule: "A16",
+        message: "【強】内部ショットで寄り引きが変わる(" + jumps.join(" / ") + ")— 最も壊れる型。別カットへ分けるか単一ショットにする",
+      });
+    }
   }
 
   // --- B6: 尺 ---------------------------------------------------------------
@@ -380,7 +447,11 @@ export function dropVocabOriginA6(findings: Finding[], vocab: Vocab): Finding[] 
   });
 }
 
-export function checkAdvisories(id: string, body: string, vocab?: Vocab): Finding[] {
+/**
+ * @param opts.keyframe keyframe カット(FL2VA)。両端の絵(始点=鎖の最終コマ・終点=画像モデルの1枚絵)が場所を持ち、
+ *   body は「間の動き」だけを書く契約(B15)なので A5(場所から書き始める)を当てない(2026-09-23・ep044 ⑤)。
+ */
+export function checkAdvisories(id: string, body: string, vocab?: Vocab, opts: { keyframe?: boolean } = {}): Finding[] {
   const out: Finding[] = [];
   // 閉じの一文は「唯一使える禁止手段」なので、規則を当てる前に body から外す。
   // 外した事実は A9 で1行だけ報告する(A6 で1件ずつ叩かない)。
@@ -401,7 +472,7 @@ export function checkAdvisories(id: string, body: string, vocab?: Vocab): Findin
         ": 「" + stripped[0].slice(0, 48) + "…」",
     });
   }
-  if (!OPENS_WITH_PLACE.test(body.trim())) {
+  if (!opts.keyframe && !OPENS_WITH_PLACE.test(body.trim())) {
     out.push({ level: "ADVISE", id, rule: "A5", message: "場所の記述から始まっていない。場所を書かないとモデルが場所を発明する" });
   }
   // A7: camera / POV を含む文だけを見る(B4 と同じ切り出し方)。
@@ -418,13 +489,52 @@ export function checkAdvisories(id: string, body: string, vocab?: Vocab): Findin
 }
 
 /**
+ * B16: 合成後の本文に `undefined` / `null` / `NaN` が文字として混入している(2026-09-23)。
+ * 章ファイルはテンプレートリテラルで語彙帳を埋め込むので、存在しないキー(ep041: props と subjects の取り違え)は
+ * 型検査をすり抜けて "undefined" という文字のまま H3 へ渡る。モデルはそれを絵にしようとするので必ず止める。
+ * 大文字小文字は区別する(JS が文字列化した形だけを拾う)。語の一部(nullify 等)は拾わない。
+ */
+const PLACEHOLDER_LEAK = /\b(undefined|null|NaN)\b/g;
+
+export function checkPlaceholderLeak(id: string, text: string): Finding[] {
+  const hits = new Map<string, number>();
+  for (const m of text.matchAll(PLACEHOLDER_LEAK)) hits.set(m[1], (hits.get(m[1]) ?? 0) + 1);
+  if (hits.size === 0) return [];
+  const list = [...hits].map(([w, n]) => "「" + w + "」" + (n > 1 ? "×" + n : "")).join("・");
+  return [{
+    level: "BLOCK", id, rule: "B16",
+    message: "本文に " + list + " が混入している(語彙帳に無いキーの参照・props/subjects の取り違えを疑う)",
+  }];
+}
+
+/**
+ * A17: 語彙帳(places / subjects / props)に定義されたが、どのカットの文面(body・endState・sound)にも
+ * 値が現れない定数(2026-09-23・ep044 ⑥)。書き忘れた被写体・申請したが使わなかった場所の棚卸し用。
+ * 章ファイルは `${vocab.subjects.X}` で値を埋め込むので、参照の有無は「値の文字列が合成前の文面に含まれるか」で判定する
+ * (定数の中で別の定数を組み立てていても、外側が使われていれば内側の値も文面に現れる)。
+ * 全章を対象にしたときだけ呼ぶ(章指定の部分検査で毎回出さない)。
+ */
+export function checkUnusedVocab(vocab: Vocab, texts: string[]): Finding[] {
+  const corpus = texts.join("\n");
+  const out: Finding[] = [];
+  for (const group of ["places", "subjects", "props"] as const) {
+    for (const [key, value] of Object.entries(vocab[group] ?? {})) {
+      if (typeof value !== "string" || value.trim() === "") continue;
+      if (corpus.includes(value)) continue;
+      out.push({ level: "ADVISE", id: group + "." + key, rule: "A17", message: "語彙帳に定義されたが、どのカットの文面からも参照されていない(書き忘れか、不要な定数か)" });
+    }
+  }
+  return out;
+}
+
+/**
  * ジョブ集合に対する検査。
  * basename の一意性が要るのは、Pod へのアップロードが basename で行われ、
  * 別ディレクトリの同名ファイルが Pod 上で衝突するため(既知欠陥)。
  * 実在検査は投入直前にだけ走らせる(検査 CLI の時点では起点フレームがまだ無い)。
  */
 export function checkJobSet(
-  jobs: { id: string; prompt: string; firstFrameFile?: string }[],
+  jobs: { id: string; prompt: string; firstFrameFile?: string; lastFrameFile?: string }[],
   opts: { requireExists?: boolean } = {},
 ): Finding[] {
   const out: Finding[] = [];
@@ -434,16 +544,19 @@ export function checkJobSet(
     if (ids.has(j.id)) out.push({ level: "BLOCK", id: j.id, rule: "B8", message: "id が重複している" });
     ids.add(j.id);
     if (!j.prompt || !j.prompt.trim()) out.push({ level: "BLOCK", id: j.id, rule: "B8", message: "prompt が空" });
-    if (!j.firstFrameFile) continue;
-    if (opts.requireExists && !existsSync(j.firstFrameFile)) {
-      out.push({ level: "BLOCK", id: j.id, rule: "B7", message: "参照画像が実在しない: " + j.firstFrameFile });
+    // 参照画像は起点(firstFrame)と終点(lastFrame・keyframe カット)の両方を同じ規則で見る
+    for (const f of [j.firstFrameFile, j.lastFrameFile]) {
+      if (!f) continue;
+      if (opts.requireExists && !existsSync(f)) {
+        out.push({ level: "BLOCK", id: j.id, rule: "B7", message: "参照画像が実在しない: " + f });
+      }
+      const b = basename(f);
+      const owner = bases.get(b);
+      if (owner && owner !== f) {
+        out.push({ level: "BLOCK", id: j.id, rule: "B7", message: "参照画像の basename「" + b + "」が " + owner + " と衝突する(Pod上で同じ名前になる)" });
+      }
+      bases.set(b, f);
     }
-    const b = basename(j.firstFrameFile);
-    const owner = bases.get(b);
-    if (owner && owner !== j.firstFrameFile) {
-      out.push({ level: "BLOCK", id: j.id, rule: "B7", message: "参照画像の basename「" + b + "」が " + owner + " と衝突する(Pod上で同じ名前になる)" });
-    }
-    bases.set(b, j.firstFrameFile);
   }
   return out;
 }
@@ -461,7 +574,7 @@ export function checkJobSet(
  */
 const CUT_KEYS = new Set([
   "lineIds", "seconds", "place", "subject", "role",
-  "chain", "chainFrom", "hi", "text", "card", "holdSlow", "noSub", "skipHeadFrames",
+  "chain", "chainFrom", "hi", "text", "card", "holdSlow", "noSub", "skipHeadFrames", "keyframe",
 ]);
 
 export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): Finding[] {
@@ -514,7 +627,48 @@ export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): F
   if (declCard !== cutCard) {
     out.push({ level: "BLOCK", id, rule: "B11", message: "card が食い違う(宣言=" + String(declCard) + " / 台帳=" + String(cutCard) + ")" });
   }
+
+  // B15: keyframe カット(両端画像+FL2VA)の契約。2026-09-21
+  const kf = Boolean(cut.keyframe);
+  const es = decl.endState?.trim() ?? "";
+  if (kf && !es) out.push({ level: "BLOCK", id, rule: "B15", message: "keyframe なのに宣言に endState が無い(終点画像の描写を書く)" });
+  if (!kf && es) out.push({ level: "BLOCK", id, rule: "B15", message: "endState があるのに台帳に keyframe が無い" });
+  if (kf && !cut.chain && !cut.chainFrom) out.push({ level: "BLOCK", id, rule: "B15", message: "keyframe には chain か chainFrom が必須(始点=直前カットの最終コマ)" });
+  if (kf && es && es.length < 40) out.push({ level: "BLOCK", id, rule: "B15", message: "endState が短すぎる(40文字以上。変わる部位と方向を書く)" });
+  if (kf && /\bfrom the very first frame\b|\balready\b/i.test(decl.body ?? "")) {
+    out.push({ level: "BLOCK", id, rule: "B15", message: "keyframe の body に到達状態句(from the very first frame / already)がある。両端の絵は描写せず、間の動きだけ書く" });
+  }
+
   return out;
+}
+
+/**
+ * B15(語彙帳側): endState が**台帳の subject が指す基本形定数**(`vocab.subjects[cut.subject]`)を丸ごと含む。
+ * 画風・体色は固定テンプレと参照画像が担うので、endState には変化点だけを書く(spec §3.3 条件3後半)。
+ * 到達状態定数(`ADULT_JAWS_OUT` など)は endState で使ってよい(spec §5)ので、他の subjects は見ない。
+ * `cut.subject` が語彙帳に無ければ黙る(未知の被写体は checkLedger の担当)。
+ */
+export function checkEndStateVocab(id: string, decl: ShotDecl, cut: Cut | undefined, vocab: Vocab): Finding[] {
+  const es = decl.endState?.trim();
+  if (!es || !cut) return [];
+  const base = vocab.subjects[cut.subject];
+  if (base === undefined) return [];
+  const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+  const baseText = norm(base);
+  if (baseText.length === 0 || !norm(es).includes(baseText)) return [];
+  return [{
+    level: "BLOCK", id, rule: "B15",
+    message: "endState が台帳の subject が指す基本形定数 " + cut.subject + " を丸ごと含む(体の基本形は参照画像が担う。変わる部位だけ書く)",
+  }];
+}
+
+/**
+ * A14: H3 経路の台帳に keyframe カットが1本も無い。種固有の動作(研究にある解剖・動作)の宣言し忘れの可能性。
+ */
+export function checkKeyframePresence(cuts: Record<string, Cut>): Finding[] {
+  return Object.values(cuts).some((c) => c.keyframe)
+    ? []
+    : [{ level: "ADVISE", id: "cuts.json", rule: "A14", message: "keyframe カットが1本も無い(research.md に固有の動作があれば cut-planner が宣言する)" }];
 }
 
 /**

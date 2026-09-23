@@ -176,6 +176,10 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 
 - publish/ 以外への書き込み / 動画内容の改変提案 / 未承認素材の参照
 
+# 「次に見る」の追記
+
+metadata.json を書いたあと、必ず `npm run next-videos episodes/<epId> -- --apply` を実行する(analytics の実測から登録/1k再生の高い本編2本を選び(公開後7〜60日を優先。登録数が無ければ平均視聴率)、概要欄の末尾へ「▶ 次に見る」を足す。`publish/next-videos.json` も出る)。そのあと `npm run validate:metadata episodes/<epId>` を通す。候補が無い(スナップショットが無い・公開後7日以上の本編が無い)ときはその旨を報告に書き、追記しない。終了画面の設定は人間が Studio で行う(報告に next-videos.json のパスを書く)。
+
 ## 最終報告の形式(usage規律)
 
 発注元(メインセッション)への最終報告は**30行以内の構造化サマリ**で返す:

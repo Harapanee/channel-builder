@@ -116,6 +116,21 @@ const IDENTICAL = [
   "src/pipeline/validate-metadata.test.ts",
   "src/schemas/thumb-test.schema.json",
   "src/schemas/analytics.schema.json",
+  // 2026-09-23 追加(キュー・レンダーの H3 拒否と finalize の契約テスト・台本 lint のテスト・TTS 読み置換のテスト)
+  "src/pipeline/finalize-episode.test.ts",
+  "src/pipeline/render-scripts-h3.test.ts",
+  "src/pipeline/lint-script.test.ts",
+  "src/pipeline/tts-reading.test.ts",
+  // 2026-09-23 追加(成果ループ: 実測の台帳書き戻し・サムネ A/B の記録。経路非依存)
+  "src/pipeline/analytics-ledger.ts",
+  "src/pipeline/analytics-ledger.test.ts",
+  "src/pipeline/record-thumb-test.ts",
+  "src/pipeline/record-thumb-test.test.ts",
+  // 2026-09-23 追加(GPU 直叩きを止める PreToolUse フック。.claude/settings.json が全チャンネルで登録するため IDENTICAL)
+  "scripts/hooks/guard-gpu.mjs",
+  "scripts/hooks/guard-gpu.test.mjs",
+  // 2026-09-23 追加(BGM/SE 計画の専用エージェント。HF・H3 の両経路で使う)
+  ".claude/agents/bgm-planner.md",
   "src/scenes/shorts/core/RankCard.tsx",
   "src/scenes/shorts/core/ShortTitleCard.tsx",
   ".claude/skills/short-builder/SKILL.md",
@@ -157,6 +172,8 @@ const HF_IDENTICAL = [
   // 2026-08-02 追加(BGM包絡線の契約化・共有装置のAPI抽出)
   "src/pipeline/build-bgm-cues.ts",
   "src/pipeline/build-bgm-cues.test.ts",
+  // 2026-09-23 追加(bgm-policy の trackShareMin・envelopeGain の検査)
+  "src/pipeline/build-bgm-share.test.ts",
   "src/pipeline/frag-api.ts",
   "src/pipeline/frag-api.test.ts",
   "src/schemas/bgm-plan.schema.json",
@@ -205,6 +222,22 @@ const H3_IDENTICAL = [
   "src/pipeline/h3/run-chapter.test.ts",
   "src/pipeline/h3/types.ts",
   "src/pipeline/h3/vocab.test.ts",
+  // 2026-09-21 追加(keyframe カットの終点画像。2026-09-23 まで同期漏れ)
+  "src/pipeline/h3/end-frame.ts",
+  "src/pipeline/h3/end-frame.test.ts",
+  // 2026-09-23 追加(古い鎖の検出・チャンク組み立ての共通化・入力ハッシュ・素材の入口検査・冒頭ゴミコマの推奨)
+  "src/pipeline/h3/chain-stale.ts",
+  "src/pipeline/h3/chain-stale.test.ts",
+  "src/pipeline/h3/chunk-filter.ts",
+  "src/pipeline/h3/chunk-filter.test.ts",
+  "src/pipeline/h3/freshness.ts",
+  "src/pipeline/h3/freshness.test.ts",
+  "src/pipeline/h3/material-guards.ts",
+  "src/pipeline/h3/material-guards.test.ts",
+  "src/pipeline/h3/head-scan.ts",
+  "src/pipeline/h3/head-scan.test.ts",
+  "src/pipeline/h3/check-leak-vocab.test.ts",
+  "src/pipeline/h3/figures-keys-layout.test.ts",
   "src/schemas/h3-ambient.schema.json",
   "tsconfig.h3.json",
   // 語彙帳の雛形(vocab.test.ts が読む。題材ごとの語彙帳 h3/vocab/<epId>.ts はこれを写して起こす)
@@ -215,6 +248,7 @@ const H3_IDENTICAL = [
   ".claude/agents/h3-fix-writer.md",
   ".claude/agents/h3-clip-inspector.md",
   ".claude/agents/figure-planner.md",
+  ".claude/agents/h3-vocab-writer.md",
   "docs/superpowers/specs/2026-08-19-h3-prompt-pipeline-design.md",
   "docs/superpowers/specs/2026-08-24-h3-pipeline-improvements-design.md",
   "docs/superpowers/specs/2026-09-04-h3-figure-overlay-design.md",

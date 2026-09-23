@@ -26,11 +26,15 @@ import { buildSegments } from "./assemble";
 import { createHash } from "node:crypto";
 import type { Figure, FigureIndex, FigureIndexEntry, FigureLine, FiguresFile, GridFigure, Reveals } from "./figures";
 import type { CutsFile } from "./types";
+import { OUT_H, OUT_W, PAPER_HEX } from "./chunk-filter";
+import { currentInputs, episodeInputPaths, nextIndexInputs } from "./freshness";
+import type { Inputs } from "./freshness";
 
-const W = 1920;
-const H = 1080;
+// 解像度と紙色は chunk-filter.ts の定数を正本にする(assemble の章カード下地と同じ値。2026-09-23 C5)
+const W = OUT_W;
+const H = OUT_H;
 const COLORS: Record<string, string> = {
-  paper: "#F4F1E7", ink: "#1B1A17", indigo: "#37416B", red: "#C6382C", yellow: "#E7B23A",
+  paper: "#" + PAPER_HEX, ink: "#1B1A17", indigo: "#37416B", red: "#C6382C", yellow: "#E7B23A",
 };
 
 export function figuresPath(epId: string): string {
@@ -301,6 +305,9 @@ async function main(): Promise<void> {
   const fPath = figuresPath(epId);
   if (!existsSync(fPath)) throw new Error("figures.json がありません: " + fPath);
   const file = JSON.parse(readFileSync(fPath, "utf8")) as FiguresFile;
+  // 何を読んで焼いたか(C1)。読む前に取る — 焼いている間に直されたら次の assemble が古いと止める
+  const inputPaths = episodeInputPaths(ROOT, epId);
+  const inputsNow: Inputs = currentInputs({ timing: inputPaths.timing, cuts: inputPaths.cuts, figures: inputPaths.figures });
   const timing = JSON.parse(readFileSync(join(ROOT, "episodes", epId, "timing.json"), "utf8")) as { totalDurationSec: number; lines: FigureLine[] };
   const cutsFile = JSON.parse(readFileSync(join(ROOT, "h3/episodes", epId, "cuts.json"), "utf8")) as CutsFile;
   const lineById = new Map(timing.lines.map((l) => [l.lineId, l]));
@@ -438,7 +445,13 @@ async function main(): Promise<void> {
   } finally {
     if (browser) await browser.close();
   }
-  const index: FigureIndex = { episodeId: epId, fps: OUT_FPS, entries };
+  // --only の部分焼きは、前回と入力が同じときだけ現在の inputs を書く(他の図解は焼き直していないため)
+  const inputs = nextIndexInputs((prev as (FigureIndex & { inputs?: Inputs }) | null)?.inputs, inputsNow, opts.only !== null);
+  if (inputs === undefined || inputs !== inputsNow) {
+    console.log("⚠️ --only の部分焼きですが、前回の index に inputs が無いか、前回から timing/cuts/figures.json が変わっています。"
+      + "index の inputs は前回のまま(assemble は古い/未記録として扱います)。全部焼き直すなら --only を外す");
+  }
+  const index: FigureIndex & { inputs?: Inputs } = { episodeId: epId, fps: OUT_FPS, entries, ...(inputs ? { inputs } : {}) };
   writeFileSync(figureIndexPath(epId), JSON.stringify(index, null, 2) + "\n");
   await writeContactSheet(epId, entries);
   console.log("✅ figures/index.json: " + entries.length + "本(一覧: figures/contact.jpg)");

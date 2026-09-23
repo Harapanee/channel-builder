@@ -8,8 +8,10 @@
  * (--out はファイル名しか受け取らない。パス区切りが入っていたら引数の時点で止める)。
  *
  * 組み立ては assemble.ts と同一である。**別実装にしない。**
- * 早回し(setpts)・トリム(trim=end_frame)・字幕の重ね方・区間20本ずつの分割・
- * 中間ファイルの再利用判定(尺が読めるか)は、あちらから import して使う。
+ * 区間の ffmpeg 引数(早回し・skipHeadFrames・章カードの紙色合成・図解と字幕の重ね方)は
+ * chunk-filter.ts の buildChunkArgs を両方が使う(2026-09-23 C5。以前はここに複製があり、
+ * skipHeadFrames・紙色合成・図解がプレビューにだけ欠けていた)。区間20本ずつの分割・
+ * 中間ファイルの再利用判定(尺が読めるか)・音の検査は assemble.ts から import して使う。
  * ここでプレビュー用に軽くすると「プレビューでは出なかったズレが本番で出る」ので、
  * **見た目を本番と一致させることがこの道具の存在理由**になる。
  *
@@ -26,14 +28,13 @@ import { percentile, windowRmsDb } from "../check-audio";
 import { OUT_FPS, ROOT, clipsDir, epBase } from "./config";
 import {
   CHUNK,
-  type AmbientAudioFacts,
   type MasterAudioFacts,
   type PartCacheClip,
   type Segment,
   ambientPath,
+  ambientProblems,
   assertUniformFps,
   buildSegments,
-  checkAmbient,
   checkMasterAudio,
   durationOf,
   holdSlowShortfalls,
@@ -45,8 +46,12 @@ import {
   probeClip,
   runFfmpeg,
   sourceFrames,
-  videoFilter,
 } from "./assemble";
+import { buildChunkArgs, effectiveSourceFrames, isSynthCard } from "./chunk-filter";
+import { figureOverlaysForChunk } from "./figures";
+import type { FigureIndex } from "./figures";
+import { formatFreshness, loadEpisodeFreshness, readSubsLedger } from "./freshness";
+import type { FreshnessResult, Inputs } from "./freshness";
 import type { TimingLine } from "./plan";
 import type { Chapter, CutsFile } from "./types";
 
@@ -144,9 +149,23 @@ export function missingMaterials(
   hasSub: (lineId: string) => boolean,
 ): { clips: string[]; subs: string[] } {
   return {
-    clips: segments.map((s) => s.clipId).filter((id) => !hasClip(id)),
+    // 章カードは生成クリップを使わず紙色で合成する(assemble と同じ)。クリップを要求しない
+    clips: segments.filter((s) => !isSynthCard(s)).map((s) => s.clipId).filter((id) => !hasClip(id)),
     // noSub のカットは字幕を敷かない(画面内に文字を持つカット)。字幕PNG も要求しない
     subs: segments.filter((s) => !s.noSub).flatMap((s) => s.lineIds).filter((id) => !hasSub(id)),
+  };
+}
+
+/**
+ * 鮮度の結果をプレビュー用に分ける。**図解の古さは止めずに「図解なしで焼く」**(章の検品は図解より先に
+ * 行うことが多く、そこで h3:figures を強いると工程が詰まる)。字幕台帳と audio-cues の古さは
+ * 見た目・音を取り違えるので本番と同じく止める。
+ */
+export function splitPreviewFreshness(r: FreshnessResult): { blocking: FreshnessResult; figuresStale: boolean } {
+  const isFig = (n: string): boolean => n === "figures/index.json";
+  return {
+    blocking: { stale: r.stale.filter((x) => !isFig(x.name)), legacy: r.legacy },
+    figuresStale: r.stale.some((x) => isFig(x.name)),
   };
 }
 
@@ -192,8 +211,16 @@ function main(): void {
   const subPath = (o: { lineId: string; png?: string }): string => o.png ?? join(subsDir, "sub_" + o.lineId + ".png");
   const ledgerPath = join(subsDir, "subs.json");
   const ledger = existsSync(ledgerPath)
-    ? subsByLine(JSON.parse(readFileSync(ledgerPath, "utf8")) as { id: string; png: string; start: number; end: number }[])
+    ? subsByLine(readSubsLedger(JSON.parse(readFileSync(ledgerPath, "utf8"))).entries)
     : undefined;
+  // 伸縮・不足判定は assemble と同じく「skipHeadFrames を捨てた残り」で行う。章カードは合成
+  const srcFrames = (s: Segment): number => (isSynthCard(s) ? s.frames : effectiveSourceFrames(s, sourceFrames(clipPath(s))));
+  const srcMtime = (s: Segment): number => (isSynthCard(s) ? 0 : statSync(clipPath(s)).mtimeMs);
+  const partClip = (s: Segment): PartCacheClip => ({
+    id: s.clipId, frames: s.frames, src: srcFrames(s), holdSlow: s.holdSlow,
+    ...(s.skipHeadFrames > 0 ? { skipHeadFrames: s.skipHeadFrames } : {}),
+    mtimeMs: srcMtime(s),
+  });
 
   console.log(chapterId + ": カット " + segments.length + "本 / " + frames + "F("
     + (frames / OUT_FPS).toFixed(2) + "秒)/ 本編の " + (base / OUT_FPS).toFixed(2)
@@ -216,14 +243,14 @@ function main(): void {
   }
 
   try {
-    assertUniformFps(segments.map((s) => ({ clipId: s.clipId, fps: probeClip(clipPath(s)).fps })), OUT_FPS);
+    assertUniformFps(segments.filter((s) => !isSynthCard(s)).map((s) => ({ clipId: s.clipId, fps: probeClip(clipPath(s)).fps })), OUT_FPS);
   } catch (e) {
     console.error("❌ " + (e as Error).message);
     process.exit(1);
   }
 
   const slow = segments
-    .map((s) => ({ s, ratio: s.frames / sourceFrames(clipPath(s)) }))
+    .map((s) => ({ s, ratio: s.frames / srcFrames(s) }))
     .filter((x) => x.ratio > 1);
   if (slow.length > 0) {
     // holdSlow でない限り、この不足は setpts が引き伸ばしてスロー再生で吸収する(実害は見た目だけ)。
@@ -231,7 +258,7 @@ function main(): void {
     console.log("⚠️ 生成尺が足りず setpts で引き伸ばされる(スロー再生になる)クリップ: " + slow.length + "件"
       + "(holdSlow のカットはここに出ません。素材不足なら焼く前に異常終了します)");
     for (const x of slow) {
-      console.log("   " + x.s.clipId + " 目標 " + x.s.frames + "F / 素材 " + sourceFrames(clipPath(x.s))
+      console.log("   " + x.s.clipId + " 目標 " + x.s.frames + "F / 素材 " + srcFrames(x.s)
         + "F → ×" + x.ratio.toFixed(4));
     }
   }
@@ -239,10 +266,7 @@ function main(): void {
   // holdSlow は伸縮の受け皿(setpts)を持たない。素材フレームが足りなければ trim が黙って
   // 欠損させるだけなので、焼く前にここで止める(assemble.ts と同じ砦。指摘1)
   {
-    const clips: PartCacheClip[] = segments.map((s) => ({
-      id: s.clipId, frames: s.frames, src: sourceFrames(clipPath(s)), holdSlow: s.holdSlow,
-      mtimeMs: statSync(clipPath(s)).mtimeMs,
-    }));
+    const clips: PartCacheClip[] = segments.map((s) => partClip(s));
     const shortfalls = holdSlowShortfalls(clips);
     if (shortfalls.length > 0) {
       console.error("❌ holdSlow のカットで素材フレームが目標に届きません(焼くと欠損したまま完走します): "
@@ -272,6 +296,39 @@ function main(): void {
     if (problems.length > 0) process.exit(1);
   }
 
+  /* 入力ハッシュの鮮度(assemble と同じ C1)。字幕・音の古さは止め、図解の古さは図解なしで焼く */
+  const fresh = splitPreviewFreshness(loadEpisodeFreshness(ROOT, epId));
+  {
+    const fr = formatFreshness(fresh.blocking);
+    for (const w of fr.warnings) console.log("⚠️ " + w);
+    if (fr.errors.length > 0) {
+      for (const m of fr.errors) console.error("❌ " + m);
+      process.exit(2);
+    }
+  }
+
+  /* 図解・章カードの板(h3:figures の出力)。あれば本番と同じく重ねる。無い・古いときは重ねずに焼く
+     (章カードの下地は紙色で合成するので、板が無ければ紙色の無地になる) */
+  let figEntries: FigureIndex["entries"] = [];
+  {
+    const figIndexPath = join(ROOT, "h3/episodes", epId, "figures", "index.json");
+    const figDeclPath = join(ROOT, "h3/episodes", epId, "figures.json");
+    if (existsSync(figDeclPath) && existsSync(figIndexPath)) {
+      const idx = JSON.parse(readFileSync(figIndexPath, "utf8")) as FigureIndex & { inputs?: Inputs };
+      const legacyStale = idx.inputs === undefined && statSync(figIndexPath).mtimeMs < statSync(figDeclPath).mtimeMs;
+      const incomplete = idx.entries.some((e) =>
+        !existsSync(join(e.dir, "f00000.png")) || !existsSync(join(e.dir, "f" + String(e.frames - 1).padStart(5, "0") + ".png")));
+      if (fresh.figuresStale || legacyStale || idx.fps !== OUT_FPS || incomplete) {
+        console.log("⚠️ 図解(figures/index.json)が古いか欠けているので、図解・章カードの板を重ねずに焼きます。"
+          + "本番と同じ見た目で見るなら先に: npm run h3:figures -- " + epId);
+      } else {
+        figEntries = idx.entries;
+      }
+    } else {
+      console.log("図解: figures/index.json が無いので重ねません(章カードは紙色の無地になります)");
+    }
+  }
+
   // 章ごとに1階層で作る(入れ子にすると rmSync が末端しか消せず、空の親が残る)
   const parts = join(epBase(epId), "preview-parts-" + chapterId);
   mkdirSync(parts, { recursive: true });
@@ -283,15 +340,11 @@ function main(): void {
   chunks.forEach((chunk, ci) => {
     const chunkBase = chunk[0].offsetFrames;
     const overlays = chunk.flatMap((s) => overlayWindows(s, lineById, chunkBase, OUT_FPS, ledger));
+    const chunkFrames = chunk.reduce((a, s) => a + s.frames, 0);
+    const figs = figureOverlaysForChunk(figEntries, chunkBase, chunkFrames, OUT_FPS)
+      .map((f) => ({ ...f, mtimeMs: statSync(join(f.dir, "f" + String(f.startNumber).padStart(5, "0") + ".png")).mtimeMs }));
 
-    const spec = partCacheSpec(
-      chunkBase,
-      chunk.map((s) => ({
-        id: s.clipId, frames: s.frames, src: sourceFrames(clipPath(s)), holdSlow: s.holdSlow,
-        mtimeMs: statSync(clipPath(s)).mtimeMs,
-      })),
-      overlays,
-    );
+    const spec = partCacheSpec(chunkBase, chunk.map((s) => partClip(s)), overlays, figs);
     const tag = createHash("sha1").update(spec).digest("hex").slice(0, 8);
     const dest = join(parts, "part" + String(ci).padStart(3, "0") + "-" + tag + ".mp4");
     partFiles.push(dest);
@@ -300,29 +353,10 @@ function main(): void {
       return;
     }
 
-    const args = ["-y"];
-    for (const s of chunk) args.push("-i", clipPath(s));
-    for (const o of overlays) args.push("-i", subPath(o));
-
-    const f = chunk.map((s, i) =>
-      "[" + i + ":v]" + videoFilter(sourceFrames(clipPath(s)), s.frames, s.holdSlow)
-      + ",fps=" + OUT_FPS + ",trim=start_frame=0:end_frame=" + s.frames + ",setpts=PTS-STARTPTS"
-      + ",scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,format=yuv420p[v" + i + "]");
-    f.push(chunk.map((_, i) => "[v" + i + "]").join("") + "concat=n=" + chunk.length + ":v=1:a=0[cat]");
-
-    let chain = "[cat]";
-    if (overlays.length === 0) {
-      f.push("[cat]null[vout]");
-    } else {
-      overlays.forEach((o, k) => {
-        const label = k === overlays.length - 1 ? "[vout]" : "[o" + k + "]";
-        f.push(chain + "[" + (chunk.length + k) + ":v]overlay=0:0:enable='between(t," + o.from + "," + o.to + ")'" + label);
-        chain = "[o" + k + "]";
-      });
-    }
-
-    args.push("-filter_complex", f.join(";"), "-map", "[vout]",
-      "-c:v", "h264_videotoolbox", "-b:v", "12M", "-pix_fmt", "yuv420p", dest);
+    const args = buildChunkArgs({
+      chunk, overlays, figs, fps: OUT_FPS, clipPath, subPath,
+      rawSourceFrames: (s) => sourceFrames(clipPath(s)), dest,
+    });
     const t0 = Date.now();
     runFfmpeg(args);
     console.log("  区間 " + (ci + 1) + "/" + chunks.length + "(" + ((Date.now() - t0) / 1000).toFixed(1) + "秒)");
@@ -341,16 +375,10 @@ function main(): void {
   const ambientWav = ambientPath(epId);
   const hasAmbient = existsSync(ambientWav);
   if (hasAmbient) {
-    // ambient.wav の鮮度・尺を検査する(assemble.ts と同じ砦。指摘2)。
+    // ambient.wav の鮮度・尺を検査する(assemble.ts と同じ砦。入力記録があればクリップの差し替えも見る。C2)。
     // プレビューで古い ambient.wav を聴いて「音は問題ない」と判断されるのを防ぐ
-    const facts: AmbientAudioFacts = {
-      ambientDurationSec: durationOf(ambientWav),
-      totalDurationSec: timing.totalDurationSec,
-      ambientMtimeMs: statSync(ambientWav).mtimeMs,
-      timingMtimeMs: statSync(timingPath).mtimeMs,
-      cutsMtimeMs: statSync(cutsPath).mtimeMs,
-    };
-    const problems = checkAmbient(facts);
+    const all = buildSegments(cutsFile.cuts, timing.lines, timing.totalDurationSec, OUT_FPS);
+    const problems = ambientProblems(epId, all, clipPath, timing.totalDurationSec, timingPath, cutsPath);
     if (problems.length > 0) {
       for (const m of problems) console.error("❌ " + m);
       process.exit(1);

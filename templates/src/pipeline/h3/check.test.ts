@@ -6,13 +6,16 @@ import {
   CUT_VERBS,
   checkAdvisories,
   checkJobSet,
+  checkKeyframePresence,
   checkLedger,
+  checkEndStateVocab,
   checkPromptText,
   checkSelfContained,
   checkSpeedup,
   stripClosingSentences,
 } from "./check";
 import { FOLD_ID_LIMIT, foldFindings, renderFolded } from "./check-h3-prompt";
+import { fl2vLine } from "./compose";
 import type { Cut, Finding, ShotDecl, Vocab } from "./types";
 
 const OK =
@@ -267,6 +270,16 @@ test("B7: 実在検査は requireExists のときだけ走る", () => {
   const job = [{ id: "a", prompt: "p", firstFrameFile: "/does/not/exist.png" }];
   assert.ok(!checkJobSet(job).some((x) => x.rule === "B7"));
   assert.ok(checkJobSet(job, { requireExists: true }).some((x) => x.rule === "B7"));
+});
+
+test("B7: lastFrameFile も実在と basename の衝突を見る", () => {
+  const f = checkJobSet([{ id: "cL67", prompt: OK, firstFrameFile: "/tmp/a.png", lastFrameFile: "/nonexistent/cL67-end.png" }], { requireExists: true });
+  assert.ok(f.some((x) => x.rule === "B7" && /cL67-end/.test(x.message)));
+  const c = checkJobSet([
+    { id: "cL67", prompt: OK, lastFrameFile: "/x/same.png" },
+    { id: "cL68", prompt: OK, firstFrameFile: "/y/same.png" },
+  ]);
+  assert.ok(c.some((x) => x.rule === "B7" && /衝突/.test(x.message)));
 });
 
 test("B8: id の重複と空プロンプトを弾く", () => {
@@ -684,4 +697,154 @@ test("A13: 指摘文に該当した2語が入る", () => {
   assert.equal(f.length, 1);
   assert.match(f[0].message, /steady wind/);
   assert.match(f[0].message, /continuous rustle/);
+});
+
+const KF_CUT: Cut = { lineIds: ["L67"], seconds: 7.4, place: "DEEP", subject: "ADULT", role: "peak", chain: true, keyframe: true };
+const KF_DECL: ShotDecl = {
+  body: "The shark holds its closed mouth still for one second, then the whole jaw shoots straight forward out from under the snout, then holds.",
+  sound: "s", chain: true,
+  endState: "the shark's jaws are fully protruded and shot forward, detached from the skull, sticking far out in front of the head with a visible gap",
+};
+
+test("B15: keyframe と endState と鎖が揃っていれば通る", () => {
+  assert.deepEqual(checkLedger("cL67", KF_DECL, KF_CUT).filter((f) => f.rule === "B15"), []);
+});
+test("B15: keyframe があるのに endState が無い", () => {
+  const f = checkLedger("cL67", { ...KF_DECL, endState: undefined }, KF_CUT);
+  assert.ok(f.some((x) => x.rule === "B15" && x.level === "BLOCK" && /endState/.test(x.message)));
+});
+test("B15: endState があるのに keyframe が無い", () => {
+  const f = checkLedger("cL67", KF_DECL, { ...KF_CUT, keyframe: undefined });
+  assert.ok(f.some((x) => x.rule === "B15" && /keyframe/.test(x.message)));
+});
+test("B15: keyframe に鎖が無い", () => {
+  const f = checkLedger("cL67", { ...KF_DECL, chain: undefined }, { ...KF_CUT, chain: undefined });
+  assert.ok(f.some((x) => x.rule === "B15" && /chain/.test(x.message)));
+});
+test("B15: endState が短すぎる", () => {
+  const f = checkLedger("cL67", { ...KF_DECL, endState: "jaws out" }, KF_CUT);
+  assert.ok(f.some((x) => x.rule === "B15" && /40/.test(x.message)));
+});
+test("B15: keyframe の body に到達状態句がある", () => {
+  const f = checkLedger("cL67", { ...KF_DECL, body: "The jaw is already thrust out from the very first frame, then holds." }, KF_CUT);
+  assert.ok(f.some((x) => x.rule === "B15" && /到達状態/.test(x.message)));
+});
+test("B15: endState が台帳の subject が指す基本形定数を丸ごと含むと BLOCK", () => {
+  const vocab: Vocab = { ...VOCAB, subjects: {
+    ADULT: "one cartoon shark in side view facing left, its whole long soft body one flat pale pink colour",
+    ADULT_FAR: "one tiny shark far away",
+    ADULT_JAWS_OUT: "the shark's jaws are fully protruded and shot forward, detached from the skull, sticking far out in front of the head with a visible gap",
+  } };
+  const bad = { ...KF_DECL, endState: "one cartoon shark in side view facing left, its whole long soft body one flat pale pink colour, with its jaws fully protruded far out in front of the head" };
+  const f = checkEndStateVocab("cL67", bad, KF_CUT, vocab);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].rule, "B15"); assert.equal(f[0].level, "BLOCK");
+  assert.match(f[0].message, /ADULT/);
+  // 到達状態定数(ADULT_JAWS_OUT)を丸ごと含むのは spec §3.3 条件3で許される
+  assert.deepEqual(checkEndStateVocab("cL67", { ...KF_DECL, endState: vocab.subjects.ADULT_JAWS_OUT + ", lined with thin teeth" }, KF_CUT, vocab), []);
+  assert.deepEqual(checkEndStateVocab("cL67", KF_DECL, KF_CUT, vocab), []);
+  // 自分の subject 以外の基本形定数(ADULT_FAR)は見ない
+  assert.deepEqual(checkEndStateVocab("cL67", { ...KF_DECL, endState: "one tiny shark far away, now with its jaws fully protruded far out in front of the head" }, KF_CUT, vocab), []);
+  // 台帳の subject が語彙帳に無い(B1 の担当)・台帳行が無い
+  assert.deepEqual(checkEndStateVocab("cL67", bad, { ...KF_CUT, subject: "NOPE" }, vocab), []);
+  assert.deepEqual(checkEndStateVocab("cL67", bad, undefined, vocab), []);
+  // endState が無いカット(keyframe でない)は見ない
+  assert.deepEqual(checkEndStateVocab("cL01", { body: "b" }, KF_CUT, vocab), []);
+});
+test("B13: keyframe は既知のキー", () => {
+  assert.equal(checkLedger("cL67", KF_DECL, KF_CUT).filter((f) => f.rule === "B13").length, 0);
+});
+test("A14: keyframe が1本も無い台帳に ADVISE", () => {
+  const none = checkKeyframePresence({ cL01: { ...KF_CUT, keyframe: undefined, chain: undefined } });
+  assert.equal(none.length, 1); assert.equal(none[0].rule, "A14"); assert.equal(none[0].level, "ADVISE");
+  assert.deepEqual(checkKeyframePresence({ cL67: KF_CUT }), []);
+});
+
+test("B2: last_frame があるのに FL2VA 行が無い / 無いのに付いている", () => {
+  const ctxFL = { seconds: 7.4, hasFirstFrame: true, hasLastFrame: true };
+  assert.ok(checkPromptText("x", OK, ctxFL).some((f) => f.rule === "B2"));
+  assert.deepEqual(checkPromptText("x", fl2vLine(7.4) + "\n\n" + OK, ctxFL).filter((f) => f.rule === "B2"), []);
+  assert.ok(checkPromptText("x", fl2vLine(7.4) + "\n\n" + OK, CTX).some((f) => f.rule === "B2"));
+  assert.ok(checkPromptText("x", fl2vLine(5.0) + "\n\n" + OK, ctxFL).some((f) => f.rule === "B2" && /秒/.test(f.message)));
+});
+
+test("B7: 始点だけを検査するとき lastFrameFile を undefined にすれば予定パスの終点は見ない(keyframe の順序バグ回帰)", () => {
+  const job = { id: "cL92", prompt: OK, firstFrameFile: "/tmp/a.png", lastFrameFile: "/nonexistent/cL92-end.png" };
+  const f = checkJobSet([{ ...job, lastFrameFile: undefined }], { requireExists: true });
+  assert.ok(!f.some((x) => x.rule === "B7" && /cL92-end/.test(x.message)));
+});
+
+// --- A15 / A16: 内部ショット(2026-09-23 レビュー F1) -----------------------
+// ep033/039/040/043/044 の5話で差し戻しの主因が [Shot 2] 以降の内部ショットだった
+// (寄り引きの飛び・粒の鳥化)。止めはしないが必ず見せる。時刻の検査は B3 が続ける。
+const advOf = (f: ReturnType<typeof checkPromptText>, rule: string) => f.filter((x) => x.rule === rule && x.level === "ADVISE");
+
+test("A15: [Shot 2] 以降を含むカットは ADVISE(単一ショット推奨)。BLOCK にはしない", () => {
+  const p = inBody("[Shot 2] At 00:03.000, the shot cuts to a view of the same fish from the side.");
+  const f = checkPromptText("x", p, CTX);
+  assert.equal(advOf(f, "A15").length, 1);
+  assert.deepEqual(blocks(f), []);
+  assert.match(advOf(f, "A15")[0].message, /単一ショット/);
+});
+
+test("A15: 単一ショットのカットには何も言わない", () => {
+  assert.equal(advOf(checkPromptText("x", OK, CTX), "A15").length, 0);
+});
+
+test("A15: [Shot 3] まであっても1カット1件(メッセージは固定文 = 章で畳める)", () => {
+  const p = inBody(
+    "[Shot 2] At 00:02.000, the shot cuts to a view of the fish. " +
+    "[Shot 3] At 00:04.000, the shot cuts to a view of the sky.",
+  );
+  const a = advOf(checkPromptText("x", p, CTX), "A15");
+  const b = advOf(checkPromptText("y", inBody("[Shot 2] At 00:03.000, the shot cuts to a view of the sky."), CTX), "A15");
+  assert.equal(a.length, 1);
+  assert.equal(a[0].message, b[0].message);
+});
+
+test("A16: Shot 間で寄り/引きの語が変わると強い ADVISE(close → wide)", () => {
+  // OK の Shot 1 は "A wide shot of a flat blue field"
+  const p = inBody("[Shot 2] At 00:03.000, the shot cuts to a close shot of the fish's eye.");
+  const f = advOf(checkPromptText("x", p, CTX), "A16");
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /強/);
+  assert.match(f[0].message, /wide/);
+  assert.match(f[0].message, /close/);
+});
+
+test("A16: 同じ寄り引きのまま(wide → wide view)なら出さない。A15 は出る", () => {
+  const p = inBody("[Shot 2] At 00:03.000, the shot cuts to a wide view of the shore.");
+  const f = checkPromptText("x", p, CTX);
+  assert.equal(advOf(f, "A16").length, 0);
+  assert.equal(advOf(f, "A15").length, 1);
+});
+
+test("A16: extreme / aerial / overhead / close-up / very close / medium も寄り引きの語として拾う", () => {
+  const cases: [string, boolean][] = [
+    ["an aerial view of the whole coast", true],
+    ["an overhead shot of the field", true],
+    ["an extreme close-up of the fin", true],
+    ["a very close shot of the fin", true],
+    ["a medium shot of the fish", true],
+    ["a long shot of the field", false], // long = wide と同じ段
+  ];
+  for (const [phrase, expected] of cases) {
+    const p = inBody("[Shot 2] At 00:03.000, the shot cuts to " + phrase + ".");
+    assert.equal(advOf(checkPromptText("x", p, CTX), "A16").length === 1, expected, phrase);
+  }
+});
+
+test("A16: 寄り引きの語が無い Shot は比較しない(誤爆しない)", () => {
+  const p = inBody("[Shot 2] At 00:03.000, the shot cuts to the same fish turning its head.");
+  assert.equal(advOf(checkPromptText("x", p, CTX), "A16").length, 0);
+});
+
+test("A16: 動詞の close(Her eyes close)は寄りの語として数えない", () => {
+  const p = inBody("[Shot 2] At 00:03.000, the shot cuts to the fish as its eyes close slowly.");
+  assert.equal(advOf(checkPromptText("x", p, CTX), "A16").length, 0);
+});
+
+test("A16: 引用符の中(画面内文字)の語は数えない", () => {
+  const p = inBody('[Shot 2] At 00:03.000, the shot cuts to a sign reading "close shot".');
+  assert.equal(advOf(checkPromptText("x", p, CTX), "A16").length, 0);
 });

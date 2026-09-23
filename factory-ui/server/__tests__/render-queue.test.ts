@@ -361,4 +361,53 @@ describe('RenderQueueManager', () => {
       expect(meta.status).toBe('studio_checked');
     });
   });
+  // ---- H3 経路の回は夜間レンダーに入れない(assemble の out/final.mp4 が最終物)----
+  describe('H3 経路の回', () => {
+    function markH3(epIds: string[]): void {
+      const p = path.join(root, 'ch1', '.channel-system.json');
+      const sys = JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>;
+      sys.h3Pipeline = { enabled: true, episodes: epIds };
+      fs.writeFileSync(p, JSON.stringify(sys, null, 2));
+    }
+
+    it('enqueue は requireReady の有無にかかわらず not_ready: h3 pipeline episode で拒否する', () => {
+      markH3(['ep001-a']);
+      expect(() => m.enqueue('ch1', 'ep001-a')).toThrow(/^not_ready: h3 pipeline episode/);
+      expect(() => m.enqueue('ch1', 'ep001-a', { requireReady: true })).toThrow(/^not_ready: h3 pipeline episode/);
+      expect(m.list()).toHaveLength(0);
+      // 非H3の回は従来どおり通る
+      expect(m.enqueue('ch1', 'ep002-b').status).toBe('waiting');
+    });
+
+    it('enqueueFromGate(自動登録口)も H3 回は false で登録しない', () => {
+      markH3(['ep001-a']);
+      expect(m.enqueueFromGate('ch1', 'ep001-a')).toBe(false);
+      expect(m.list()).toHaveLength(0);
+    });
+
+    it('同じ epId でもショート(kind: short)は H3 判定の対象外', () => {
+      markH3(['sh001-t']);
+      expect(m.enqueue('ch1', 'sh001-t', { kind: 'short' }).status).toBe('waiting');
+    });
+
+    it('永続化から復元した waiting の H3 回は spawn せず failed(h3_pipeline)にし、episode.json を触らない', async () => {
+      m.enqueue('ch1', 'ep001-a');
+      m.enqueue('ch1', 'ep002-b');
+      markH3(['ep001-a']); // 登録後に H3 回と宣言された(ep017-cuckoo の残留と同じ状況)
+      m.start();
+      await waitFor(() => spawns.length === 1);
+      expect(spawns[0]!.args).toContain('episodes/ep002-b');
+      const h3Item = m.list().find((i) => i.epId === 'ep001-a')!;
+      expect(h3Item.status).toBe('failed');
+      expect(h3Item.reason).toBe('h3_pipeline');
+      const meta = JSON.parse(
+        fs.readFileSync(path.join(root, 'ch1', 'episodes', 'ep001-a', 'episode.json'), 'utf8'),
+      ) as { status: string };
+      expect(meta.status).toBe('render_ready');
+    });
+
+    it('.channel-system.json に h3Pipeline が無いチャンネルは従来どおり登録できる', () => {
+      expect(m.enqueue('ch1', 'ep001-a', { requireReady: true }).status).toBe('waiting');
+    });
+  });
 });

@@ -49,6 +49,8 @@ import {
   type TrackLengths,
 } from "../build-bgm-cues";
 import { ROOT } from "./config";
+import { currentInputs, episodeInputPaths } from "./freshness";
+import type { Inputs } from "./freshness";
 import type { TimingLine } from "./plan";
 
 export type { BgmPlan, TrackLengths };
@@ -102,7 +104,10 @@ export function buildCues(
      HF経路が composition の data-duration(3桁)から書く値とも一致する */
   const total = Number(totalDurationSec.toFixed(3));
   const lastEnd = Math.max(...lines.map((l) => l.endSec));
-  if (lastEnd > total + 1e-6) {
+  /* 比較は丸める前の総尺と、丸め幅ぶんの猶予つきで行う。total は3桁へ切り捨て方向にも
+     丸まり、timing 側も最終行の endSec が総尺をマイクロ秒単位で越えることがある
+     (ep045-giant-panda: 総尺 763.427333 / 最終行 763.427338)。桁違いのはみ出しだけを止める */
+  if (lastEnd > Math.max(total, totalDurationSec) + OVER_TOLERANCE_SEC) {
     throw new Error(
       `ナレーションが総尺を超えています: ${lastEnd.toFixed(3)}s > 総尺 ${total.toFixed(3)}s`
     );
@@ -192,6 +197,10 @@ function main(): void {
 
   const timingPath = path.join(epDir, "timing.json");
   if (!existsSync(timingPath)) fail(`timing.json がありません(先に npm run tts): ${timingPath}`);
+  /* 何を読んで焼いたか(2026-09-23 C1)。読む前に取る。h3:assemble が現在の timing / bgm-plan / se-plan と
+     突き合わせ、台本修正のあとの焼き直し漏れを止める(master.mp3 はこの cues より新しいことを mtime で見る) */
+  const inputPaths = episodeInputPaths(ROOT, epId);
+  const inputs: Inputs = currentInputs({ timing: inputPaths.timing, bgmPlan: inputPaths.bgmPlan, sePlan: inputPaths.sePlan });
   const timing = JSON.parse(readFileSync(timingPath, "utf8")) as {
     totalDurationSec: number;
     lines: TimingLine[];
@@ -286,6 +295,8 @@ function main(): void {
       "WARN: BGM が0区間です。包絡線(envelope)が全時間帯を覆っていないと BGM は鳴りません"
     );
   }
+
+  (cues as AudioCues & { inputs?: Inputs }).inputs = inputs;
 
   if (args.includes("--dry-run")) {
     console.log(JSON.stringify(cues, null, 1));

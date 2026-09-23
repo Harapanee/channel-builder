@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { I2V_LINE, chapterCard, composePrompt } from "./compose";
+import { I2V_LINE, chapterCard, composePrompt, fl2vLine } from "./compose";
 import type { Vocab } from "./types";
 
 const VOCAB: Vocab = {
@@ -92,4 +92,15 @@ test("章カードは2行の文字と字数宣言を含む", () => {
 test("章カードは11文字以上でも字数を数字で書ける", () => {
   const decl = chapterCard("第一章", "あいうえおかきくけこさし");
   assert.ok(decl.body?.includes('spelled with those 12 characters'));
+});
+
+test("fl2vLine は公式の逐語で S.SS を2桁にする", () => {
+  assert.equal(fl2vLine(7.4),
+    "How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the 7.40-second mark of the target video.");
+});
+test("lastFrameAt があれば FL2VA 行が先頭に付き、I2VA 行は付かない", () => {
+  const p = composePrompt({ body: "b", sound: "s" }, VOCAB, { firstFrame: true, lastFrameAt: 7.4 });
+  assert.ok(p.startsWith(fl2vLine(7.4) + "\n\n"));
+  assert.ok(!p.includes(I2V_LINE));
+  assert.ok(p.includes("integrated_multimodal_description: [Shot 1] "));
 });

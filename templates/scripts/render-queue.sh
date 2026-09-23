@@ -28,6 +28,19 @@ PIDFILE="$QDIR/runner.pid"
 LOG="$QDIR/queue.log"
 mkdir -p "$QDIR/done" "$QDIR/failed"
 
+# H3 経路の回か(.channel-system.json の h3Pipeline.episodes に載るか)。載れば 0。
+# ファイルが無い・読めない・キーが無い・形が崩れている場合は 1(=非H3。h3Pipeline を持たない
+# 既存チャンネルを壊さない)。H3 回は assemble の out/final.mp4 が最終物で、このスクリプトの
+# レンダー(composition.html 由来の実装)で上書きされるため、夜間レンダーに入れない(2026-09-23)。
+is_h3_episode() {
+  node -e '
+let s;
+try { s = JSON.parse(require("fs").readFileSync(".channel-system.json", "utf8")); } catch { process.exit(1); }
+const e = s && s.h3Pipeline && s.h3Pipeline.episodes;
+process.exit(Array.isArray(e) && e.includes(process.argv[1]) ? 0 : 1);
+' "$1" 2>/dev/null
+}
+
 runner_alive() {
   [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null
 }
@@ -39,6 +52,17 @@ cmd_add() {
     echo "episodeDir が存在しません: $EP"
     exit 1
   fi
+  # H3 経路の回は積まない(render-episode.sh も exit 3 で拒否するが、朝まで気づかない積み残しを作らない)
+  case "$EP" in
+    shorts/*) ;;
+    *)
+      if is_h3_episode "$(basename "$EP")"; then
+        echo "拒否: $(basename "$EP") は H3 経路の回です(.channel-system.json の h3Pipeline.episodes)。"
+        echo "  H3 回は assemble の out/final.mp4 が最終物で、夜間レンダーは古い HF 実装で上書きします。キューに積みません"
+        exit 3
+      fi
+      ;;
+  esac
   if [ ! -f "$EP/timing.json" ]; then
     echo "警告: $EP/timing.json がありません(render-episode.sh が失敗します)"
   fi

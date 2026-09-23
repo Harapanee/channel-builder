@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { scanFactory, readChannel } from '../scanner';
+import { scanFactory, readChannel, isH3EpisodeSync, h3EpisodesOf } from '../scanner';
 
 describe('scanner', () => {
   let root: string;
@@ -234,5 +234,54 @@ describe('scanner', () => {
     // fs.readFile が ENOENT ではない実エラー(EISDIR)を投げる状況を作る(EACCES等の一過性エラーの代役)。
     await fs.mkdir(path.join(root, 'chan-poison', '.channel-system.json'), { recursive: true });
     await expect(scanFactory(root)).rejects.toMatchObject({ code: 'EISDIR' });
+  });
+  // ---- H3 経路の回(.channel-system.json の h3Pipeline.episodes)----
+  // H3 回は assemble の out/final.mp4 が最終物で、夜間レンダーに入ると composition.html 由来の
+  // 古い実装で上書きされる。UI とキューが判定できるよう scanner が isH3 を持つ。
+  describe('H3 経路の判定', () => {
+    async function mkH3Channel(name: string, system: Record<string, unknown>): Promise<string> {
+      const d = await mkChannel(name, system);
+      for (const ep of ['ep017-cuckoo', 'ep008-old']) {
+        await fs.mkdir(path.join(d, 'episodes', ep), { recursive: true });
+        await fs.writeFile(path.join(d, 'episodes', ep, 'episode.json'), JSON.stringify({ episodeId: ep, status: 'render_ready' }));
+      }
+      return d;
+    }
+
+    it('readChannel: h3Pipeline.episodes に載る回だけ isH3=true', async () => {
+      await mkH3Channel('chan-h3', { channelId: 'h3', h3Pipeline: { enabled: true, episodes: ['ep017-cuckoo'] } });
+      const ch = await readChannel(root, 'chan-h3');
+      const byId = Object.fromEntries(ch!.episodes.map((e) => [e.episodeId, e]));
+      expect(byId['ep017-cuckoo'].isH3).toBe(true);
+      expect(byId['ep008-old'].isH3).toBeFalsy();
+    });
+
+    it('readChannel: h3Pipeline が無い/壊れている既存チャンネルは全話 非H3(isH3 を付けない)', async () => {
+      await mkH3Channel('chan-plain', { channelId: 'plain' });
+      await mkH3Channel('chan-broken', { channelId: 'broken', h3Pipeline: { episodes: 'ep017-cuckoo' } });
+      for (const dir of ['chan-plain', 'chan-broken']) {
+        const ch = await readChannel(root, dir);
+        expect(ch!.episodes.every((e) => e.isH3 === undefined)).toBe(true);
+      }
+    });
+
+    it('isH3EpisodeSync: 載っていれば true、キー無し・JSON 破損・ファイル不在は false(throw しない)', async () => {
+      const d = await mkH3Channel('chan-h3s', { h3Pipeline: { episodes: ['ep017-cuckoo'] } });
+      expect(isH3EpisodeSync(d, 'ep017-cuckoo')).toBe(true);
+      expect(isH3EpisodeSync(d, 'ep008-old')).toBe(false);
+      const plain = await mkChannel('chan-nokey', { channelId: 'x' });
+      expect(isH3EpisodeSync(plain, 'ep017-cuckoo')).toBe(false);
+      const broken = path.join(root, 'chan-badjson');
+      await fs.mkdir(broken, { recursive: true });
+      await fs.writeFile(path.join(broken, '.channel-system.json'), '{not json');
+      expect(isH3EpisodeSync(broken, 'ep017-cuckoo')).toBe(false);
+      expect(isH3EpisodeSync(path.join(root, 'no-such'), 'ep017-cuckoo')).toBe(false);
+    });
+
+    it('h3EpisodesOf: 文字列以外の要素は無視する', () => {
+      expect([...h3EpisodesOf({ h3Pipeline: { episodes: ['a', 1, null, 'b'] } })]).toEqual(['a', 'b']);
+      expect(h3EpisodesOf({}).size).toBe(0);
+      expect(h3EpisodesOf({ h3Pipeline: null }).size).toBe(0);
+    });
   });
 });

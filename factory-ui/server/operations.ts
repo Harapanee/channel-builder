@@ -1,9 +1,21 @@
 import type { OperationDef, JobMode } from '../shared/types';
 
-// video-createを5セッションへ分割するフェーズ指示。1セッションで12工程を回すと
+// video-createを6セッションへ分割するフェーズ指示。1セッションで12工程を回すと
 // 履歴が単調増大し毎ターンのcache readが膨らむ(実測: 1本で累計111M tokens)ため、
 // 担当範囲を区切り、範囲末尾で <done> を出して終了→サーバーが次フェーズを新規セッションで起動する。
 // 引き継ぎは episode.json の status と成果物ファイル(既存の中断・再開基盤)。
+// 区切りは status で書く。成果物ファイル名はレンダーエンジン依存(HyperFrames=storyboard.mdのclip表 /
+// Remotion=shots.json)なので、全チャンネル共通のこの指示文には書かない。
+//
+// 2026-08-02: 旧フェーズ3(工程7〜8)を素材と実装の2つへ割った。sekaishi-longform ep002 実測で
+// このセッションだけが 258ターン・平均183k・ctx最大296k で、1本の投入トークンの24.7%を占めていた。
+// 実装の後半が素材工程12エージェントとのやりとりを毎ターン運び直していたのが原因。
+// 注意: この配列は video-create を使う全チャンネル共通で配信される(チャンネル別分岐は jobs.ts に無い)。
+// 「npm run status」というコマンド名や「assets_ready」という status 値は、配布済みの2ch
+// (sekaishi-longform / 動物転生)にしかない(2026-08-02時点)。他7chが video-create を使う限り、
+// ここに存在しないコマンド名・status値を書いてはならない。工程7の完了記録の仕方は
+// 各チャンネルの SKILL.md に委ね、この共通層は「記録すること」だけを指示する。
+// status 値として全チャンネル共通の enum にあるものだけは名指ししてよい(例: implemented)。
 const VIDEO_CREATE_PHASES: string[] = [
   'このセッションの担当範囲: 工程0〜3(題材決定・調査・台本・台本審査)のみ。' +
     '台本審査PASSまで完了したら、工程4(TTS)以降には一切進まず、' +
@@ -12,18 +24,25 @@ const VIDEO_CREATE_PHASES: string[] = [
     '担当範囲がすでに完了済みの場合は、成果物を確認したうえで作業せず<done>で終了してよい。',
   'このセッションの担当範囲: 工程4〜6(TTS・ストーリーボード・ショットプラン)のみ。' +
     'これは進行中エピソードの続きの制作である。episode.json の status と成果物を確認して未完了の工程から開始し、' +
-    'shots.json 確定(status: "storyboarded")まで進んだら、工程7以降には進まず ' +
+    'ショットプラン確定(status: "storyboarded")まで進んだら、工程7以降には進まず ' +
     '<done>フェーズ2完了: ショットプラン確定</done> を出して終了すること。' +
     '冒頭規約2の「全工程」はこの担当範囲を指す。担当範囲がすでに完了済みなら確認のみで<done>を出してよい。',
-  'このセッションの担当範囲: 工程7〜8(素材取得・シーン実装)のみ。' +
-    'これは進行中エピソードの続きの制作である。episode.json の status と成果物を確認して未完了の工程から開始し、' +
-    '工程8完了(status: "implemented")まで進んだら、工程9以降には進まず ' +
-    '<done>フェーズ3完了: 実装済み</done> を出して終了すること。' +
+  'このセッションの担当範囲: 工程7(素材取得)のみ。' +
+    'これは進行中エピソードの続きの制作である。episode.json の status と assets/library.json を確認し、' +
+    '**すでに library.json に登録済みの素材は再調達しない**(枠切れ中断からの再開でやり直さないため)。' +
+    '全素材の調達と登録が済んだら、このチャンネルの手順(SKILL.md)に従って工程7の完了を記録し、' +
+    '工程8(シーン実装)には一切進まず <done>フェーズ3完了: 素材確定</done> を出して終了すること。' +
+    '冒頭規約2の「全工程」はこの担当範囲を指す。担当範囲がすでに完了済みなら確認のみで<done>を出してよい。',
+  'このセッションの担当範囲: 工程8〜8.4(シーン実装・音声ミックス)のみ。' +
+    'これは進行中エピソードの続きの制作である。素材は前フェーズで確定済みのはずなので、' +
+    '**素材の作り直し・追加調達は行わない**(不足が判明したらその旨を報告して止まる)。' +
+    '音声ミックス(工程8.4)まで終えたら、このチャンネルの手順(SKILL.md)に従って episode.json の status を implemented に進め、' +
+    '工程9以降には進まず <done>フェーズ4完了: 実装済み</done> を出して終了すること。' +
     '冒頭規約2の「全工程」はこの担当範囲を指す。担当範囲がすでに完了済みなら確認のみで<done>を出してよい。',
   'このセッションの担当範囲: 工程9〜10(レンダー前検査・LLMレビュー)のみ。' +
     'これは進行中エピソードの続きである。episode.json の status を確認して未完了の工程から開始し、' +
     '工程10完了(status: "reviewed")まで進んだら、工程11以降には進まず ' +
-    '<done>フェーズ4完了: レビュー済み</done> を出して終了すること。' +
+    '<done>フェーズ5完了: レビュー済み</done> を出して終了すること。' +
     '冒頭規約2の「全工程」はこの担当範囲を指す。担当範囲がすでに完了済みなら確認のみで<done>を出してよい。',
   'このセッションの担当範囲: 工程11〜12(公開パッケージ・人間レビューと承認・完了処理)。' +
     'これは進行中エピソードの続きである。episode.json の status を確認して未完了の工程から開始し、' +
@@ -51,7 +70,8 @@ export const OPERATIONS: Record<string, OperationDef> = {
     phaseStages: [
       ['調査', '台本'],
       ['音声', '絵コンテ'],
-      ['素材', '実装'],
+      ['素材'],
+      ['実装'],
       ['検査', '最終レビュー'],
       ['公開準備', '承認'],
     ],
@@ -202,9 +222,10 @@ export const DEFAULT_EFFORT = 'high';
 export const ALLOWED_MODELS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
 export const ALLOWED_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
 
-/** episode.json の status から video-create の開始フェーズを引く。
- * episodeId指定の作り直しジョブが完了済みフェーズを空回りしないためのマップ。
- * 未知status・undefinedは0(最初から確認させるのが安全側)。 */
+/**
+ * 途中再開のジョブをどのフェーズから始めるかを status から決める。
+ * VIDEO_CREATE_PHASES の並びと1対1で対応させること(2026-08-02 に素材/実装の分割で6フェーズ化)。
+ */
 export function videoCreatePhaseForStatus(status?: string): number {
   switch (status) {
     case 'scripted':
@@ -212,14 +233,17 @@ export function videoCreatePhaseForStatus(status?: string): number {
       return 1;
     case 'storyboarded':
       return 2;
+    case 'assets_ready':
+      return 3;
     case 'implemented':
     case 'prechecked':
-      return 3;
+    case 'qa_passed':
+      return 4;
     case 'reviewed':
     case 'packaged':
     case 'render_ready':
     case 'final':
-      return 4;
+      return 5;
     default:
       return 0;
   }

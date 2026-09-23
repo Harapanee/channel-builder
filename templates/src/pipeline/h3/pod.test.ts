@@ -31,3 +31,18 @@ test("引数なし(pod.mjs の既定は status)はロックしない", () => {
 test("未知のサブコマンドはロックしない(pod.mjs 側が使い方を出して終わる)", () => {
   assert.equal(needsGpuLock("upgrade"), false);
 });
+
+// --- GPU ロックの値の厳密さ(B3) -------------------------------------------------
+// 「何か入っていれば通す」だと H3_ALLOW_GPU=0 や =false でも課金が始まる。
+import { gpuAllowed } from "./config";
+
+test("H3_ALLOW_GPU は '1' の完全一致だけ通す", () => {
+  assert.equal(gpuAllowed({ H3_ALLOW_GPU: "1" }), true);
+});
+
+test("0 / false / 空 / 空白つき / 未設定は通さない", () => {
+  for (const v of ["0", "false", "", " 1", "1 ", "true", "yes", "11"]) {
+    assert.equal(gpuAllowed({ H3_ALLOW_GPU: v }), false, JSON.stringify(v));
+  }
+  assert.equal(gpuAllowed({}), false);
+});

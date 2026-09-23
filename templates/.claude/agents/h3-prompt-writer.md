@@ -32,6 +32,7 @@ v1 はこの原則を持たずに絵コンテの図解演出を英訳して渡�
 - `h3/episodes/<epId>/cuts.json` の**担当章だけ**(`chapters[].cuts` と、その ID の `cuts`)
 - `h3/vocab/<epId>.ts`(`STYLE` / `CLOSE*` は読むだけ。**本文に写さない**)
 - `episodes/<epId>/timing.json` の該当行本文(ナレーション原文)
+- `channel/h3-pitfalls.md`(**必読**。チャンネルが実測した H3 の罠と、通った肯定形の書き方の台帳。「直す場所」が `body` の行が書き手の担当。無いチャンネルでは読まない)
 
 # 出力の形(`h3/episodes/<epId>/shots/<章ID>.ts`)
 
@@ -76,6 +77,7 @@ export default shots;
 - `card` を写したカットには `body` / `sound` を書かない(章カードの定型は合成器が作る)。`text` も書かない(合成器が立てる)
 - `chainFrom` は文字列(起点のカットID)。`chain` / `hi` / `text` は `true` のときだけ書く(`false` は書かなくてよい)
 - 写し忘れは自分では気づけない(このエージェントは検査を実行しない)。**書いたら台帳と1件ずつ照合する**
+- **写すのはこの5つだけ。** `holdSlow` / `keyframe` / `noSub` / `skipHeadFrames` / `seconds` / `place` / `subject` は台帳だけの欄で、`ShotDecl` に写すと typecheck が落ちる(実測で複数章)。これらは**書き方を変える合図として読むだけ**にする(`keyframe` のカットに書くのは `endState` と `chain`)
 
 ## `open` は自分で決める(台帳に無い)
 
@@ -101,6 +103,14 @@ export default shots;
 本編に載らない。**`holdSlow` では時間ではなく画面に積む** — 冒頭から同時に成立している要素(被写体の姿・
 周囲の状態・光)を厚く書き、動きは1つに絞る。**内部ショット(`[Shot 2]` 以降)も置かない**(下の
 「カットの中の密度」より `holdSlow` が優先する。生成尺が長くても本編に載るのは先頭だけだから)。
+
+### keyframe のカット(2026-09-21 追加)
+
+台帳に `keyframe: true` があるカットは、始点=前カットの最終コマ、終点=画像モデルが描く1枚絵で FL2VA 生成される。書くものが2つに分かれる。
+
+- `endState`(必須・40文字以上): **終点の絵で、始点から変わる部位だけ**を肯定形で書く。画風・体色・構図・背景は固定テンプレと参照画像が担うので書かない。語彙帳の到達状態定数(`ADULT_JAWS_OUT` など)はここでだけ使ってよく、**台帳の subject が指す基本形定数**(`ADULT`)を丸ごと入れない(check:h3 B15 が止める)。例: `the shark's jaws are fully protruded and shot forward, detached from the skull, sticking far out in front of the head with a visible gap between the back of the jaws and the head, lined with thin needle-like teeth`
+- `body`: **両端の絵を描写せず、間の動きだけ**を時刻付きで書く(公式ガイド §3.2)。`from the very first frame` / `already` は書かない(B15)。例: `The shark holds its closed mouth completely still for the first second, then in one sudden fast motion the whole jaw shoots straight forward out from under the snout, then the open jaws hold still far out in front of the head for the rest of the shot.`
+- `chain: true` を宣言に写す(台帳と一致・B11)
 
 ### overall_soundscape(2026-08-24 改訂)
 
@@ -133,8 +143,9 @@ seed・設定では消えず、文面を変えると noise floor が 11 dB 下�
 - **動きは複数ビートで書く。** `then … then …` で、1つの被写体に起こることを時間順に並べる。
   良い: `A colossal slab drops from above, then lands across her shoulders, then her knees buckle under it.`
   悪い: `A colossal slab falls.`(1ビートで終わっていて、5秒の尺が持たない)
-- **7秒を超えるカットは内部にショットを足す。** `[Shot 1]` に時刻は書かない。`[Shot 2]` 以降は `[Shot 2] At 00:03.500,` の形式で、時刻は単調増加・**尺の内側**(**BLOCK B3 が検査する**)
-- **境界は公式のカット動詞5句(`the shot cuts to` ほか)か、cross-dissolve / fade / wipe で書く。** **2026-08-27 に旧 B5(必須)を ADVISE A12 へ降格した**ので、意図があれば外してもよいが、既定はカット動詞を書く
+- **既定は単一ショットである。尺が長くても内部ショット(`[Shot 2]` 以降)を足さない。** 長い尺は `then … then …` の動きのビートと、音の時刻設計で持たせる。内部ショットでの寄り引きの切り替えは、生成の差し戻しの最大の原因だった(ep040 は pass1 差し戻しの約3分の2。複数話で同型)。**単一ショットで尺が持たない・1つの場所と被写体に収まらないと判断したカットは、書かずに報告して h3-cut-planner に割り直しを求める**(割りは台帳の仕事)
+  - 例外として `[Shot 2]` を使うときは(報告で理由を明示する)、**寄り引きの幅を変えない**(同じ距離で角度だけ変える)。書式は `[Shot 1]` に時刻を書かず、`[Shot 2]` 以降を `[Shot 2] At 00:03.500,` の形式にし、時刻は単調増加・**尺の内側**(**BLOCK B3 が検査する**)
+- **(内部ショットを使う例外時)境界は公式のカット動詞5句(`the shot cuts to` ほか)か、cross-dissolve / fade / wipe で書く。** **2026-08-27 に旧 B5(必須)を ADVISE A12 へ降格した**ので、意図があれば外してもよいが、既定はカット動詞を書く
 - **`<scenetrans>` は使わない。** 公式のこのタグは「同じ台詞・歌がカットを跨ぐときに音が続いている印」であり、このチャンネルは生成音声(`<d>`)を使わない(ナレーションは VOICEVOX)ので書く場面が無い
 - **尺の中で世界が変わってよい。** 「前半は熱く動かない・後半は速くて風がある」のように、1カットの中に時間の設計を書ける。色が途中から差し始める、音が途中で止まる、といった設計も1カットの中で完結するなら書いてよい
 
@@ -178,6 +189,8 @@ seed・設定では消えず、文面を変えると noise floor が 11 dB 下�
 - **色を絞れと指示されていない限り、絞らない。** 語彙帳の定数が持つ色をそのまま使う
 
 # 実証済みの罠
+
+**この表は検査・合成器と対応する汎用の罠だけを載せる。題材や構図に依存する実測の罠(内部ショット・距離固定・寄りの顔の発明・倒れる動作・数の縛り・危ない語の置き換え・種別の化け型など)は `channel/h3-pitfalls.md` にある。書き始める前に読み、担当カットの題材・構図に当たる行の書き方を最初から使う。**
 
 紙・変形・多義語・否定形・ディゾルブは `check:h3` の ADVISE(A1 / A2 / A3 / A6 / A8)が拾う。
 台帳側の欄(`noSub` / 未知のキー)は A13 / B13 が拾うが、**これは planner の担当であって書き手の担当ではない**。
@@ -237,7 +250,7 @@ slow speed **toward the folded letter in her hands**.` のように、**何に�
 
 - 結果(1行。担当章・書いたカット数)
 - 判断が要った点(束ねたカットの扱い・鎖の連続性・文字を出したカットなど。箇条書きで数行)
-- 書けなかったカットと理由(語彙不足・cuts.json の指定が不整合など。カットIDで示す)
+- 書けなかったカットと理由(語彙不足・cuts.json の指定が不整合・**単一ショットで持たないので h3-cut-planner に割り直しを求める**など。カットIDで示す)。例外として `[Shot 2]` を使ったカットがあればIDと理由
 - 作成・変更したファイル一覧(パスのみ)
 
 **プロンプト本文を報告へ転記しない** — 発注元は必要に応じてファイルを直接読む。

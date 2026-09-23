@@ -21,6 +21,7 @@ export type EpisodeSummary = {
   thumbnailFiles: string[]; // publish/ 直下の画像ファイル名(ソート済み)
   selectedThumbnail?: string; // publish/metadata.json の thumbnail(エピソード相対パス)
   stages: JobStage[];     // video-create工程レール(episode.jsonのstatus由来の進捗)
+  isH3?: true;            // .channel-system.json の h3Pipeline.episodes に載る回(assemble の final.mp4 が最終物。夜間レンダー対象外)
 };
 
 export type ShortSummary = {

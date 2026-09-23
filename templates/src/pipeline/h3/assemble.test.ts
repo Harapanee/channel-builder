@@ -3,7 +3,11 @@ import test from "node:test";
 import {
   ambientPath, assertUniformFps, buildSegments, checkAmbient, checkMasterAudio, holdSlowShortfalls, overlayWindows, parseFrameRate,
   partCacheSpec, speedFilter, subsByLine, targetFrames, videoFilter, headTrimFilter,
+  checkAmbientDuration, checkSeCues, parseArgs, staleChainProblems, tmpPathFor, writeViaTmp,
 } from "./assemble";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AmbientAudioFacts } from "./assemble";
 import type { Cut } from "./types";
 import type { TimingLine } from "./plan";
@@ -299,4 +303,120 @@ test("字幕台帳(1回の表示=1文)があれば、行を文ごとの窓に分
   const w2 = overlayWindows(seg, lineById, 120, FPS, subsByLine([]));
   assert.equal(w2.length, 1);
   assert.equal(w2[0].png, undefined);
+});
+
+/* ---- 2026-09-23 レビュー指摘 C6/C7/C8 ---- */
+
+test("overlayWindows はフレーム番号の窓(区間先頭基準・半開区間)も返す", () => {
+  const seg = { clipId: "cL03", lineIds: ["L03"], startSec: 5.0, frames: 144, offsetFrames: 120, holdSlow: false, skipHeadFrames: 0, noSub: false };
+  const lineById = new Map(LINES.map((l) => [l.lineId, l]));
+  const ledger = subsByLine([
+    { id: "L03", png: "/s/sub_L03_0.png", start: 5.0, end: 7.5 },
+    { id: "L03", png: "/s/sub_L03_1.png", start: 7.5, end: 10.6 },
+  ]);
+  const w = overlayWindows(seg, lineById, 120, FPS, ledger);
+  assert.equal(w[0].fromFrame, 0);
+  assert.equal(w[0].toFrame, 60);
+  // 次の文は前の文の toFrame から始まる(境界の1コマに2枚重ならない)
+  assert.equal(w[1].fromFrame, 60);
+});
+
+test("checkSeCues: SE が1件以上あれば通す", () => {
+  assert.deepEqual(checkSeCues({ se: [{}] }, false), []);
+});
+
+test("checkSeCues: SE 0件は BLOCK(--no-se で通す)", () => {
+  assert.match(checkSeCues({ se: [] }, false)[0], /no_se/);
+  assert.deepEqual(checkSeCues({ se: [] }, true), []);
+});
+
+test("checkSeCues: audio-cues.json が無ければ SE を確かめられないので BLOCK(--no-se で通す)", () => {
+  assert.match(checkSeCues(null, false)[0], /no_se/);
+  assert.deepEqual(checkSeCues(null, true), []);
+});
+
+test("parseArgs: --no-se を受け取る", () => {
+  assert.equal(parseArgs(["ep001", "--no-se"]).noSe, true);
+  assert.equal(parseArgs(["ep001"]).noSe, false);
+});
+
+test("tmpPathFor: final.mp4 → final.mp4.tmp", () => {
+  assert.equal(tmpPathFor("/o/final.mp4"), "/o/final.mp4.tmp");
+});
+
+test("writeViaTmp: tmp に書いてから rename する(書き手は tmp しか見ない)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "h3-asm-"));
+  try {
+    const out = join(dir, "final.mp4");
+    let seen = "";
+    writeViaTmp(out, (tmp) => { seen = tmp; writeFileSync(tmp, "v"); });
+    assert.equal(seen, out + ".tmp");
+    assert.equal(readFileSync(out, "utf8"), "v");
+    assert.equal(existsSync(out + ".tmp"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeViaTmp: 書き手が落ちたら tmp を消し、完成品の名前には何も残さない", () => {
+  const dir = mkdtempSync(join(tmpdir(), "h3-asm-"));
+  try {
+    const out = join(dir, "final.mp4");
+    assert.throws(() => writeViaTmp(out, (tmp) => { writeFileSync(tmp, "half"); throw new Error("ffmpeg died"); }), /ffmpeg died/);
+    assert.equal(existsSync(out), false);
+    assert.equal(existsSync(out + ".tmp"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeViaTmp: 焼いている間に完成品ができていたら上書きしない", () => {
+  const dir = mkdtempSync(join(tmpdir(), "h3-asm-"));
+  try {
+    const out = join(dir, "final.mp4");
+    assert.throws(() => writeViaTmp(out, (tmp) => { writeFileSync(tmp, "new"); writeFileSync(out, "other"); }), /上書きしません/);
+    assert.equal(readFileSync(out, "utf8"), "other");
+    assert.equal(existsSync(out + ".tmp"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("checkAmbientDuration: 尺だけを見る(記録つきの ambient.wav は mtime で判定しない)", () => {
+  assert.deepEqual(checkAmbientDuration(100, 100.02), []);
+  assert.match(checkAmbientDuration(90, 100)[0], /ambient_duration_mismatch/);
+});
+
+/* ---- C9: 鎖の古さ(chain-stale.ts の findStaleChains を使う) ---- */
+
+const chainCuts = {
+  chapters: [{ cuts: ["cL01", "cL02", "cL03"] }],
+  cuts: {
+    cL01: { lineIds: ["L01"], seconds: 5, place: "", subject: "", role: "" },
+    cL02: { lineIds: ["L02"], seconds: 5, place: "", subject: "", role: "", chain: true },
+    cL03: { lineIds: ["L03"], seconds: 5, place: "", subject: "", role: "" },
+  } as Record<string, Cut>,
+};
+
+test("staleChainProblems: 起点を作り直したのに下流が古ければ止める", () => {
+  const mt: Record<string, number> = { cL01: 200, cL02: 100, cL03: 50 };
+  const out = staleChainProblems(chainCuts, (id) => mt[id] ?? null, false);
+  assert.equal(out.length, 1);
+  assert.match(out[0], /stale_chain/);
+  assert.match(out[0], /cL02/);
+});
+
+test("staleChainProblems: 下流が起点より新しければ何も出ない", () => {
+  const mt: Record<string, number> = { cL01: 100, cL02: 200 };
+  assert.deepEqual(staleChainProblems(chainCuts, (id) => mt[id] ?? null, false), []);
+});
+
+test("staleChainProblems: --allow-stale-chains で通す", () => {
+  const mt: Record<string, number> = { cL01: 200, cL02: 100 };
+  assert.deepEqual(staleChainProblems(chainCuts, (id) => mt[id] ?? null, true), []);
+});
+
+test("parseArgs: --allow-stale-chains を受け取る", () => {
+  assert.equal(parseArgs(["ep001", "--allow-stale-chains"]).allowStaleChains, true);
+  assert.equal(parseArgs(["ep001"]).allowStaleChains, false);
 });

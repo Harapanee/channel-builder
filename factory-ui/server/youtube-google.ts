@@ -11,6 +11,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly', // 連携先チャンネル名の表示用
   'https://www.googleapis.com/auth/yt-analytics.readonly', // アナリティクス還流(Task 7)。既存トークンはneeds_reauthになる
+  'https://www.googleapis.com/auth/youtube.force-ssl', // コメント取得(commentThreads)・字幕・メタデータ更新・サムネ差し替え(2026-09-20)
+  'https://www.googleapis.com/auth/yt-analytics-monetary.readonly', // 収益系アナリティクス(2026-09-20)
 ];
 
 type ClientSecret = { client_id: string; client_secret: string };

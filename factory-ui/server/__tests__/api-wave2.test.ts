@@ -179,6 +179,16 @@ describe('api routes (wave2)', () => {
     expect((await post('/api/render-queue/enqueue', { dir: 'ch1' })).status).toBe(400);
   });
 
+  it('render-queue: H3 経路の回(h3Pipeline.episodes)は render_ready でも 409 not_ready: h3 pipeline episode', async () => {
+    writeApiEpisode('ep017-cuckoo', 'render_ready');
+    const sysPath = path.join(root, 'ch1', '.channel-system.json');
+    const sys = JSON.parse(fs.readFileSync(sysPath, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(sysPath, JSON.stringify({ ...sys, h3Pipeline: { enabled: true, episodes: ['ep017-cuckoo'] } }));
+    const r = await post('/api/render-queue/enqueue', { dir: 'ch1', epId: 'ep017-cuckoo' });
+    expect(r.status).toBe(409);
+    expect(((await r.json()) as { error: string }).error).toMatch(/^not_ready: h3 pipeline episode/);
+  });
+
   it('render-queue: kind=shortはshort.jsonを検証して201、studio_checked未満は409、不正kindは400', async () => {
     const d = path.join(root, 'ch1', 'shorts', 'sh001-t');
     fs.mkdirSync(d, { recursive: true });

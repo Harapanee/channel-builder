@@ -55,6 +55,37 @@ case "$EP" in
 esac
 STATUS="$EP/out/.render-status-$OUT.json"
 
+# H3 経路の回か(.channel-system.json の h3Pipeline.episodes に載るか)。載れば 0。
+# ファイルが無い・読めない・キーが無い・形が崩れている場合は 1(=非H3。h3Pipeline を持たない
+# 既存チャンネルを壊さない)。H3 回は assemble の out/final.mp4 が最終物で、このスクリプトの
+# レンダー(composition.html 由来の実装)で上書きされるため、夜間レンダーに入れない(2026-09-23)。
+is_h3_episode() {
+  node -e '
+let s;
+try { s = JSON.parse(require("fs").readFileSync(".channel-system.json", "utf8")); } catch { process.exit(1); }
+const e = s && s.h3Pipeline && s.h3Pipeline.episodes;
+process.exit(Array.isArray(e) && e.includes(process.argv[1]) ? 0 : 1);
+' "$1" 2>/dev/null
+}
+
+# --- H3 経路ガード(レンダー準備より先に止める。index.html への複写・検査にも進まない)---
+# 2026-09-23 新設。ep017-cuckoo(H3 回)が夜間キューに残っており、走れば assemble 済みの
+# out/final.mp4 を古い HF 実装で上書きしていた。防ぐコードが無かった。
+# exit 3 = 「対象外」(失敗ではない)。キュー・監視側が完了を検知できるようマーカーは書く。
+case "$EP" in
+  shorts/*) ;;
+  *)
+    if is_h3_episode "$epId"; then
+      echo "render-episode.sh: $epId は H3 経路の回です(.channel-system.json の h3Pipeline.episodes)。" >&2
+      echo "  H3 回は assemble の out/final.mp4 が最終物で、ここでレンダーすると composition.html 由来の古い実装で上書きされます。レンダーせず終了します(exit 3)。" >&2
+      echo "  映像を作り直すなら npm run h3:assemble を使ってください。" >&2
+      mkdir -p "$EP/out"
+      printf '{"ok":false,"reason":"h3_pipeline_episode","qaExit":1}\n' > "$STATUS"
+      exit 3
+    fi
+    ;;
+esac
+
 # --- HyperFrames分岐: composition.html があればHF経路(Remotionへ進まない) ---
 EPDIR="$EP"
 OUTDIR="$EPDIR/out"

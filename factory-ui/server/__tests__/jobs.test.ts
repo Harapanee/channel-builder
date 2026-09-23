@@ -1257,7 +1257,7 @@ describe('JobManager', () => {
   });
 
   it('突き合わせは前進のみ: マーカーの方が先なら維持。永続stateは書き換えない', async () => {
-    // prechecked から始める作り直しジョブ(フェーズ4=工程9〜10)なら
+    // prechecked から始める作り直しジョブ(フェーズ5=工程9〜10)なら
     // <stage>最終レビュー</stage> は担当フェーズ内で有効
     writeEpisode('ep010-cleopatra', 'クレオパトラ', 'prechecked');
     const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'クレオパトラ', episodeId: 'ep010-cleopatra' });
@@ -1448,7 +1448,7 @@ describe('JobManager', () => {
 
   it('成功時でも status が render_ready 未満(packaged)なら登録しない', async () => {
     const { mgr, calls } = hookedManager();
-    // packagedはvideoCreatePhaseForStatusで最終フェーズ(4)に該当するため、
+    // packagedはvideoCreatePhaseForStatusで最終フェーズ(5)に該当するため、
     // episodeId指定で最終フェーズから開始しても完走後の判定(未満なら未登録)を検証できる
     writeEpisode('ep010-cleopatra', 'クレオパトラ', 'packaged');
     const j = mgr.create({
@@ -1465,6 +1465,79 @@ describe('JobManager', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(mgr.get(j.id)!.status).toBe('succeeded');
     expect(calls).toEqual([]);
+  });
+
+  // ---- H3 経路の回(h3Pipeline.episodes): 夜間レンダーに入れない ----
+
+  function markH3(epIds: string[]) {
+    fs.writeFileSync(
+      path.join(root, 'ch1', '.channel-system.json'),
+      JSON.stringify({ channelId: 'ch1', h3Pipeline: { enabled: true, episodes: epIds } }),
+    );
+  }
+
+  it('H3 回: render-check承認でもキュー登録フックを呼ばず、決定文は「レンダーせず assemble の final.mp4 が最終物」', async () => {
+    const { mgr, calls } = hookedManager();
+    markH3(['ep017-cuckoo']);
+    const j = mgr.create({ dir: 'ch1', operation: 'video-create', arg: 'カッコウ' });
+    writeEpisode('ep017-cuckoo', 'カッコウ', 'packaged');
+    procs[0].push(initLine('sH1', path.join(root, 'ch1')));
+    procs[0].push(textLine(RENDER_GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    mgr.respondGate(j.id, 'approve');
+    expect(calls).toEqual([]);
+    const decision = procs[1].args[procs[1].args.indexOf('sH1') + 1]!;
+    expect(decision).toContain('H3');
+    expect(decision).toContain('レンダーは実行せず');
+    expect(decision).toContain('final.mp4');
+    expect(decision).toContain('npm run finalize');
+    expect(decision).not.toContain('レンダーを実行し');
+    expect(decision).not.toContain('夜間レンダーキューに登録済み');
+  });
+
+  it('H3 回: auto成功時に render_ready でもキュー登録しない', async () => {
+    const { mgr, calls } = hookedManager();
+    markH3(['ep017-cuckoo']);
+    writeEpisode('ep017-cuckoo', 'カッコウ', 'render_ready');
+    const j = mgr.create({
+      dir: 'ch1',
+      operation: 'video-create',
+      arg: 'カッコウ',
+      episodeId: 'ep017-cuckoo',
+      mode: 'auto',
+    });
+    procs[0].push(initLine('sH2', path.join(root, 'ch1')));
+    procs[0].push(resultLine('sH2', '<done>完了</done>'));
+    await new Promise((r) => setTimeout(r, 20));
+    procs[0].emitExit(0);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(mgr.get(j.id)!.status).toBe('succeeded');
+    expect(calls).toEqual([]);
+  });
+
+  it('H3 回: kind 省略の approve+revise ゲートを render-check に補完しない', async () => {
+    const PAIR_GATE =
+      '<gate>{"gateId":"ch02-prompts","question":"文面を承認?","options":[{"id":"approve","label":"承認","description":""},{"id":"revise","label":"差し戻し","description":""}],"context":"c"}</gate>';
+    markH3(['ep017-cuckoo']);
+    writeEpisode('ep017-cuckoo', 'カッコウ', 'storyboarded');
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'カッコウ', episodeId: 'ep017-cuckoo' });
+    procs[0].push(initLine('sH3', path.join(root, 'ch1')));
+    procs[0].push(textLine(PAIR_GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.get(j.id)!.gate?.gateId).toBe('ch02-prompts');
+    expect(m.get(j.id)!.gate?.kind).toBeUndefined();
+  });
+
+  it('非H3 回: 同じ kind 省略の approve+revise ゲートは従来どおり render-check に補完される', async () => {
+    const PAIR_GATE =
+      '<gate>{"gateId":"ch02-prompts","question":"文面を承認?","options":[{"id":"approve","label":"承認","description":""},{"id":"revise","label":"差し戻し","description":""}],"context":"c"}</gate>';
+    markH3(['ep017-cuckoo']);
+    writeEpisode('ep010-cleopatra', 'クレオパトラ', 'storyboarded');
+    const j = m.create({ dir: 'ch1', operation: 'video-create', arg: 'クレオパトラ', episodeId: 'ep010-cleopatra' });
+    procs[0].push(initLine('sH4', path.join(root, 'ch1')));
+    procs[0].push(textLine(PAIR_GATE));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.get(j.id)!.gate?.kind).toBe('render-check');
   });
 
   // ---- 削除: remove / clearFinished ----
@@ -1645,11 +1718,11 @@ describe('JobManager', () => {
       expect(procs[1].args[1]).toContain('ep001-x');
     });
 
-    it('最終フェーズ(P5)の<done>で succeeded になる', async () => {
+    it('最終フェーズ(P6)の<done>で succeeded になる', async () => {
       makeEpisode('ep002-y', 'カエサル', 'packaged');
       const j = m.create({ dir: 'ch1', operation: 'video-create', arg: '', episodeId: 'ep002-y' });
-      // episodeId指定+status packaged → 開始フェーズ4(最終)
-      expect(m.get(j.id)!.phaseIndex).toBe(4);
+      // episodeId指定+status packaged → 開始フェーズ5(最終、6フェーズ化で0-indexed 5)
+      expect(m.get(j.id)!.phaseIndex).toBe(5);
       expect(procs[0].args[1]).toContain('工程11〜12');
       procs[0].push(initLine('sid-p3', path.join(root, 'ch1')));
       procs[0].push(resultLine('sid-p3', `完了 ${DONE}`));

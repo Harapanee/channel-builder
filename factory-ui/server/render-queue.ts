@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { RenderQueueItem } from '../shared/types';
+import { isH3EpisodeSync } from './scanner';
 
 // レンダープロセスの最小インターフェース(テストでFakeを注入する)。
 // 実装は detached + unref: サーバーが再起動してもレンダー本体は生き残り、
@@ -123,6 +124,12 @@ export class RenderQueueManager extends EventEmitter {
       meta = parsed as Record<string, unknown>;
     } catch {
       throw new Error(`unknown: ${kind} not found: ${epId}`);
+    }
+    // H3 経路の回(.channel-system.json の h3Pipeline.episodes)は assemble の out/final.mp4 が最終物。
+    // render-episode.sh に入ると composition.html 由来の古い実装で上書きされるため、登録口で拒否する
+    // (requireReady の有無に関係なく。ゲート承認の自動登録 enqueueFromGate もここで false になる)
+    if (kind === 'episode' && isH3EpisodeSync(cwd, epId)) {
+      throw new Error(`not_ready: h3 pipeline episode: ${epId}(assemble の out/final.mp4 が最終物。夜間レンダーの対象外)`);
     }
     const dup = this.items.find(
       (i) =>
@@ -282,6 +289,11 @@ export class RenderQueueManager extends EventEmitter {
       cwd = this.resolveChannel(item.dir);
     } catch {
       this.finish(item, 'failed', { reason: 'invalid_dir' });
+      return;
+    }
+    // 登録後に H3 回と宣言された・永続化に残っていた H3 回は spawn しない(最終物の上書き防止のバックストップ)
+    if (kindOf(item) === 'episode' && isH3EpisodeSync(cwd, item.epId)) {
+      this.finish(item, 'failed', { reason: 'h3_pipeline' });
       return;
     }
     const base = baseDirFor(kindOf(item));

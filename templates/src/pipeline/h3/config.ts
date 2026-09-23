@@ -29,6 +29,13 @@ export const framesDir = (epId: string): string => join(epBase(epId), "ff");
 export const COMFY_CLI = resolve(ROOT, "../tools/comfy-runpod");
 
 /**
+ * Pod の見張り役(`tools/comfy-runpod/lib/watchdog.mjs`)が読む heartbeat。
+ * 一定時間(既定 30 分)更新されないと見張りが Pod を落とす。run-chapter はクリップごとに touch する。
+ * **パスは watchdog.mjs の HEARTBEAT_PATH と一致させる**(run-chapter.test.ts が突合する)。
+ */
+export const HEARTBEAT_FILE = join(COMFY_CLI, ".heartbeat");
+
+/**
  * Pod の Network Volume に保存された名前付きワークフロー。
  * **これを指定している間、下の LORA / STEPS / SAMPLER / SIGMA_SHIFT は使われない**
  * (LoRA・steps・sampler・sigma shift・音の後処理・アップスケーラーのバイパスは
@@ -73,12 +80,20 @@ export const SIZE_HI = { width: 1344, height: 768 };
 export const OUT_FPS = 24;
 
 /**
+ * GPU 課金ロックの判定。**`"1"` の完全一致だけ**を許可とみなす
+ * (以前は「値があれば通す」だったため `H3_ALLOW_GPU=0` でも課金が始まった)。
+ */
+export function gpuAllowed(env: Record<string, string | undefined>): boolean {
+  return env.H3_ALLOW_GPU === "1";
+}
+
+/**
  * GPU を使う操作の二重ロック。
  * factory-ui の semi / auto モードは人間ゲートを自動承認するため、
  * 「人間が止める」だけを課金の砦にできない。
  */
 export function assertGpuAllowed(what: string): void {
-  if (!process.env.H3_ALLOW_GPU) {
+  if (!gpuAllowed(process.env)) {
     console.error("❌ " + what + " は GPU 課金を伴います。");
     console.error("   実行するなら H3_ALLOW_GPU=1 を付けてください(manual モードでの人間の明示操作のみ)。");
     process.exit(3);

@@ -11,6 +11,12 @@ import type { ShotDecl, Vocab } from "./types";
 export const I2V_LINE =
   "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.";
 
+/** FL2VA の指示行(公式 §2.1 逐語)。Picture 2 の時刻はカットの秒数 */
+export function fl2vLine(seconds: number): string {
+  return "How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the " +
+    seconds.toFixed(2) + "-second mark of the target video.";
+}
+
 const COUNT_WORD = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
 /**
@@ -35,7 +41,7 @@ const NEAR = new RegExp(
   "i",
 );
 
-export function composePrompt(decl: ShotDecl, vocab: Vocab, opts: { firstFrame?: boolean } = {}): string {
+export function composePrompt(decl: ShotDecl, vocab: Vocab, opts: { firstFrame?: boolean; lastFrameAt?: number } = {}): string {
   const closing = decl.text ? vocab.CLOSE_TEXT : decl.open ? vocab.CLOSE_H : vocab.CLOSE;
   const body = NEAR.test(decl.body ?? "") ? `${decl.body} ${vocab.CLOSEUP_GUARD}` : decl.body;
   const core = [
@@ -45,6 +51,7 @@ export function composePrompt(decl: ShotDecl, vocab: Vocab, opts: { firstFrame?:
     "",
     `non_diegetic_music: ${decl.music ?? "N/A"}`,
   ].join("\n");
+  if (opts.lastFrameAt !== undefined) return `${fl2vLine(opts.lastFrameAt)}\n\n${core}`;
   return opts.firstFrame ? `${I2V_LINE}\n\n${core}` : core;
 }
 

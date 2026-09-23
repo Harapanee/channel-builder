@@ -27,6 +27,11 @@ export interface AmbientPiece {
   clipId: string | null;
   frames: number;
   gainDb: number;
+  /**
+   * クリップの先頭から捨てるフレーム数(cuts.json の skipHeadFrames)。映像は assemble がこのぶんを捨てて
+   * から区間へ収めるので、音も同じぶん捨ててから区間ぶんを頭から使う(2026-09-23 C4)。
+   */
+  skipHeadFrames: number;
 }
 
 export function resolveAmbientConfig(raw: {
@@ -46,15 +51,45 @@ export function resolveAmbientConfig(raw: {
 }
 
 /**
+ * 音を無音にする区間か。exclude に書いたカットに加え、**章カード(cuts.json の card)は自動で無音**
+ * (2026-09-23 C3)。章カードは映像も紙色で合成して生成クリップを使わないので、音だけ使う理由が無い。
+ * ep040〜045 は全話で exclude に章カードと同じ集合を手書きしていた(その書き方も引き続き有効)。
+ */
+function silenced(s: Segment, config: AmbientConfig): boolean {
+  return Boolean(s.card) || config.exclude.has(s.clipId);
+}
+
+/**
  * 区間を音の断片へ写す。**区間はタイムラインを隙間なく覆っている**(buildSegments が
  * 恒等式を検査している)ので、順に連結するだけで総尺に一致する。
  */
 export function ambientPlan(segments: Segment[], config: AmbientConfig): AmbientPiece[] {
   return segments.map((s) => ({
-    clipId: config.exclude.has(s.clipId) ? null : s.clipId,
+    clipId: silenced(s, config) ? null : s.clipId,
     frames: s.frames,
     gainDb: config.perClip[s.clipId]?.gainDb ?? config.gainDb,
+    skipHeadFrames: Math.max(0, Math.floor(s.skipHeadFrames ?? 0)),
   }));
+}
+
+/** 音を使うクリップのID(章カードと exclude を除く・重複なし) */
+export function ambientClipIds(segments: Segment[], config: AmbientConfig): string[] {
+  return [...new Set(segments.filter((s) => !silenced(s, config)).map((s) => s.clipId))];
+}
+
+/**
+ * 断片1つを wav にする ffmpeg 引数。**すべて同じ形式にそろえる**(concat demuxer が -c copy で繋げる条件)。
+ * skipHeadFrames があれば入力側の -ss で頭を捨てる。apad + -t で「クリップが短い」場合も必ず区間ぶんの長さになる。
+ */
+export function ambientPieceArgs(p: AmbientPiece, clipPath: string, dest: string, fps: number, sampleRate: number): string[] {
+  const seconds = (p.frames / fps).toFixed(6);
+  if (p.clipId === null) {
+    return ["-y", "-f", "lavfi", "-i", "anullsrc=r=" + sampleRate + ":cl=stereo", "-t", seconds, "-c:a", "pcm_s16le", dest];
+  }
+  const seek = p.skipHeadFrames > 0 ? ["-ss", (p.skipHeadFrames / fps).toFixed(6)] : [];
+  return ["-y", ...seek, "-i", clipPath, "-vn",
+    "-af", "aresample=" + sampleRate + ",apad,volume=" + p.gainDb + "dB",
+    "-ac", "2", "-t", seconds, "-c:a", "pcm_s16le", dest];
 }
 
 /**

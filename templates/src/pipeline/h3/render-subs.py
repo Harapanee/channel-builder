@@ -6,6 +6,10 @@
 入力: episodes/<epId>/timing.json の各行
 出力: h3/episodes/<epId>/subs/sub_<lineId>[_<k>].png と subs/subs.json(表示窓の台帳)
 
+subs.json の形は { "inputs": { "timing": <timing.json の sha1> }, "entries": [...] }(2026-09-23)。
+h3:assemble が inputs.timing を現在の timing.json と突き合わせ、台本修正のあとの焼き直し漏れを止める。
+旧形式(entries の配列だけ)も assemble / preview は読める(inputs 無し = 警告だけで通す)。
+
 **字幕は1回の表示につき1文**(2026-09-04・ユーザー指示。bible §8)。台本の1行に複数の文が
 あれば、句(phrases)の時刻を使って文ごとに分け、それぞれの表示窓を subs.json に書く。
 assemble / preview はこの台帳を読んで重ねる(台帳に無い行は従来どおり行全体=1枚)。
@@ -17,6 +21,7 @@ assemble / preview はこの台帳を読んで重ねる(台帳に無い行は従
 ASS では角丸が出せず、太さも色も合わなかったのでこちらで描く。
 **この定数群は v2 の実測で合わせ込んだもの。変えない。**
 """
+import hashlib
 import json
 import os
 import sys
@@ -24,7 +29,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-W, H = 1920, 1080
+W, H = 1920, 1080  # chunk-filter.ts の OUT_W / OUT_H と同じ値(Python からは import できない。変えるなら両方)
 FONT_PATH = os.path.join(ROOT, "assets/fonts/YuseiMagic-Regular.ttf")
 FONT_SIZE = 46
 TEXT_COLOR = (244, 241, 231, 255)          # --animal-paper
@@ -193,6 +198,11 @@ def _split_long(groups):
     return out
 
 
+def ledger_doc(entries, timing_bytes):
+    """subs.json の中身。inputs.timing は timing.json のバイト列の sha1(freshness.ts の sha1OfFile と同じ値)。"""
+    return {"inputs": {"timing": hashlib.sha1(timing_bytes).hexdigest()}, "entries": entries}
+
+
 def main():
     if len(sys.argv) < 2:
         print("使い方: python3 src/pipeline/h3/render-subs.py <epId>", file=sys.stderr)
@@ -205,7 +215,10 @@ def main():
     out_dir = os.path.join(ROOT, "h3/episodes", ep_id, "subs")
     os.makedirs(out_dir, exist_ok=True)
 
-    timing = json.load(open(timing_path, encoding="utf-8"))
+    # 読んだバイト列そのものをハッシュする(読み直すと、その間に書き換わった版を記録しかねない)
+    with open(timing_path, "rb") as fh:
+        timing_bytes = fh.read()
+    timing = json.loads(timing_bytes.decode("utf-8"))
     made = []
     split_lines = 0
     for line in timing["lines"]:
@@ -219,7 +232,7 @@ def main():
             made.append({"id": line["lineId"], "seq": k, "png": path, "text": text,
                          "start": start, "end": end})
     with open(os.path.join(out_dir, "subs.json"), "w", encoding="utf-8") as fh:
-        json.dump(made, fh, ensure_ascii=False, indent=1)
+        json.dump(ledger_doc(made, timing_bytes), fh, ensure_ascii=False, indent=1)
     print("%d 枚 → %s(%d 行を文ごとに分割)" % (len(made), out_dir, split_lines))
     return 0
 

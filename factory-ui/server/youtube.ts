@@ -67,6 +67,22 @@ export interface YoutubeApi {
 /** 永続化するアップロード履歴の上限件数(新しい順) */
 const MAX_PERSISTED_JOBS = 200;
 
+/**
+ * OAuthの state にチャンネルdirを載せるための符号化。
+ * dirに非ASCII(例: 「動物転生」)が含まれると Google の認可画面が 500 を返すため、
+ * base64url で必ずASCIIにする(2026-09-03 実測)。
+ */
+export function encodeOAuthState(dir: string): string {
+  return Buffer.from(dir, 'utf8').toString('base64url');
+}
+
+/** encodeOAuthState の逆。base64url として不正なら null。 */
+export function decodeOAuthState(state: string): string | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(state)) return null;
+  const decoded = Buffer.from(state, 'base64url').toString('utf8');
+  return Buffer.from(decoded, 'utf8').toString('base64url') === state ? decoded : null;
+}
+
 export class YoutubeManager extends EventEmitter {
   private readonly jobs = new Map<string, YoutubeUploadJob>();
   /** preflight開始〜アップロード完了まで占有するエピソードスロット(`dir/kind/epId`)。
@@ -186,16 +202,34 @@ export class YoutubeManager extends EventEmitter {
     this.channelDir(dir); // dir検証
     const api = this.api;
     if (!api) throw new Error('no_auth: youtube-client.json が未設置です');
-    return api.generateAuthUrl(dir);
+    return api.generateAuthUrl(encodeOAuthState(dir));
   }
 
-  /** OAuthコールバック。state=dir。トークンを交換して保存する */
+  /**
+   * OAuth state → チャンネルdir。base64url符号化された state を復号する。
+   * 復号結果が既知のdirでなければ生の state をdirとみなす(旧URL・テスト互換)。
+   */
+  stateToDir(state: string): string {
+    const decoded = decodeOAuthState(state);
+    if (decoded !== null) {
+      try {
+        this.channelDir(decoded);
+        return decoded;
+      } catch {
+        /* 生のdirとして再判定 */
+      }
+    }
+    return state;
+  }
+
+  /** OAuthコールバック。state=encodeOAuthState(dir)。トークンを交換して保存する */
   async handleCallback(code: string, state: string): Promise<void> {
-    this.channelDir(state); // state(dir)検証
+    const dir = this.stateToDir(state);
+    this.channelDir(dir); // dir検証
     const api = this.api;
     if (!api) throw new Error('no_auth: youtube-client.json が未設置です');
     const token = await api.exchangeCode(code);
-    await this.saveToken(state, token);
+    await this.saveToken(dir, token);
   }
 
   list(): YoutubeUploadJob[] {

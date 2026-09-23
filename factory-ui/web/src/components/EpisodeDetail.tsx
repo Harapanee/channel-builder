@@ -212,7 +212,13 @@ export function EpisodeDetail({
       setQueueMsg('夜間レンダーキューに登録しました');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setQueueMsg(msg.includes('-> 409') ? 'すでにキューに登録済みです' : `登録に失敗しました: ${msg}`);
+      setQueueMsg(
+        msg.includes('h3 pipeline')
+          ? 'H3 経路の回は夜間レンダーの対象外です(assemble の final.mp4 が最終物)'
+          : msg.includes('-> 409')
+            ? 'すでにキューに登録済みです'
+            : `登録に失敗しました: ${msg}`,
+      );
     } finally {
       setEnqueueing(false);
     }
@@ -299,7 +305,8 @@ export function EpisodeDetail({
             onOpenJob?.(jobId);
           }}
         />
-        {episode.status === 'render_ready' && !episode.hasFinal && (
+        {/* H3 経路の回は assemble の out/final.mp4 が最終物。夜間レンダーは上書き事故になるので出さない */}
+        {episode.status === 'render_ready' && !episode.hasFinal && !episode.isH3 && (
           <button className="btn" onClick={enqueueRender} disabled={enqueueing}>
             夜間レンダーキューへ
           </button>

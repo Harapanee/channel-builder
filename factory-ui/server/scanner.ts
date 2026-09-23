@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Dirent } from 'node:fs';
 import type { ChannelSummary, EpisodeSummary, ShortSummary, ShortFormatSummary } from '../shared/types';
@@ -72,6 +73,7 @@ export async function readChannel(
     epEntries = [];
   }
 
+  const h3 = h3EpisodesOf(system);
   const episodes: EpisodeSummary[] = [];
   for (const entry of epEntries) {
     if (!entry.isDirectory()) continue;
@@ -95,6 +97,8 @@ export async function readChannel(
       thumbnailFiles: await listThumbnailFiles(path.join(epDir, 'publish')),
       selectedThumbnail: await readSelectedThumbnail(epDir),
       stages: buildVideoCreateStages({ status, hasPreview, hasFinal }),
+      // 既存チャンネル(h3Pipeline 無し)の EpisodeSummary の形を変えないよう、true のときだけ付ける
+      ...(h3.has(episodeId) ? { isH3: true } : {}),
     });
   }
 
@@ -103,6 +107,35 @@ export async function readChannel(
   const shorts = await listShorts(channelDir);
   const shortFormats = await listShortFormats(channelDir);
   return { system, episodes, shorts, shortFormats };
+}
+
+// --- H3 経路の判定 ---------------------------------------------------------------
+
+/**
+ * `.channel-system.json` の `h3Pipeline.episodes`(MiniMax H3 で本編を生成する回)を集合で返す。
+ * H3 回は assemble の out/final.mp4 が最終物で、夜間レンダー(render-episode.sh)に入ると
+ * composition.html 由来の古い実装で上書きされる。キー無し・形の崩れは空集合(=非H3)。
+ */
+export function h3EpisodesOf(system: Record<string, unknown> | null | undefined): Set<string> {
+  const h3 = system?.h3Pipeline;
+  if (!h3 || typeof h3 !== 'object' || Array.isArray(h3)) return new Set();
+  const eps = (h3 as Record<string, unknown>).episodes;
+  if (!Array.isArray(eps)) return new Set();
+  return new Set(eps.filter((e): e is string => typeof e === 'string'));
+}
+
+/**
+ * チャンネル(絶対パス)の epId が H3 回か(同期版。render-queue / jobs の判定口)。
+ * 読めない・パース不能・キー無しは false(既存チャンネルを壊さない)。
+ */
+export function isH3EpisodeSync(channelDir: string, epId: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(channelDir, SYSTEM_FILE), 'utf8')) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    return h3EpisodesOf(parsed as Record<string, unknown>).has(epId);
+  } catch {
+    return false;
+  }
 }
 
 // --- 内部ヘルパ ---------------------------------------------------------------

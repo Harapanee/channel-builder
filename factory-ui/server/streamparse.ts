@@ -141,7 +141,7 @@ function isRenderCheckShaped(gate: GateRequest): boolean {
   return ids.has('approve') && ids.has('revise');
 }
 
-export function extractGate(text: string): GateRequest | null {
+export function extractGate(text: string, opts: { h3?: boolean } = {}): GateRequest | null {
   const m = GATE_RE.exec(text);
   if (!m) return null;
 
@@ -152,7 +152,10 @@ export function extractGate(text: string): GateRequest | null {
       // モデルが kind を出し忘れても render-check を補完する
       // (UIのStudioボタン表示・レンダーキュー登録・レンダー突入バックストップがkindに依存するため)。
       // 判定は gateId 命名に加え、approve+revise の options ペア(契約上render-check専用)でも行う
-      if (gate.kind === undefined && isRenderCheckShaped(gate)) {
+      // ただし H3 経路の回(opts.h3)では補完しない。H3 はレンダーせず assemble の final.mp4 が最終物で、
+      // approve+revise のゲート(文面承認・検品の差し戻し等)を render-check に化けさせると
+      // 夜間キュー登録とレンダー指示の決定文に流れる。明示の kind はそのまま尊重する
+      if (gate.kind === undefined && !opts.h3 && isRenderCheckShaped(gate)) {
         gate.kind = 'render-check';
       }
       return gate;

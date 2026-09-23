@@ -118,3 +118,19 @@ test("BGM 方針: 冒頭の曲と baseVolume の範囲(channel/bgm-policy.json)"
   assert.ok(validateBgmPolicy({ ...plan, baseVolume: 0.3 } as never, policy).some((m) => /baseVolume 0.3/.test(m)));
   assert.deepEqual(validateBgmPolicy(plan as never, {}), []);
 });
+
+test("validateBgmPolicy: envelope の gain が倍率の範囲外なら止める(ep033 の絶対音量の書き違い)", async () => {
+  const { validateBgmPolicy } = await import("./build-bgm-cues");
+  const base = { baseVolume: 0.14, tracks: { wafu: { src: "a" } }, assignment: [[0, 20, "wafu"]] as [number, number, string][] };
+  const policy = { envelopeGain: { peakMin: 0.5, max: 1.0 } };
+  // 正常: 山が 0.9、谷(ダッキング)が 0.08
+  assert.deepEqual(validateBgmPolicy({ ...base, envelope: [[0, 10, 0.9], [10, 20, 0.08]] } as never, policy), []);
+  // ep033 型: 絶対音量を書いて山が 0.18 しかない
+  assert.ok(validateBgmPolicy({ ...base, envelope: [[0, 10, 0.12], [10, 20, 0.18]] } as never, policy).some((m) => /envelope の最大 gain 0.18/.test(m)));
+  // 1.0 を超える倍率
+  assert.ok(validateBgmPolicy({ ...base, envelope: [[0, 10, 1.4]] } as never, policy).some((m) => /1.4/.test(m) && /上限 1/.test(m)));
+  // フェード宣言も展開して見る
+  assert.deepEqual(validateBgmPolicy({ ...base, envelope: [{ start: 0, gain: [0.2, 0.9], steps: 3, stepSec: 1 }] } as never, policy), []);
+  // 方針に envelopeGain が無ければ検査しない
+  assert.deepEqual(validateBgmPolicy({ ...base, envelope: [[0, 10, 0.12]] } as never, {}), []);
+});

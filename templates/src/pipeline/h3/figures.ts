@@ -282,9 +282,123 @@ function validateReveals(fig: Figure, lineById: Map<string, FigureLine>, w: Wind
   return out;
 }
 
+/*
+ * --- 型ごとのキー(2026-09-23)。ep038 で grid の内訳を `count` でなく `value` と書き、
+ * render-figures がそのまま `undefined` を画面に焼いた。JSON は型検査を通らないので、ここで宣言の形を見る。
+ * キーを足すときは interface と下の表を**両方**直す。
+ */
+const ANCHOR_KEYS = ["atLineId", "atPhrase"];
+const BASE_KEYS = ["id", "type", "lineId", "fromPhrase", "toLineId", "toPhrase", "holdSec", "dim", "title", "caption", "captionAtLineId", "captionAtPhrase"];
+const FIGURE_KEYS: Record<Figure["type"], { top: string[]; list?: string; item?: string[]; required?: string[] }> = {
+  bars: { top: ["items"], list: "items", item: ["label", "value", "display", "accent"], required: ["label", "value", "display"] },
+  grid: { top: ["total", "highlight", "highlightLabel", "segments", "mode", "icon"], list: "segments", item: ["label", "count", "color"], required: ["label", "count"] },
+  recap: { top: ["items"], list: "items", item: ["label", "text", "now"], required: ["label", "text"] },
+  timeline: { top: ["events"], list: "events", item: ["at", "pos", "label", "accent"], required: ["at", "label"] },
+  scale: { top: ["items"], list: "items", item: ["label", "size", "display", "icon", "accent"], required: ["label", "size", "display"] },
+};
+/** 数値でなければ描画が NaN / undefined になるキー */
+const NUMERIC_ITEM_KEYS = new Set(["value", "count", "size", "pos"]);
+
+/** 宣言の形(未知キー・必須キーの欠落・数値欄の型)。空なら合格 */
+export function figureKeyProblems(fig: Figure): string[] {
+  const raw = fig as unknown as Record<string, unknown>;
+  const spec = FIGURE_KEYS[raw.type as Figure["type"]];
+  const id = String(raw.id ?? "?");
+  if (!spec) return [id + ": 知らない型 type=" + JSON.stringify(raw.type) + "(" + Object.keys(FIGURE_KEYS).join(" / ") + ")"];
+  const out: string[] = [];
+  const allowedTop = new Set([...BASE_KEYS, ...spec.top]);
+  for (const k of Object.keys(raw)) {
+    if (!allowedTop.has(k)) out.push(id + ": " + raw.type + " に知らないキー「" + k + "」(使えるのは " + spec.top.join(" / ") + " と共通欄)");
+  }
+  if (spec.list && spec.item) {
+    const list = raw[spec.list];
+    if (list !== undefined && !Array.isArray(list)) out.push(id + ": " + spec.list + " は配列");
+    const allowedItem = new Set([...spec.item, ...ANCHOR_KEYS]);
+    (Array.isArray(list) ? list : []).forEach((it: Record<string, unknown>, i: number) => {
+      const at = id + ": " + spec.list + "[" + i + "]";
+      for (const k of Object.keys(it ?? {})) {
+        if (!allowedItem.has(k)) out.push(at + " に知らないキー「" + k + "」(" + raw.type + " の項目に使えるのは " + spec.item!.join(" / ") + " と atLineId / atPhrase)");
+      }
+      for (const k of spec.required ?? []) {
+        if (it?.[k] === undefined) out.push(at + " に「" + k + "」が無い(画面に undefined が出る)");
+      }
+      for (const k of Object.keys(it ?? {})) {
+        if (NUMERIC_ITEM_KEYS.has(k) && allowedItem.has(k) && !(typeof it[k] === "number" && Number.isFinite(it[k]))) out.push(at + " の「" + k + "」が数値ではない(" + JSON.stringify(it[k]) + ")");
+      }
+    });
+  }
+  return out;
+}
+
+/*
+ * --- grid の右列の文字幅(2026-09-23・ep042 ⑧)。
+ * 粒の図解は右列(凡例・一言)が狭く、highlightLabel が長いと2行に折り返し、一言(caption・折り返さない)は列からはみ出す。
+ * 焼く前にブラウザを起こさず止めるため、文字数×字形の幅の概算で見る。
+ * 係数は Yusei Magic を Chromium で実測して決めた(過去 20話の grid 36本+合成で ±5% 以内):
+ * 漢字・全角記号 1.0em / ひらがな 0.85em / カタカナ 0.95em / 半角英数記号 0.55em / 半角空白 0.3em。
+ * GRID_LAYOUT は render-figures.ts の CSS の写し。figures-keys-layout.test.ts が CSS と突合する。
+ */
+export const GRID_LAYOUT = {
+  panelWidth: 1440, panelBorder: 6, panelPadX: 56, wrapGap: 48, sidePadRight: 24, cellGap: 8,
+  legendPx: 44, captionPx: 46, countPx: 58, chip: 40, liGap: 16,
+} as const;
+
+export function estimateTextPx(text: string, fontPx: number): number {
+  let em = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    if (ch === " ") em += 0.3;
+    else if (c >= 0x3040 && c <= 0x309f) em += 0.85;
+    else if (c >= 0x30a0 && c <= 0x30ff) em += 0.95;
+    else if (c < 0x2000) em += 0.55;
+    else em += 1.0;
+  }
+  return em * fontPx;
+}
+
+/** grid の右列の内寸(px)。粒の並び(40粒以下は 8列×108px、それ以上は 10列×54px)で決まる */
+export function gridSideWidth(fig: GridFigure): number {
+  const L = GRID_LAYOUT;
+  const total = fig.total ?? 100;
+  const [cols, size] = total <= 40 ? [8, 108] : [10, 54];
+  const inner = L.panelWidth - 2 * L.panelBorder - 2 * L.panelPadX;
+  const gridW = cols * size + (cols - 1) * L.cellGap;
+  return inner - gridW - L.wrapGap - L.sidePadRight;
+}
+
+/** grid の右列の文字が折り返す・はみ出す。空なら合格 */
+export function gridLayoutProblems(fig: Figure): string[] {
+  if (fig.type !== "grid") return [];
+  const L = GRID_LAYOUT;
+  const side = gridSideWidth(fig);
+  const out: string[] = [];
+  const px = (n: number) => Math.round(n) + "px";
+  if (fig.highlightLabel && !fig.segments) {
+    const avail = side - L.chip - L.liGap;
+    const w = estimateTextPx(fig.highlightLabel, L.legendPx);
+    if (w > avail) out.push(fig.id + ": highlightLabel「" + fig.highlightLabel + "」が右列で折り返す(推定 " + px(w) + " / 幅 " + px(avail) + "。粒 " + (fig.total ?? 100) + " の配置)。短くするか、長い説明は caption・title へ");
+  }
+  (fig.segments ?? []).forEach((sg, i) => {
+    const total = fig.total ?? 100;
+    const countW = estimateTextPx(total === 100 ? sg.count + "%" : String(sg.count), L.countPx);
+    const avail = side - L.chip - 2 * L.liGap - countW;
+    const w = estimateTextPx(sg.label ?? "", L.legendPx);
+    if (w > avail) out.push(fig.id + ": segments[" + i + "] の label「" + sg.label + "」が右列で折り返す(推定 " + px(w) + " / 幅 " + px(avail) + ")");
+  });
+  if (fig.caption) {
+    const w = estimateTextPx(fig.caption, L.captionPx);
+    const avail = side + L.sidePadRight;
+    if (w > avail) out.push(fig.id + ": caption「" + fig.caption + "」が右列からはみ出す(折り返さない欄。推定 " + px(w) + " / 幅 " + px(avail) + ")。短くする");
+  }
+  return out;
+}
+
 /** 規則の機械検査。空なら合格 */
 export function validateFigure(fig: Figure, lineById: Map<string, FigureLine>, cuts: Record<string, Cut>): string[] {
-  const out: string[] = [];
+  const shape = figureKeyProblems(fig);
+  // 形が壊れた宣言は以降の検査(窓・粒の合計)が NaN で誤判定するので、形の指摘だけ返す
+  if (shape.length > 0) return shape;
+  const out: string[] = [...gridLayoutProblems(fig)];
   let w: Window;
   try {
     w = figureWindow(fig, lineById);
