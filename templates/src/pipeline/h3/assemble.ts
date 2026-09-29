@@ -200,6 +200,28 @@ export function staleChainProblems(ledger: ChainLedger, mtimeOf: MtimeOf, allow:
     + "。npm run h3:reject → npm run h3:run で下流を作り直すか、見て許容するなら --allow-stale-chains"];
 }
 
+/** 区間(part)を書く途中の名前。拡張子 .mp4 を保つ(ffmpeg は出力の拡張子で形式を決める) */
+export function partTmpPath(dest: string): string {
+  return dest.replace(/\.mp4$/, "") + ".tmp.mp4";
+}
+
+/**
+ * 区間(part)を一時ファイルに焼かせてから本名へ rename する(2026-09-30)。
+ * 本名へ直接書くと、止めた・落ちた実行の書きかけ part が次の実行で isUsable を通り「焼き済み」として再利用され、
+ * 尺の欠けた完成品ができる。本名に置かれるのは焼き切った part だけにする。
+ */
+export function writePartViaTmp(dest: string, burn: (tmpPath: string) => void): void {
+  const tmp = partTmpPath(dest);
+  rmSync(tmp, { force: true });
+  try {
+    burn(tmp);
+    if (!existsSync(tmp)) throw new Error("書き出しが " + tmp + " を作りませんでした");
+    renameSync(tmp, dest);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
 /** 完成品を書く途中の名前 */
 export function tmpPathFor(outPath: string): string {
   return outPath + ".tmp";
@@ -907,12 +929,12 @@ function main(): void {
       return;
     }
 
-    const args = buildChunkArgs({
-      chunk, overlays, figs, fps: OUT_FPS, clipPath, subPath,
-      rawSourceFrames: (s) => sourceFrames(clipPath(s)), dest,
-    });
     const t0 = Date.now();
-    runFfmpeg(args);
+    // 一時ファイルに焼いてから rename(書きかけの part を「焼き済み」として再利用しない)
+    writePartViaTmp(dest, (tmp) => runFfmpeg(buildChunkArgs({
+      chunk, overlays, figs, fps: OUT_FPS, clipPath, subPath,
+      rawSourceFrames: (s) => sourceFrames(clipPath(s)), dest: tmp,
+    })));
     console.log("  区間 " + (ci + 1) + "/" + chunks.length + "(" + ((Date.now() - t0) / 1000).toFixed(1) + "秒)");
   });
 

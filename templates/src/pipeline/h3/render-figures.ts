@@ -257,8 +257,8 @@ html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:${COLOR
 }
 
 export function cardHash(num: string, name: string, startFrame: number, frames: number, fade = false): string {
-  // fade なし(従来)のハッシュは変えない(焼き済みの板を無駄に焼き直させないため)
-  const key = fade ? { card: [num, name], startFrame, frames, v: 1, fade: FADE_SEC } : { card: [num, name], startFrame, frames, v: 1 };
+  // fade なし(従来)のハッシュは変えない(焼き済みの板を無駄に焼き直させないため)。fade の v:2 は全コマ RGBA にそろえた版(2026-09-30)
+  const key = fade ? { card: [num, name], startFrame, frames, v: 2, fade: FADE_SEC } : { card: [num, name], startFrame, frames, v: 1 };
   return createHash("sha1").update(JSON.stringify(key)).digest("hex").slice(0, 12);
 }
 
@@ -267,6 +267,23 @@ export async function scaleAlpha(png: Buffer, a: number): Promise<Buffer> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   for (let p = 3; p < data.length; p += 4) data[p] = Math.round(data[p] * a);
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
+/**
+ * 章カードの板の全コマ(PNG)。撮った1枚(不透明)から作る。
+ * **フェードありは全コマを RGBA にそろえる**(2026-09-30): 入り・抜けのコマだけ RGBA で中が RGB だと、
+ * ffmpeg は連番の途中で画素形式が変わったとしてフィルタグラフを作り直し、区間のコマを落とす
+ * (ep001 で連結が -217秒)か、CPU 0% のまま止まる。フェードなし(従来)は撮った1枚をそのまま使う。
+ */
+export async function cardFrameBuffers(opaque: Buffer, frames: number, fps: number, fade: boolean): Promise<Buffer[]> {
+  if (!fade) return Array.from({ length: frames }, () => opaque);
+  const full = await scaleAlpha(opaque, 1);
+  const out: Buffer[] = [];
+  for (let i = 0; i < frames; i++) {
+    const a = cardOpacityAt(i, frames, fps, true);
+    out.push(a >= 1 ? full : await scaleAlpha(opaque, a));
+  }
+  return out;
 }
 
 /** 章カードの板の尺(フレーム)。cuts.json の cardHoldSec があればその尺だけ、無ければ区間まるごと(2026-09-29) */
@@ -464,12 +481,9 @@ async function main(): Promise<void> {
         const first = join(dir, "f00000.png");
         await page.screenshot({ path: first, animations: "disabled" });
         const buf = readFileSync(first);
-        // cardHoldSec のカードは入り・抜けのコマだけアルファを掛ける(中は不透明のまま複製)
-        for (let i = fade ? 0 : 1; i < frames; i++) {
-          const a = cardOpacityAt(i, frames, OUT_FPS, fade);
-          const out = a >= 1 ? buf : await scaleAlpha(buf, a);
-          writeFileSync(join(dir, "f" + String(i).padStart(5, "0") + ".png"), out);
-        }
+        // cardHoldSec のカードは入り・抜けのコマだけアルファを掛ける。全コマ同じ画素形式にそろえる(cardFrameBuffers)
+        const bufs = await cardFrameBuffers(buf, frames, OUT_FPS, fade);
+        for (let i = 0; i < frames; i++) writeFileSync(join(dir, "f" + String(i).padStart(5, "0") + ".png"), bufs[i]);
       } finally {
         await page.close();
       }

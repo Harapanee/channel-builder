@@ -439,3 +439,27 @@ test("buildSegments: card の無いカットの cardHoldSec は無視する(chec
   const segs = buildSegments({ cL01: { ...cut(["L01", "L02", "L03"]), cardHoldSec: 2 } }, LINES, TOTAL, FPS);
   assert.equal(segs[0].cardHoldFrames, undefined);
 });
+
+/* ---- 区間(part)の書き出しを一時ファイル経由にする(2026-09-30: 止めた実行の書きかけ part が「焼き済み」で再利用された) ---- */
+
+test("partTmpPath: 拡張子 .mp4 を保つ(ffmpeg は拡張子で形式を決める)", async () => {
+  const { partTmpPath } = await import("./assemble");
+  assert.equal(partTmpPath("/p/part000-abc.mp4"), "/p/part000-abc.tmp.mp4");
+});
+
+test("writePartViaTmp: 焼き手が落ちたら本名も一時ファイルも残さない。成功したら本名へ rename", async () => {
+  const { writePartViaTmp, partTmpPath } = await import("./assemble");
+  const d = mkdtempSync(join(tmpdir(), "part-"));
+  try {
+    const dest = join(d, "part000-abc.mp4");
+    assert.throws(() => writePartViaTmp(dest, (tmp) => { writeFileSync(tmp, "half"); throw new Error("killed"); }), /killed/);
+    assert.equal(existsSync(dest), false, "書きかけが本名で残らない");
+    assert.equal(existsSync(partTmpPath(dest)), false);
+    writeFileSync(dest, "broken-old");
+    writePartViaTmp(dest, (tmp) => writeFileSync(tmp, "ok"));
+    assert.equal(readFileSync(dest, "utf8"), "ok", "壊れた古い part は置き換える");
+    assert.equal(existsSync(partTmpPath(dest)), false);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});

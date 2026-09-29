@@ -46,6 +46,7 @@ import {
   probeClip,
   runFfmpeg,
   sourceFrames,
+  writePartViaTmp,
 } from "./assemble";
 import { buildChunkArgs, effectiveSourceFrames, isSynthCard } from "./chunk-filter";
 import { figureOverlaysForChunk } from "./figures";
@@ -353,12 +354,12 @@ function main(): void {
       return;
     }
 
-    const args = buildChunkArgs({
-      chunk, overlays, figs, fps: OUT_FPS, clipPath, subPath,
-      rawSourceFrames: (s) => sourceFrames(clipPath(s)), dest,
-    });
     const t0 = Date.now();
-    runFfmpeg(args);
+    // 一時ファイルに焼いてから rename(書きかけの part を「焼き済み」として再利用しない)
+    writePartViaTmp(dest, (tmp) => runFfmpeg(buildChunkArgs({
+      chunk, overlays, figs, fps: OUT_FPS, clipPath, subPath,
+      rawSourceFrames: (s) => sourceFrames(clipPath(s)), dest: tmp,
+    })));
     console.log("  区間 " + (ci + 1) + "/" + chunks.length + "(" + ((Date.now() - t0) / 1000).toFixed(1) + "秒)");
   });
 

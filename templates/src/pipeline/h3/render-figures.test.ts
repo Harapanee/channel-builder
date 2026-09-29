@@ -95,3 +95,28 @@ test("scaleAlpha: 不透明な板の PNG のアルファだけを掛ける(色�
   assert.equal(info.channels, 4);
   assert.deepEqual([...data.subarray(0, 4)], [244, 241, 231, 128]);
 });
+
+test("cardFrameBuffers: フェードありの板は全コマ同じ画素形式(RGBA)。混在すると ffmpeg がフィルタグラフを作り直してコマを落とす・止まる(2026-09-30 ep001 で -217秒)", async () => {
+  const { cardFrameBuffers } = await import("./render-figures");
+  const sharp = (await import("sharp")).default;
+  const opaque = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 244, g: 241, b: 231 } } }).png().toBuffer();
+  const fps = 24, frames = 60;
+  const bufs = await cardFrameBuffers(opaque, frames, fps, true);
+  assert.equal(bufs.length, frames);
+  const channels = await Promise.all(bufs.map(async (b) => (await sharp(b).metadata()).channels));
+  assert.deepEqual([...new Set(channels)], [4], "全コマ RGBA");
+  const mid = await sharp(bufs[30]).raw().toBuffer();
+  assert.equal(mid[3], 255, "中は不透明");
+  // フェードなし(従来)は撮った1枚をそのまま全コマに使う
+  const legacy = await cardFrameBuffers(opaque, 5, fps, false);
+  assert.equal(legacy.length, 5);
+  assert.ok(legacy.every((b) => b.equals(opaque)));
+});
+
+test("cardHash: フェードありの鍵は画素形式をそろえた版で変わる(混在して焼いた板を焼き済み扱いしない)", async () => {
+  const { cardHash } = await import("./render-figures");
+  const { FADE_SEC } = await import("./figures");
+  const { createHash } = await import("node:crypto");
+  const broken = createHash("sha1").update(JSON.stringify({ card: ["一", "a"], startFrame: 0, frames: 60, v: 1, fade: FADE_SEC })).digest("hex").slice(0, 12);
+  assert.notEqual(cardHash("一", "a", 0, 60, true), broken);
+});
