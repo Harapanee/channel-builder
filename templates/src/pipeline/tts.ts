@@ -122,6 +122,16 @@ type VoiceConfig = {
   model?: string;
   /** fishaudio専用: ボイスのreference_id */
   referenceId?: string;
+  /** elevenlabs専用: ボイスID(URL パスの {voice_id}) */
+  voiceId?: string;
+  /** elevenlabs専用: モデルID。省略時は "eleven_v4" */
+  modelId?: string;
+  /** elevenlabs専用(任意): voice_settings.stability */
+  stability?: number;
+  /** elevenlabs専用(任意): voice_settings.similarity_boost */
+  similarityBoost?: number;
+  /** elevenlabs専用(任意): voice_settings.style */
+  style?: number;
   /** 2話者掛け合い形式の話者マップ。無ければ旧形式(トップレベルの単一話者)で動く */
   speakers?: Record<string, SpeakerConfig>;
   /** speakers 形式で行注釈 `- speaker:` が無い行に使う既定話者キー */
@@ -442,6 +452,113 @@ async function synthesizeFish(
   throw lastErr instanceof Error ? lastErr : new TtsError(String(lastErr));
 }
 
+// ---- ElevenLabs HTTP クライアント -----------------------------------------
+//
+// fishaudio と同じく、読み仮名もモーラ長も返らない。行長は ffprobe の実測のみを真とし、
+// フレーズ字幕は文字数比フォールバック、readings.md は表記ベース(実読みなし)。
+// VOICEVOX 専用の処理(ユーザー辞書同期・TTS_READING_SUBSTITUTIONS)は使わない。
+// API: POST /v1/text-to-speech/{voice_id}(ヘッダ xi-api-key)。
+// https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+
+const ELEVENLABS_BASE_URL =
+  process.env.ELEVENLABS_URL ?? "https://api.elevenlabs.io";
+const ELEVENLABS_DEFAULT_MODEL = "eleven_v4";
+/** 全プランで使える既定形式。24kHz/mono/16bit への正規化は transcodeFishWav が行う */
+const ELEVENLABS_OUTPUT_FORMAT = "mp3_44100_128";
+const ELEVENLABS_RETRY_MAX = 3;
+const ELEVENLABS_RETRY_BASE_MS = 1500;
+
+export function loadElevenLabsApiKey(projectRoot: string): string {
+  if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY;
+  const envPath = path.join(projectRoot, ".env");
+  if (existsSync(envPath)) {
+    const line = readFileSync(envPath, "utf-8")
+      .split("\n")
+      .find((l) => l.startsWith("ELEVENLABS_API_KEY="));
+    if (line) {
+      const v = line.slice("ELEVENLABS_API_KEY=".length).trim();
+      if (v) return v;
+    }
+  }
+  throw new TtsError(
+    ".env に ELEVENLABS_API_KEY がありません(elevenlabsプロバイダの合成に必須)"
+  );
+}
+
+/** ElevenLabs text-to-speech のリクエストを組み立てる(送信はしない) */
+export function buildElevenLabsRequest(
+  text: string,
+  voice: Pick<
+    VoiceConfig,
+    "voiceId" | "modelId" | "stability" | "similarityBoost" | "style"
+  >,
+  apiKey: string
+): { url: string; init: RequestInit } {
+  if (!voice.voiceId) {
+    throw new TtsError("voice.json に voiceId がありません(elevenlabs必須)");
+  }
+  const voiceSettings: Record<string, number> = {};
+  if (typeof voice.stability === "number") voiceSettings.stability = voice.stability;
+  if (typeof voice.similarityBoost === "number")
+    voiceSettings.similarity_boost = voice.similarityBoost;
+  if (typeof voice.style === "number") voiceSettings.style = voice.style;
+  const body: Record<string, unknown> = {
+    text,
+    model_id: voice.modelId ?? ELEVENLABS_DEFAULT_MODEL,
+    language_code: "ja",
+  };
+  if (Object.keys(voiceSettings).length > 0) body.voice_settings = voiceSettings;
+  return {
+    url:
+      `${ELEVENLABS_BASE_URL}/v1/text-to-speech/${encodeURIComponent(voice.voiceId)}` +
+      `?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
+    init: {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
+/** ElevenLabs で1行を合成する。一過性障害(ネットワーク・5xx・429)のみリトライする。 */
+export async function synthesizeElevenLabs(
+  text: string,
+  voice: VoiceConfig,
+  apiKey: string,
+  opts?: { retryBaseMs?: number }
+): Promise<Buffer> {
+  const { url, init } = buildElevenLabsRequest(text, voice, apiKey);
+  const baseMs = opts?.retryBaseMs ?? ELEVENLABS_RETRY_BASE_MS;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= ELEVENLABS_RETRY_MAX; attempt++) {
+    if (attempt > 0) {
+      const waitMs = baseMs * 2 ** (attempt - 1);
+      console.error(
+        `ElevenLabs text-to-speech を再試行します ${attempt}/${ELEVENLABS_RETRY_MAX}(${waitMs}ms待機)`
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      lastErr = err; // ネットワーク障害は再試行
+      continue;
+    }
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+    const err = new TtsError(
+      `ElevenLabs text-to-speech が失敗しました: HTTP ${res.status} ${await res.text()}`
+    );
+    if (res.status < 500 && res.status !== 429) throw err; // 4xx は即時失敗
+    lastErr = err;
+  }
+  throw lastErr instanceof Error ? lastErr : new TtsError(String(lastErr));
+}
+
 /**
  * fishaudioの生成音声を 24kHz/mono/16bit WAV へ正規化し、必要なら
  * atempo で話速を適用する(atempo の有効域 0.5〜2.0 を検査)。
@@ -459,7 +576,7 @@ function transcodeFishWav(
     if (speedScale !== 1) {
       if (speedScale < 0.5 || speedScale > 2.0) {
         throw new TtsError(
-          `speedScale=${speedScale} は fishaudio(atempo)の有効域 0.5〜2.0 の外です`
+          `speedScale=${speedScale} は atempo の有効域 0.5〜2.0 の外です`
         );
       }
       args.push("-af", `atempo=${speedScale}`);
@@ -845,8 +962,20 @@ type LineResult = {
  */
 function renderReadingsReport(
   items: { line: ParsedScriptLine; kana: string; speaker?: string }[],
-  opts?: { fishaudio?: boolean }
+  opts?: { fishaudio?: boolean; elevenlabs?: boolean }
 ): string {
+  if (opts?.elevenlabs) {
+    // elevenlabs も実読みを返さない。扱いは fishaudio と同じ(表記ベース検査+試聴)
+    const body = items
+      .map((r) => `- **${r.line.lineId}** ${r.line.text}`)
+      .join("\n");
+    return (
+      `# 読み仮名レポート(elevenlabs)\n\n` +
+      `**注意: elevenlabsは読み仮名を返さないため、実読みは取得できない。**\n` +
+      `誤読リスクの高い語(難読漢字・音訓交ぜ語・固有名詞)を台本表記から検査し、\n` +
+      `疑わしい行は narration/<lineId>.wav を試聴して確認すること。\n\n${body}\n`
+    );
+  }
   if (opts?.fishaudio) {
     // fishaudio は実読み(kana)を返さないため、機械的な読み突合はできない。
     // reading-checker はこのレポートでは「誤読リスクの高い語の指摘」までを行い、
@@ -893,8 +1022,11 @@ export async function runTts(
 
   mkdirSync(narrationDir, { recursive: true });
 
+  // VOICEVOX 以外のプロバイダはユーザー辞書を使わない
   const dictHash =
-    voice.provider === "fishaudio" ? "" : await syncVoicevoxUserDict(projectRoot);
+    voice.provider === "fishaudio" || voice.provider === "elevenlabs"
+      ? ""
+      : await syncVoicevoxUserDict(projectRoot);
 
   // ---- 行キャッシュ(局所再TTS) ------------------------------------------
   // テキスト・話速・話者・韻律が前回と同一の行は合成をスキップし、既存WAVと
@@ -935,24 +1067,41 @@ export async function runTts(
 
   const fishApiKey =
     voice.provider === "fishaudio" ? loadFishApiKey(projectRoot) : undefined;
+  const elevenLabsApiKey =
+    voice.provider === "elevenlabs" ? loadElevenLabsApiKey(projectRoot) : undefined;
 
   const synthesizeLine = async (
     line: ParsedScriptLine,
     index: number
   ): Promise<void> => {
-    // ---- fishaudio 経路(モーラ情報なし・実測長のみを真とする) ----
-    if (voice.provider === "fishaudio") {
+    // ---- fishaudio / elevenlabs 経路(モーラ情報なし・実測長のみを真とする) ----
+    // 本文(引用ブロック)をそのまま読ませる。display は字幕専用で、読み補正も掛けない
+    if (voice.provider === "fishaudio" || voice.provider === "elevenlabs") {
+      const isEleven = voice.provider === "elevenlabs";
       const speedScale = (voice.speedScale ?? 1) * (line.speedScale ?? 1);
       const wavPathForLine = path.join(narrationDir, `${line.lineId}.wav`);
       const hash = createHash("sha256")
         .update(
-          JSON.stringify([
-            "fishaudio",
-            line.text,
-            voice.model ?? "",
-            voice.referenceId ?? "",
-            speedScale,
-          ])
+          JSON.stringify(
+            isEleven
+              ? [
+                  "elevenlabs",
+                  line.text,
+                  voice.voiceId ?? "",
+                  voice.modelId ?? ELEVENLABS_DEFAULT_MODEL,
+                  voice.stability ?? null,
+                  voice.similarityBoost ?? null,
+                  voice.style ?? null,
+                  speedScale,
+                ]
+              : [
+                  "fishaudio",
+                  line.text,
+                  voice.model ?? "",
+                  voice.referenceId ?? "",
+                  speedScale,
+                ]
+          )
         )
         .digest("hex");
 
@@ -973,7 +1122,9 @@ export async function runTts(
         return;
       }
 
-      const raw = await synthesizeFish(line.text, voice, fishApiKey!);
+      const raw = isEleven
+        ? await synthesizeElevenLabs(line.text, voice, elevenLabsApiKey!)
+        : await synthesizeFish(line.text, voice, fishApiKey!);
       transcodeFishWav(raw, wavPathForLine, speedScale);
       const actualDurationSec = ffprobeDurationSec(wavPathForLine);
 
@@ -997,7 +1148,7 @@ export async function runTts(
         usedFallback: true,
       };
       console.log(
-        `[${line.lineId}] OK(fishaudio) 実測=${actualDurationSec.toFixed(4)}s phraseMode=fallback`
+        `[${line.lineId}] OK(${voice.provider}) 実測=${actualDurationSec.toFixed(4)}s phraseMode=fallback`
       );
       return;
     }
@@ -1130,7 +1281,10 @@ export async function runTts(
   const readingsPath = path.join(narrationDir, "readings.md");
   writeFileSync(
     readingsPath,
-    renderReadingsReport(results, { fishaudio: voice.provider === "fishaudio" })
+    renderReadingsReport(results, {
+      fishaudio: voice.provider === "fishaudio",
+      elevenlabs: voice.provider === "elevenlabs",
+    })
   );
   console.log(`readings: ${readingsPath}(全${results.length}行)`);
 
@@ -1283,6 +1437,15 @@ export async function runReadingsOnly(
     writeFileSync(readingsPath, renderReadingsReport(items, { fishaudio: true }));
     console.log(
       `readings-only(fishaudio): ${readingsPath}(全${items.length}行、読みは取得不可・表記ベース検査用)`
+    );
+    return;
+  }
+  if (voice.provider === "elevenlabs") {
+    const items = parsed.lines.map((line) => ({ line, kana: "" }));
+    const readingsPath = path.join(narrationDir, "readings.md");
+    writeFileSync(readingsPath, renderReadingsReport(items, { elevenlabs: true }));
+    console.log(
+      `readings-only(elevenlabs): ${readingsPath}(全${items.length}行、読みは取得不可・表記ベース検査用)`
     );
     return;
   }

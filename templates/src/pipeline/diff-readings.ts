@@ -226,8 +226,8 @@ function main(): void {
     }
   }
   const readingsMd = readFileSync(readingsPath, "utf-8");
-  if (readingsMd.includes("(fishaudio)")) {
-    console.error("readings.md が fishaudio 形式(実読みなし)のため diff できません");
+  if (readingsMd.includes("(fishaudio)") || readingsMd.includes("(elevenlabs)")) {
+    console.error("readings.md が fishaudio/elevenlabs 形式(実読みなし)のため diff できません");
     process.exit(2);
   }
   const rows = parseReadings(readingsMd);
