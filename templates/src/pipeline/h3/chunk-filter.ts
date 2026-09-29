@@ -48,9 +48,10 @@ export function headTrimFilter(skipHeadFrames: number): string {
 
 /**
  * 章カードは生成クリップを使わず紙色で合成する(2026-09-09: 板の窓の外へ1コマ漏れたとき
- * H3 が描いた章カードがチカッと見えた。下地を紙色にしておけば、万一漏れても板と同色で見えない)
+ * H3 が描いた章カードがチカッと見えた。下地を紙色にしておけば、万一漏れても板と同色で見えない)。
+ * **cardHoldSec のある章カード(cardHoldFrames あり)は合成しない** — 板は先頭だけで、残りは生成クリップを見せる(2026-09-29)
  */
-export const isSynthCard = (s: Pick<Segment, "card">): boolean => Boolean(s.card);
+export const isSynthCard = (s: Pick<Segment, "card" | "cardHoldFrames">): boolean => Boolean(s.card) && !s.cardHoldFrames;
 
 /** 伸縮・不足判定に使う「使えるフレーム数」。skipHeadFrames ぶんは捨てる。合成カードは目標そのもの */
 export function effectiveSourceFrames(s: Segment, rawFrames: number): number {

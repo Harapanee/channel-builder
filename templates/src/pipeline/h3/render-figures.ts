@@ -256,8 +256,33 @@ html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:${COLOR
 </body></html>`;
 }
 
-export function cardHash(num: string, name: string, startFrame: number, frames: number): string {
-  return createHash("sha1").update(JSON.stringify({ card: [num, name], startFrame, frames, v: 1 })).digest("hex").slice(0, 12);
+export function cardHash(num: string, name: string, startFrame: number, frames: number, fade = false): string {
+  // fade なし(従来)のハッシュは変えない(焼き済みの板を無駄に焼き直させないため)
+  const key = fade ? { card: [num, name], startFrame, frames, v: 1, fade: FADE_SEC } : { card: [num, name], startFrame, frames, v: 1 };
+  return createHash("sha1").update(JSON.stringify(key)).digest("hex").slice(0, 12);
+}
+
+/** PNG のアルファに a(0〜1)を掛ける。章カードの板の入り・抜け用(sharp の linear は帯の追加と併用できないため raw で掛ける) */
+export async function scaleAlpha(png: Buffer, a: number): Promise<Buffer> {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let p = 3; p < data.length; p += 4) data[p] = Math.round(data[p] * a);
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
+/** 章カードの板の尺(フレーム)。cuts.json の cardHoldSec があればその尺だけ、無ければ区間まるごと(2026-09-29) */
+export function cardBoardFrames(s: { frames: number; cardHoldFrames?: number }): number {
+  return s.cardHoldFrames ?? s.frames;
+}
+
+/**
+ * 章カードの板の i コマ目の不透明度。従来(fade なし)は全コマ 1。
+ * cardHoldSec のカードは図解と同じ FADE_SEC で入り・抜けする(下は生成クリップなので、抜けた先へ滑らかにつなぐ)
+ */
+export function cardOpacityAt(i: number, frames: number, fps: number, fade: boolean): number {
+  if (!fade) return 1;
+  const t = i / fps;
+  const d = frames / fps;
+  return Math.max(0, Math.min(1, t / FADE_SEC, (d - t) / FADE_SEC));
 }
 
 /** 各図解の 3/4 地点のフレームを灰色の下地に載せて1枚に並べる(工程12の目視用) */
@@ -359,7 +384,10 @@ async function main(): Promise<void> {
     return c ? [{ segment: s, num: c[0], name: c[1] }] : [];
   });
   console.log("章カード " + cards.length + "本(cuts.json の card から機械で焼く。H3 の文字は使わない)");
-  for (const c of cards) console.log("  card-" + c.segment.clipId + " " + c.segment.startSec.toFixed(1) + "秒〜 " + c.segment.frames + "F 「" + c.num + " / " + c.name + "」");
+  for (const c of cards) {
+    console.log("  card-" + c.segment.clipId + " " + c.segment.startSec.toFixed(1) + "秒〜 " + cardBoardFrames(c.segment) + "F 「" + c.num + " / " + c.name + "」"
+      + (c.segment.cardHoldFrames ? "(cardHoldSec: 板は先頭だけ・区間 " + c.segment.frames + "F の残りは生成クリップ)" : ""));
+  }
   if (opts.check) { console.log("✅ 宣言の検査OK(--check なので焼いていません)"); return; }
 
   const prev = readIndex(epId);
@@ -410,8 +438,9 @@ async function main(): Promise<void> {
     for (const c of cards) {
       const id = "card-" + c.segment.clipId;
       const startFrame = c.segment.offsetFrames;
-      const frames = c.segment.frames;
-      const hash = cardHash(c.num, c.name, startFrame, frames);
+      const frames = cardBoardFrames(c.segment);
+      const fade = Boolean(c.segment.cardHoldFrames);
+      const hash = cardHash(c.num, c.name, startFrame, frames, fade);
       const dir = join(figuresDir(epId), id);
       const entry: FigureIndexEntry = { id, kind: "card", dir, startFrame, frames, hash };
       const old = prevById.get(id);
@@ -435,7 +464,12 @@ async function main(): Promise<void> {
         const first = join(dir, "f00000.png");
         await page.screenshot({ path: first, animations: "disabled" });
         const buf = readFileSync(first);
-        for (let i = 1; i < frames; i++) writeFileSync(join(dir, "f" + String(i).padStart(5, "0") + ".png"), buf);
+        // cardHoldSec のカードは入り・抜けのコマだけアルファを掛ける(中は不透明のまま複製)
+        for (let i = fade ? 0 : 1; i < frames; i++) {
+          const a = cardOpacityAt(i, frames, OUT_FPS, fade);
+          const out = a >= 1 ? buf : await scaleAlpha(buf, a);
+          writeFileSync(join(dir, "f" + String(i).padStart(5, "0") + ".png"), out);
+        }
       } finally {
         await page.close();
       }

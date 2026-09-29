@@ -191,3 +191,11 @@ test("loadEpisodeFreshness: 古い形式(inputs 無し)は legacy、無いファ
     assert.deepEqual(r.legacy.map((l) => l.name), ["subs/subs.json"]);
   });
 });
+
+test("collectClipFingerprints: cardHoldSec の章カードは生成クリップを使うので数える", () => {
+  withDir((d) => {
+    writeFileSync(join(d, "cL02.mp4"), "yyy");
+    const got = collectClipFingerprints([{ ...seg("cL02", true), cardHoldFrames: 24 }], (s) => join(d, s.clipId + ".mp4"));
+    assert.deepEqual(Object.keys(got), ["cL02"]);
+  });
+});

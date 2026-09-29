@@ -58,3 +58,40 @@ test("章カードの板: 不透明な紙に番号と章名だけ(H3 に文字�
   assert.ok(!/opacity:0/.test(html), "全コマ同一。フェードや描画の進行は無い");
   assert.notEqual(cardHash("第一章", "a", 0, 10), cardHash("第一章", "b", 0, 10));
 });
+
+/* ---- cardHoldSec(2026-09-29) ---- */
+
+test("章カードの板の窓: cardHoldFrames があればその尺だけ、無ければ区間まるごと", async () => {
+  const { cardBoardFrames } = await import("./render-figures");
+  assert.equal(cardBoardFrames({ frames: 200, cardHoldFrames: 60 }), 60);
+  assert.equal(cardBoardFrames({ frames: 200 }), 200);
+});
+
+test("章カードの板の不透明度: 指定なしは全コマ 1、cardHoldSec では図解と同じ FADE_SEC で出入りする", async () => {
+  const { cardOpacityAt } = await import("./render-figures");
+  const { FADE_SEC } = await import("./figures");
+  const fps = 24, frames = 60;
+  for (let i = 0; i < frames; i++) assert.equal(cardOpacityAt(i, frames, fps, false), 1);
+  assert.equal(cardOpacityAt(0, frames, fps, true), 0, "入りは 0 から");
+  assert.equal(cardOpacityAt(30, frames, fps, true), 1, "中は不透明");
+  const fadeFrames = Math.ceil(FADE_SEC * fps);
+  assert.ok(cardOpacityAt(fadeFrames - 1, frames, fps, true) < 1);
+  assert.equal(cardOpacityAt(fadeFrames, frames, fps, true), 1);
+  const last = cardOpacityAt(frames - 1, frames, fps, true);
+  assert.ok(last > 0 && last < 0.2, "尻は 0 へ向かう: " + last);
+});
+
+test("cardHash: フェードの有無で変わる(指定なしの既存ハッシュは変えない)", async () => {
+  const { cardHash } = await import("./render-figures");
+  assert.equal(cardHash("一", "a", 0, 10), cardHash("一", "a", 0, 10, false));
+  assert.notEqual(cardHash("一", "a", 0, 10), cardHash("一", "a", 0, 10, true));
+});
+
+test("scaleAlpha: 不透明な板の PNG のアルファだけを掛ける(色は変えない)", async () => {
+  const { scaleAlpha } = await import("./render-figures");
+  const sharp = (await import("sharp")).default;
+  const buf = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 244, g: 241, b: 231 } } }).png().toBuffer();
+  const { data, info } = await sharp(await scaleAlpha(buf, 0.5)).raw().toBuffer({ resolveWithObject: true });
+  assert.equal(info.channels, 4);
+  assert.deepEqual([...data.subarray(0, 4)], [244, 241, 231, 128]);
+});

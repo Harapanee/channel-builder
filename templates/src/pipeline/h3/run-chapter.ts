@@ -26,7 +26,7 @@ import { COMFY_CLI, HEARTBEAT_FILE, LORA, ROOT, SAMPLER, SIGMA_SHIFT, SIZE_DEFAU
 import { isUsable } from "./assemble";
 import { findStaleChains } from "./chain-stale";
 import { freeName } from "./reject-clips";
-import { chapterCard, composePrompt } from "./compose";
+import { composePrompt, expandCardDecl } from "./compose";
 import { checkEndStateVocab, checkJobSet, checkLedger, checkPromptText } from "./check";
 import { endFramePath, genEndFrame } from "./end-frame";
 import type { Cut, CutsFile, Finding, ShotDecl, Vocab } from "./types";
@@ -43,9 +43,9 @@ export interface Job {
   lastFrameFile?: string;
 }
 
-/** 章カードは chapterCard() の定型に書き手の宣言を重ねる(check-h3-prompt と同じ順序) */
-export function fullDecl(decl: ShotDecl): ShotDecl {
-  return decl.card ? { ...chapterCard(decl.card[0], decl.card[1]), ...decl } : decl;
+/** 章カードは chapterCard() の定型に書き手の宣言を重ねる(check-h3-prompt と同じ順序)。台帳に cardHoldSec があれば宣言そのまま */
+export function fullDecl(decl: ShotDecl, cut?: Pick<Cut, "card" | "cardHoldSec">): ShotDecl {
+  return expandCardDecl(decl, cut);
 }
 
 /**
@@ -97,7 +97,7 @@ export function buildJob(
   lastFrameFile?: string,
 ): Job {
   const size = cut.hi ? SIZE_HI : SIZE_DEFAULT;
-  const full = fullDecl(decl);
+  const full = fullDecl(decl, cut);
   return {
     id,
     prompt: composePrompt(full, vocab, lastFrameFile ? { firstFrame: true, lastFrameAt: cut.seconds } : { firstFrame: Boolean(firstFrameFile) }),
@@ -408,7 +408,7 @@ async function main(): Promise<void> {
   const findings: Finding[] = [
     // 台帳と宣言の食い違いは「検査した文面」と「実際に投げる文面」を別物にする
     // (鎖の有無 = I2V 指示行の有無が変わる)。鎖は台帳から解決しているのでここで突合する
-    ...targets.flatMap((id) => checkLedger(id, fullDecl(shots[id]), cutsFile.cuts[id])),
+    ...targets.flatMap((id) => checkLedger(id, fullDecl(shots[id], cutsFile.cuts[id]), cutsFile.cuts[id])),
     ...targets.flatMap((id) => checkEndStateVocab(id, shots[id], cutsFile.cuts[id], vocab)),
     ...jobs.flatMap((j) => checkPromptText(j.id, j.prompt, {
       seconds: j.seconds, hasFirstFrame: Boolean(j.firstFrameFile), hasLastFrame: Boolean(j.lastFrameFile),

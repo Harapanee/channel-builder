@@ -58,3 +58,9 @@ test("assemble parseArgs: --allow-head-shortfall を受け取る(人間が見て
   assert.equal(parseArgs(["ep001", "--allow-head-shortfall"]).allowHeadShortfall, true);
   assert.equal(parseArgs(["ep001"]).allowHeadShortfall, false);
 });
+
+test("headSkipShortfalls: cardHoldSec の章カードは生成クリップを使うので通常カットと同じく数える", () => {
+  const got = headSkipShortfalls([{ ...seg("cL05", 200, 50, false, true), cardHoldFrames: 60 }], () => 212);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].clipId, "cL05");
+});

@@ -164,3 +164,9 @@ test("ambientPieceArgs: 無音の断片は anullsrc", () => {
   const args = ambientPieceArgs({ clipId: null, frames: 24, gainDb: -18, skipHeadFrames: 0 }, "", "/w/0001.wav", 24, 48000);
   assert.deepEqual(args, ["-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1.000000", "-c:a", "pcm_s16le", "/w/0001.wav"]);
 });
+
+test("cardHoldSec の章カード(cardHoldFrames あり)は生成クリップを使うので無音にしない", () => {
+  const hold: Segment = { ...cardSeg("cL02", 72, 48), cardHoldFrames: 24 };
+  const plan = ambientPlan([seg("cL01", 48, 0), hold], resolveAmbientConfig(undefined));
+  assert.deepEqual(plan.map((p) => p.clipId), ["cL01", "cL02"]);
+});

@@ -43,14 +43,15 @@ export interface HeadSkipShortfall {
 }
 
 export function headSkipShortfalls(
-  segments: { clipId: string; frames: number; skipHeadFrames: number; holdSlow: boolean; card?: boolean }[],
+  segments: { clipId: string; frames: number; skipHeadFrames: number; holdSlow: boolean; card?: boolean; cardHoldFrames?: number }[],
   rawFramesOf: (clipId: string) => number,
   opts: { maxStretch?: number } = {},
 ): HeadSkipShortfall[] {
   const max = opts.maxStretch ?? HEAD_SKIP_MAX_STRETCH;
   const out: HeadSkipShortfall[] = [];
   for (const s of segments) {
-    if (s.card || s.holdSlow || s.skipHeadFrames <= 0) continue;
+    // 合成の章カードは対象外。cardHoldSec の章カード(cardHoldFrames あり)は生成クリップを使うので数える
+    if ((s.card && !s.cardHoldFrames) || s.holdSlow || s.skipHeadFrames <= 0) continue;
     const raw = rawFramesOf(s.clipId);
     const remain = raw - s.skipHeadFrames;
     if (remain >= s.frames) continue;

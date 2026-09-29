@@ -16,7 +16,7 @@ import { basename, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { ROOT } from "./config";
 import { checkAdvisories, checkEndStateVocab, checkFirstWorst, checkJobSet, checkKeyframePresence, checkLedger, checkPlaceholderLeak, checkPromptText, checkUnusedVocab, checkSelfContained, checkSpeedup, checkVocabNegations, dropVocabOriginA6 } from "./check";
-import { chapterCard, composePrompt } from "./compose";
+import { composePrompt, expandCardDecl } from "./compose";
 import { endFramePrompt } from "./end-frame";
 import { speedupRatios, type TimingLine } from "./plan";
 import type { CutsFile, Finding, ShotDecl, Vocab } from "./types";
@@ -111,8 +111,8 @@ async function main(): Promise<void> {
     const shots = (await import(join(epDir, "shots", ch + ".ts"))).default as Record<string, ShotDecl>;
     for (const [id, raw] of Object.entries(shots)) {
       declared.add(id);
-      const decl: ShotDecl = raw.card ? { ...chapterCard(raw.card[0], raw.card[1]), ...raw } : raw;
       const cut = cuts.cuts[id];
+      const decl: ShotDecl = expandCardDecl(raw, cut);
       findings.push(...checkLedger(id, decl, cut));
       findings.push(...checkEndStateVocab(id, decl, cut, vocab));
       authored.push(decl.body ?? "", decl.endState ?? "", decl.sound ?? "");

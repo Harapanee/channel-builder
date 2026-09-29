@@ -61,6 +61,11 @@ export interface Segment {
   noSub: boolean;
   /** 章カード(cuts.json の card)。文字は h3:figures が不透明な板として焼くので、生成クリップが無ければ紙色で合成する */
   card?: boolean;
+  /**
+   * 章カードの板を出すフレーム数(cuts.json の cardHoldSec。区間で頭打ち)。
+   * あるときは板は先頭だけで、下は紙色合成ではなく生成クリップ(通常カットと同じ規則)。無ければ従来どおり
+   */
+  cardHoldFrames?: number;
 }
 
 /**
@@ -277,6 +282,9 @@ export function buildSegments(
       skipHeadFrames: Math.max(0, Math.floor(e.cut.skipHeadFrames ?? 0)),
       noSub: Boolean(e.cut.noSub),
       card: Boolean(e.cut.card),
+      ...(e.cut.card && typeof e.cut.cardHoldSec === "number" && e.cut.cardHoldSec > 0
+        ? { cardHoldFrames: Math.min(frames, Math.max(1, Math.round(e.cut.cardHoldSec * fps))) }
+        : {}),
     };
   });
 }
@@ -635,7 +643,7 @@ function main(): void {
     ? subsByLine(readSubsLedger(JSON.parse(readFileSync(ledgerPath, "utf8"))).entries)
     : undefined;
 
-  const missingClips = segments.filter((s) => !existsSync(clipPath(s)) && !s.card);
+  const missingClips = segments.filter((s) => !existsSync(clipPath(s)) && !synth(s));
   const synthCards = segments.filter(synth);
   if (synthCards.length > 0) console.log("章カード " + synthCards.length + "本は紙色で合成します(生成クリップは使わない。文字は figures の card-* が載る): " + synthCards.map((s) => s.clipId).join(", "));
   if (missingClips.length > 0) {
@@ -644,9 +652,9 @@ function main(): void {
     process.exit(1);
   }
   {
-    // 鎖の古さ(C9)。章カードは合成なので生成クリップの有無にかかわらず判定から外す
+    // 鎖の古さ(C9)。合成の章カードは生成クリップの有無にかかわらず判定から外す(cardHoldSec のカードは生成クリップを使うので判定する)
     const problems = staleChainProblems(cutsFile, (id) => {
-      if (cutsFile.cuts[id]?.card) return null;
+      if (cutsFile.cuts[id]?.card && !cutsFile.cuts[id]?.cardHoldSec) return null;
       const p = join(clipsDir(epId), id + ".mp4");
       return existsSync(p) ? statSync(p).mtimeMs : null;
     }, opts.allowStaleChains);

@@ -420,3 +420,22 @@ test("parseArgs: --allow-stale-chains を受け取る", () => {
   assert.equal(parseArgs(["ep001", "--allow-stale-chains"]).allowStaleChains, true);
   assert.equal(parseArgs(["ep001"]).allowStaleChains, false);
 });
+
+/* ---- cardHoldSec(2026-09-29) ---- */
+
+test("buildSegments: card に cardHoldSec があれば板のフレーム数(cardHoldFrames)を持つ。区間を超える値は区間で頭打ち", () => {
+  const card: [string, string] = ["第一章", "t"];
+  const segs = buildSegments(
+    { cL01: { ...cut(["L01"]), card, cardHoldSec: 1.5 }, cL02: { ...cut(["L02"]), card, cardHoldSec: 9 }, cL03: { ...cut(["L03"]), card } },
+    LINES, TOTAL, FPS,
+  );
+  assert.equal(segs[0].cardHoldFrames, 36);
+  assert.equal(segs[1].cardHoldFrames, segs[1].frames);
+  assert.equal(segs[2].cardHoldFrames, undefined, "指定なしは従来どおり(区間まるごと板)");
+  assert.equal(segs[2].card, true);
+});
+
+test("buildSegments: card の無いカットの cardHoldSec は無視する(check:h3 が BLOCK する)", () => {
+  const segs = buildSegments({ cL01: { ...cut(["L01", "L02", "L03"]), cardHoldSec: 2 } }, LINES, TOTAL, FPS);
+  assert.equal(segs[0].cardHoldFrames, undefined);
+});

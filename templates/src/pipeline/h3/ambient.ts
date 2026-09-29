@@ -56,7 +56,8 @@ export function resolveAmbientConfig(raw: {
  * ep040〜045 は全話で exclude に章カードと同じ集合を手書きしていた(その書き方も引き続き有効)。
  */
 function silenced(s: Segment, config: AmbientConfig): boolean {
-  return Boolean(s.card) || config.exclude.has(s.clipId);
+  // cardHoldSec の章カード(cardHoldFrames あり)は生成クリップを使うので音も使う(2026-09-29)
+  return (Boolean(s.card) && !s.cardHoldFrames) || config.exclude.has(s.clipId);
 }
 
 /**

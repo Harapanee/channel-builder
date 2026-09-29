@@ -574,7 +574,7 @@ export function checkJobSet(
  */
 const CUT_KEYS = new Set([
   "lineIds", "seconds", "place", "subject", "role",
-  "chain", "chainFrom", "hi", "text", "card", "holdSlow", "noSub", "skipHeadFrames", "keyframe",
+  "chain", "chainFrom", "hi", "text", "card", "cardHoldSec", "holdSlow", "noSub", "skipHeadFrames", "keyframe",
 ]);
 
 export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): Finding[] {
@@ -602,7 +602,8 @@ export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): F
   }
   const declCard = decl.card ? decl.card.join("|") : undefined;
   const cutCard = cut.card ? cut.card.join("|") : undefined;
-  const isChapterCard = Boolean(decl.card || cut.card);
+  // cardHoldSec のある章カードは定型(text: true 注入)を使わないので、text は通常カットと同じく突合する
+  const isChapterCard = Boolean(decl.card || cut.card) && cut.cardHoldSec === undefined;
 
   // 真偽値の3キーは Boolean() で正規化してから比べる(false と未指定は同じ扱い。
   // `a ?? undefined` は false を潰さないため素通しだと過剰BLOCKになる。2026-08-19 レビュー対応)。
@@ -626,6 +627,18 @@ export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): F
   }
   if (declCard !== cutCard) {
     out.push({ level: "BLOCK", id, rule: "B11", message: "card が食い違う(宣言=" + String(declCard) + " / 台帳=" + String(cutCard) + ")" });
+  }
+
+  // B17: cardHoldSec(章カードの板を先頭だけ出し、残りは生成クリップ)の契約。2026-09-29
+  if (cut.cardHoldSec !== undefined) {
+    const v = cut.cardHoldSec;
+    if (!cut.card) out.push({ level: "BLOCK", id, rule: "B17", message: "cardHoldSec は card のあるカットにだけ書ける" });
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+      out.push({ level: "BLOCK", id, rule: "B17", message: "cardHoldSec は正の秒数(受け取った値: " + String(v) + ")" });
+    }
+    if (!decl.body?.trim()) {
+      out.push({ level: "BLOCK", id, rule: "B17", message: "cardHoldSec のある章カードは定型を使わないので、宣言に body が要る(板の後ろに見せる場面を書く)" });
+    }
   }
 
   // B15: keyframe カット(両端画像+FL2VA)の契約。2026-09-21

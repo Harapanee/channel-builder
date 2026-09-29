@@ -131,11 +131,11 @@ export function clipFingerprint(st: { size: number; mtimeMs: number }): string {
   return st.size + ":" + st.mtimeMs;
 }
 
-/** 章カード以外で、実在するクリップの指紋を集める */
+/** 合成の章カード以外で、実在するクリップの指紋を集める(cardHoldSec の章カードは生成クリップを使うので数える) */
 export function collectClipFingerprints(segments: Segment[], clipPath: (s: Segment) => string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const s of segments) {
-    if (s.card) continue;
+    if (s.card && !s.cardHoldFrames) continue;
     const p = clipPath(s);
     if (!existsSync(p)) continue;
     out[s.clipId] = clipFingerprint(statSync(p));

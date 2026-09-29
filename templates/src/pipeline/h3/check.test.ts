@@ -848,3 +848,22 @@ test("A16: 引用符の中(画面内文字)の語は数えない", () => {
   const p = inBody('[Shot 2] At 00:03.000, the shot cuts to a sign reading "close shot".');
   assert.equal(advOf(checkPromptText("x", p, CTX), "A16").length, 0);
 });
+
+/* ---- cardHoldSec(2026-09-29) ---- */
+
+test("B17: cardHoldSec は card のあるカットに正の秒で書き、宣言に body が要る", () => {
+  const card: [string, string] = ["第一章", "誕生"];
+  const b17 = (f: ReturnType<typeof checkLedger>) => f.filter((x) => x.rule === "B17" && x.level === "BLOCK");
+  const ok = checkLedger("cL01", { card, body: "A wide shot.", sound: "s" }, { ...LEDGER_CUT, card, cardHoldSec: 2.5 });
+  assert.deepEqual(ok.filter((x) => x.level === "BLOCK"), [], "未知キー(B13)にもならない");
+  assert.equal(b17(checkLedger("cL01", { card, sound: "s" }, { ...LEDGER_CUT, card, cardHoldSec: 2.5 })).length, 1, "body 必須");
+  assert.equal(b17(checkLedger("cL01", { body: "b" }, { ...LEDGER_CUT, cardHoldSec: 2.5 })).length, 1, "card 無しは不可");
+  assert.equal(b17(checkLedger("cL01", { card, body: "b" }, { ...LEDGER_CUT, card, cardHoldSec: 0 })).length, 1, "0 以下は不可");
+  assert.equal(b17(checkLedger("cL01", { card, body: "b" }, { ...LEDGER_CUT, card, cardHoldSec: Number.NaN })).length, 1);
+});
+
+test("B11: cardHoldSec のある章カードは text を通常カットと同じく突合する(定型が text を注入しないため)", () => {
+  const card: [string, string] = ["第一章", "誕生"];
+  const f = checkLedger("cL01", { card, body: "b", text: true }, { ...LEDGER_CUT, card, cardHoldSec: 2 });
+  assert.ok(f.some((x) => x.rule === "B11" && /text/.test(x.message)));
+});

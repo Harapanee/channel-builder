@@ -106,3 +106,14 @@ test("buildChunkArgs: 出力先は最後の引数", () => {
 test("buildChunkArgs: 字幕も図解も無ければ null で出す", () => {
   assert.ok(filterOf(build({ overlays: [] })).endsWith("[cat]null[vout]"));
 });
+
+/* ---- cardHoldSec(章カードの板を先頭だけ出し、残りは生成クリップ。2026-09-29) ---- */
+
+test("cardHoldSec の章カードは合成しない: 生成クリップを読み、skipHeadFrames も通常カットと同じに効く", async () => {
+  const { isSynthCard } = await import("./chunk-filter");
+  const hold = seg({ card: true, cardHoldFrames: 60, frames: 120, skipHeadFrames: 5 });
+  assert.equal(isSynthCard(hold), false);
+  assert.equal(isSynthCard(seg({ card: true, frames: 120 })), true, "指定なしは従来どおり紙色合成");
+  assert.equal(effectiveSourceFrames(hold, 130), 125);
+  assert.deepEqual(clipInputArgs(hold, "/c/cL05.mp4", FPS), ["-i", "/c/cL05.mp4"]);
+});

@@ -359,3 +359,15 @@ test("B8: --plan は章内の古い鎖を警告する(他章のものは出さ�
   assert.equal(w1.length, 1);
   assert.match(w1[0], /cL03/);
 });
+
+/* ---- cardHoldSec(2026-09-29) ---- */
+
+test("cardHoldSec のある章カードは章カード定型ではなく宣言の body から生成する", () => {
+  const card: [string, string] = ["第一章", "海"];
+  const d: ShotDecl = { card, body: "A wide shot of the sea. The camera holds a static shot.", sound: "A hum." };
+  const hold = buildJob("cL01", d, cut({ card, cardHoldSec: 2.5 }), VOCAB);
+  assert.ok(hold.prompt.includes("A wide shot of the sea."), hold.prompt);
+  assert.ok(!hold.prompt.includes("chapter title card"));
+  const legacy = buildJob("cL01", { card }, cut({ card }), VOCAB);
+  assert.ok(legacy.prompt.includes("chapter title card"), "指定なしは従来どおり定型");
+});

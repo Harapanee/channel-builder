@@ -75,6 +75,7 @@ export default shots;
 値を決めるのは台帳(自分で変えない)が、**写すのは自分の仕事**である。
 
 - `card` を写したカットには `body` / `sound` を書かない(章カードの定型は合成器が作る)。`text` も書かない(合成器が立てる)
+- **ただし `cuts.json` のそのカットに `cardHoldSec` があれば、`body` / `sound` を通常カットと同じく書く**(板は先頭だけで、残りはこの文面から生成した場面が見える。定型は使われない。body が無いと check:h3 が B17 で止める)。`cardHoldSec` 自体は台帳の欄なので宣言へ写さない。`card` は写す
 - `chainFrom` は文字列(起点のカットID)。`chain` / `hi` / `text` は `true` のときだけ書く(`false` は書かなくてよい)
 - 写し忘れは自分では気づけない(このエージェントは検査を実行しない)。**書いたら台帳と1件ずつ照合する**
 - **写すのはこの5つだけ。** `holdSlow` / `keyframe` / `noSub` / `skipHeadFrames` / `seconds` / `place` / `subject` は台帳だけの欄で、`ShotDecl` に写すと typecheck が落ちる(実測で複数章)。これらは**書き方を変える合図として読むだけ**にする(`keyframe` のカットに書くのは `endState` と `chain`)

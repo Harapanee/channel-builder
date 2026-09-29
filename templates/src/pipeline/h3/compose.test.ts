@@ -104,3 +104,14 @@ test("lastFrameAt があれば FL2VA 行が先頭に付き、I2VA 行は付か�
   assert.ok(!p.includes(I2V_LINE));
   assert.ok(p.includes("integrated_multimodal_description: [Shot 1] "));
 });
+
+/* ---- cardHoldSec(2026-09-29) ---- */
+
+test("expandCardDecl: card は定型を重ね、cardHoldSec があれば宣言をそのまま使う", async () => {
+  const { expandCardDecl } = await import("./compose");
+  const card: [string, string] = ["一", "海"];
+  assert.ok(expandCardDecl({ card }, { card })?.body?.includes("chapter title card"));
+  assert.ok(expandCardDecl({ card }, undefined)?.body?.includes("chapter title card"));
+  assert.deepEqual(expandCardDecl({ card, body: "b" }, { card, cardHoldSec: 2 }), { card, body: "b" });
+  assert.deepEqual(expandCardDecl({ body: "b" }, undefined), { body: "b" });
+});

@@ -73,3 +73,13 @@ export function chapterCard(num: string, name: string): ShotDecl {
     sound: "One crisp wooden clack, then a quiet room tone.",
   };
 }
+
+/**
+ * 章カードの宣言を実際に投げる宣言へ展開する(run-chapter と check-h3-prompt の共通口)。
+ * card のあるカットは chapterCard() の定型に書き手の宣言を重ねる。
+ * **台帳に cardHoldSec があれば定型を使わない**(板は先頭だけで、残りは宣言の body/sound から生成した場面を見せる。2026-09-29)
+ */
+export function expandCardDecl(decl: ShotDecl, cut: { card?: [string, string]; cardHoldSec?: number } | undefined): ShotDecl {
+  if (!decl.card || cut?.cardHoldSec !== undefined) return decl;
+  return { ...chapterCard(decl.card[0], decl.card[1]), ...decl };
+}
