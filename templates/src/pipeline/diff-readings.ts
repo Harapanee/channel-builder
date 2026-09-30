@@ -84,7 +84,7 @@ export type ExpectedLine = { lineId: string; expected: string };
 export function parseExpectedReadings(md: string): ExpectedLine[] {
   const out: ExpectedLine[] = [];
   for (const raw of md.split("\n")) {
-    const m = /^\s*[-*]\s*\*\*(L\d+)\*\*\s*(.*)$/.exec(raw);
+    const m = /^\s*[-*]\s*\*\*(L\d+[a-z]?)\*\*\s*(.*)$/.exec(raw);
     if (!m) continue;
     out.push({ lineId: m[1], expected: m[2].trim() });
   }

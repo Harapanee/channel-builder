@@ -97,7 +97,7 @@ export function parseReadings(md: string): ReadingLine[] {
   const out: ReadingLine[] = [];
   const lines = md.split("\n");
   for (let i = 0; i < lines.length; i += 1) {
-    const head = /^- \*\*(L\d+)\*\* (.*)$/.exec(lines[i]);
+    const head = /^- \*\*(L\d+[a-z]?)\*\* (.*)$/.exec(lines[i]);
     if (!head) continue;
     const body = /^\s*- 読み: (.*)$/.exec(lines[i + 1] ?? "");
     out.push({ lineId: head[1], text: head[2], reading: body ? body[1] : "" });

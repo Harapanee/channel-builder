@@ -80,3 +80,11 @@ test("diffKana: 発音上の同値(日本・十・そういう・助詞へ)は�
   assert.equal(diffKana("ホカノサカナ", "タノサカナ").length, 1);
   assert.equal(diffKana("ソノアイダアナタワ", "ソノカンアナタワ").length, 1);
 });
+
+test("枝番の行ID(L33a)も拾う: 黙って読み飛ばすと追加行の誤読を見逃す", async () => {
+  const exp = parseExpectedReadings("- **L33** アナタ\n- **L33a** ノチノ\n- **L33b** イタミ");
+  assert.deepEqual(exp.map((r) => r.lineId), ["L33", "L33a", "L33b"]);
+  const { parseReadings } = await import("./check-readings");
+  const rows = parseReadings("- **L33a** のちの\n  - 読み: ノチノ\n- **L34** それから\n  - 読み: ソレカラ");
+  assert.deepEqual(rows.map((r) => r.lineId), ["L33a", "L34"]);
+});
