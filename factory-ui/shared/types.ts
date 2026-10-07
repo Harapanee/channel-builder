@@ -228,6 +228,7 @@ export type YoutubeUploadJob = {
   videoId?: string;        // 成功時のYouTube動画ID
   url?: string;            // https://www.youtube.com/watch?v=...
   error?: string;
+  warnings?: string[];     // done でも残る後段の失敗(再生リスト追加など)
   startedAt: string;       // ISO
   finishedAt?: string;
 };

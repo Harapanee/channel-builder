@@ -94,6 +94,10 @@ const IDENTICAL = [
   "src/schemas/episode.schema.json",
   "src/pipeline/validate-short-format.ts",
   "src/pipeline/validate-metadata.ts",
+  // 2026-10-07 追加(公開工程の自動化: studio-finish の結果契約と合否)
+  "src/pipeline/check-studio.ts",
+  "src/pipeline/check-studio.test.ts",
+  "src/schemas/studio-result.schema.json",
   "src/pipeline/validate-ledger.ts",
   "src/pipeline/finalize-episode.ts",
   // 2026-08-01 追加(コスト・並列度の実測。全経路で使う)
@@ -292,6 +296,9 @@ const VARIANT = [
   // サムネの構造型・言語規則は bible §13 のチャンネル教義に従属する(Thumbnail.tsx と同じ理由)。
   // 参照チャンネル分析に基づくレイアウト型等のチャンネル適合版を許容する
   ".claude/agents/publisher.md",
+  // 2026-10-07 追加: Studio 仕上げ。自己評価・終了画面の方針はチャンネルの決定なので汎用化版を許容する
+  ".claude/skills/studio-finish/SKILL.md",
+  ".claude/skills/studio-finish/references/studio-ui.md",
   // 約束(サムネ・タイトル)の回収位置は bible §4 の構成教義に従属する(2026-07-16:
   // 転生系chは「0〜30秒回収」不適用で冒頭から一生を時系列進行。テンプレ版は中立の参照実装)
   ".claude/agents/script-reviewer.md",

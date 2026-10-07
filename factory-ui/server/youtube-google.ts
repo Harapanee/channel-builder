@@ -111,6 +111,44 @@ export function loadYoutubeApi(root: string, redirectUri: string): YoutubeApi | 
       await yt.thumbnails.set({ videoId, media: { body: fs.createReadStream(thumbnailPath) } });
     },
 
+    async playlistHasVideo(token, playlistId, videoId, onToken) {
+      const yt = google.youtube({ version: 'v3', auth: makeClient(token, onToken) });
+      const res = await yt.playlistItems.list({ part: ['id'], playlistId, videoId, maxResults: 1 });
+      return (res.data.items?.length ?? 0) > 0;
+    },
+
+    async addToPlaylist(token, playlistId, videoId, onToken) {
+      const yt = google.youtube({ version: 'v3', auth: makeClient(token, onToken) });
+      await yt.playlistItems.insert({
+        part: ['snippet'],
+        requestBody: { snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } } },
+      });
+    },
+
+    async listPlaylists(token, onToken) {
+      const yt = google.youtube({ version: 'v3', auth: makeClient(token, onToken) });
+      const res = await yt.playlists.list({ part: ['snippet'], mine: true, maxResults: 50 });
+      return (res.data.items ?? []).map((p) => ({ id: p.id ?? '', title: p.snippet?.title ?? '' }));
+    },
+
+    async listPublishTimes(token, onToken) {
+      const yt = google.youtube({ version: 'v3', auth: makeClient(token, onToken) });
+      const ch = await yt.channels.list({ part: ['contentDetails'], mine: true });
+      const uploads = ch.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploads) return [];
+      const items = await yt.playlistItems.list({ part: ['contentDetails'], playlistId: uploads, maxResults: 50 });
+      const ids = (items.data.items ?? []).map((i) => i.contentDetails?.videoId).filter((v): v is string => !!v);
+      if (ids.length === 0) return [];
+      const vids = await yt.videos.list({ part: ['snippet', 'status'], id: ids, maxResults: 50 });
+      const out: string[] = [];
+      for (const v of vids.data.items ?? []) {
+        // 予約中は publishAt、公開済みは publishedAt。非公開で予約なし(下書き)は枠を埋めない
+        if (v.status?.publishAt) out.push(v.status.publishAt);
+        else if (v.status?.privacyStatus === 'public' && v.snippet?.publishedAt) out.push(v.snippet.publishedAt);
+      }
+      return out;
+    },
+
     async fetchAnalytics({ token, onToken, videoId }) {
       const auth = makeClient(token, onToken);
       const yta = google.youtubeAnalytics({ version: 'v2', auth });

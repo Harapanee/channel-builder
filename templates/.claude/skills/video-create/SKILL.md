@@ -19,7 +19,7 @@ description: このチャンネルの新規エピソード動画を制作する�
 3. **H3経路のエピソードを夜間レンダーキューへ投入しない。** 機械でも拒否される(`scripts/render-episode.sh`・`render-queue.sh add` は `h3Pipeline.episodes` の回を exit 3、factory-ui のキュー登録口は 409 `not_ready: h3 pipeline episode`、キューに残った H3 回は `failed(h3_pipeline)`)。拒否が無ければ、`composition.html` を持つ回は HF 実装を再レンダーして `out/final.mp4` を上書きし、H3の成果物を黙って捨てる(`out/` は .gitignore でgitから復元できない)。**`<stage>レンダー</stage>` も `kind:"render-check"` のゲートも出さない**。抜け道は無い — H3 回を HF で焼き直すなら `h3Pipeline.episodes` から外す
 4. **Pod には見張り役が付く**: `h3:pod -- up` / `wait-up` は起動と同時に watchdog を切り離しで立て、起動から6時間か無操作30分(`.heartbeat` 未更新。`h3:run` がクリップごとに打つ)で自動 down する(`--max-hours` / `--pod-max-hours` / `--idle-min`。上限なしにはできない)。**それでも作業後の `down` は必須**(見張りは保険であって停止手順ではない)
 
-**H3経路の運用モードとゲート**: 人間ゲートは 題材選定(0-a)・語彙帳承認(6.4)・プロンプト承認(7)・Pod 起動(8)・最終承認(12)。対話セッションでは各ゲートで AskUserQuestion を出して待つ。factory-ui ヘッドレスは manual のみ(砦1)で、各ゲートで `<gate>` を出して停止する。**自走**(ユーザーが対話セッションで「自走で進めてよい」と明示して離席したセッション)では、題材選定・語彙帳承認・プロンプト承認・Pod 起動(見張り役の既定上限のまま)・最終承認を**通過扱い**で進めてよい。その場合は終了前に HANDOFF.md(あれば。無ければ最終報告)へ「**自走で通過扱いにしたゲート**」を1つずつ根拠つきで列挙し、**起床後の人間目視を最終ゲート**とする。**自走でも越えてはいけないもの**: 公開(アップロード・公開設定・公開予約の変更)・公開済み回の差し替え・Pod の上限解除(`--max-hours` を既定より上げる・`--idle-min 0`・見張り役を止める)
+**H3経路の運用モードとゲート**: 人間ゲートは 題材選定(0-a)・語彙帳承認(6.4)・プロンプト承認(7)・Pod 起動(8)・最終承認(12)。対話セッションでは各ゲートで AskUserQuestion を出して待つ。factory-ui ヘッドレスは manual のみ(砦1)で、各ゲートで `<gate>` を出して停止する。**自走**(ユーザーが対話セッションで「自走で進めてよい」と明示して離席したセッション)では、題材選定・語彙帳承認・プロンプト承認・Pod 起動(見張り役の既定上限のまま)・最終承認を**通過扱い**で進めてよい。その場合は終了前に HANDOFF.md(あれば。無ければ最終報告)へ「**自走で通過扱いにしたゲート**」を1つずつ根拠つきで列挙し、**起床後の人間目視を最終ゲート**とする。**自走でも越えてはいけないもの**: 公開(アップロード・公開設定・公開予約の変更)・公開済み回の差し替え・Pod の上限解除(`--max-hours` を既定より上げる・`--idle-min 0`・見張り役を止める)。**自動公開を導入したチャンネル**(`channel/youtube-publish.json` に `dailySlotHourJst` がある)では、非公開+予約でのアップロード(`npm run youtube:publish -- <epId> --auto-slot`)と Studio 仕上げ(`/studio-finish <epId>`)を自走でも行う(即時公開・予約済み日時の変更・公開済み回の差し替えは引き続き人間だけ)
 
 **運用原則(モデル非依存)**: メインセッションの役割は監査・ゲート管理・ユーザー対話である。
 台本(script-director)・絵コンテとショット(visual-director)・調査と検証(fact-checker)・
@@ -399,7 +399,7 @@ mp4 非依存(レンダー前で成立する):
 npx tsx src/pipeline/render-thumbs.ts episodes/<epId>
 ```
 
-タイトルはbible(公開パッケージ節)の規定に従う — 固定型ならそのまま確定、3案方式ならユーザーが1案選定。**サムネは選定不要 — 3枚とも朝のアップロード時にYouTube Studio「テストと比較」へ投入**しABテストする(bibleの公開パッケージ節)。
+タイトルはbible(公開パッケージ節)の規定に従う — 固定型ならそのまま確定、3案方式ならユーザーが1案選定。**サムネは選定不要 — 3枚とも YouTube Studio の A/B テスト(テストと比較)へ投入**する(自動公開のチャンネルは studio-finish、それ以外は朝のアップロード時に人間が。bibleの公開パッケージ節)。
 publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像ブリーフ」から `publish/thumb-oneshot-{1..3}.png` を生成する(型5・正典`--ref`・16:9)。生成完了後に上のrender-thumbsを実行する。
 → `npm run status episodes/<epId> packaged`
 
@@ -407,12 +407,13 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 
 ### 【H3経路】人間レビュー → 承認(キューへは投入しない)
 
-提示するのは `npm run dev`(HFプレビュー)ではなく **工程9の assemble が出した mp4**(既定 `episodes/<epId>/out/final.mp4`。HF版が同居するエピソードは `--out` で付けた別名)である。サムネ3枚・タイトル・概要欄・`channel/review-checklist.md` の `@human` 項目をあわせて提示するのはHF経路と同じ。**図解の一覧 `h3/episodes/<epId>/figures/contact.jpg` と `publish/next-videos.json`(終了画面に置く2本。API に無いのでアップロード後に Studio で人間が置く)も添える**(板の文字が読めるか・誇張が無いか・出るタイミングが句に合っているかを見てもらう)。
+提示するのは `npm run dev`(HFプレビュー)ではなく **工程9の assemble が出した mp4**(既定 `episodes/<epId>/out/final.mp4`。HF版が同居するエピソードは `--out` で付けた別名)である。サムネ3枚・タイトル・概要欄・`channel/review-checklist.md` の `@human` 項目をあわせて提示するのはHF経路と同じ。**図解の一覧 `h3/episodes/<epId>/figures/contact.jpg` も添える**(板の文字が読めるか・誇張が無いか・出るタイミングが句に合っているかを見てもらう)。
 
 **承認ゲート**: ヘッドレス(Factory UI)では `<gate>` を出して停止する。**`kind:"render-check"` を使わない** — この種別を承認するとサーバーが夜間レンダーキューへ自動登録し、`render-episode.sh` が composition.html を見つけてHF実装を焼き、H3の成果物を上書きする。`kind:"h3-final-check"` を明示し、`gateId` に `render-check` を含めない。対話セッションでは AskUserQuestion で承認を得る。
 
 **承認後の完了処理(H3経路の終点)**:
 
+- **自動公開のチャンネル**では、assemble の後・finalize の前に `npm run youtube:publish -- <epId> --auto-slot`(API で公開済み・予約中を読み、毎日の公開枠の空いている最も早い日を publishAt に書いて非公開+予約でアップロードし、再生リストへ追加する。公開まで memberEarlyAccess.hours を切る枠ではメンバー先行と概要欄の案内行を自動で外す。exit 2=安全装置・exit 1 で再生リストだけ失敗なら `--playlist-only`)。finalize の後に `/studio-finish <epId>` → `npm run check:studio episodes/<epId>`(exit 1 なら未完の項目を HANDOFF へ)
 - **assemble(工程9)を先に済ませてから** `npm run finalize episodes/<epId>` を実行する。H3 回は終端 status を **`final`** にし、metrics(所要時間・コストはセッション記録から機械計測。画像生成数はサムネ・keyframe 終点・library 素材を実数で数え、数えられなければ記録しない。`--images` は既定で不要)・backlog 消し込み・git commit(`h3/episodes/<epId>`・`h3/vocab/<epId>.ts`・`publish/upload-result.json` を含む)まで行う
 - **`scripts/render-queue.sh` へ投入しない。キュー登録の curl も打たない。** 工程9の assemble の完了が最終物である(キュー・レンダー・factory-ui の登録口は H3 回を機械的に拒否し、エピソード詳細に「夜間レンダーキューへ」は出ない)
 - 工程8-7 の head-scan の結果と反映した skipHeadFrames も提示物に含める(顔・手のゴミコマは目視でしか拾えない)。自走で通過扱いにした場合は、上の提示物と「自走で通過扱いにしたゲート」を引き継ぎに列挙する
@@ -447,9 +448,10 @@ HF経路のレンダーは**前後にゲート**を持つ:
 
 QA落ち・レンダー失敗は朝の Factory UI に赤表示される → 日中に通常ジョブ(途中再開)で修正 → 工程9(検査)から再確認 → 再承認 or UIの「再キュー」で再投入。
 
-## 13. 朝: 確認・アップロード(手動)
+## 13. 朝: 確認・アップロード
 
-Factory UI でQA結果と final.mp4 を確認し、YouTube Studio へ手動アップロードする。サムネ3枚は「テストと比較」へ投入しABテストする。
+**自動公開のチャンネル**: Studio で予約済みの動画を目視する(問題があれば予約を取り消す)。`check:studio` が未完なら `/studio-finish <epId>`。
+**それ以外**: Factory UI でQA結果と final.mp4 を確認し、YouTube Studio へ手動アップロードする。サムネ3枚は「テストと比較」へ投入しABテストする。
 「テストと比較」の結果が出たら、factory-ui のエピソード詳細か `npm run record:thumb-test -- <epId> --winner <1|2|3> [--shares a,b,c] [--note ...]` で `publish/thumb-test.json` に勝者と所感を記録する(channel-refineの入力になる)。
 
 **アナリティクスを取り直したとき**(手で回す。定期実行しない): スナップショットと Studio「コンテンツ」の CSV を `docs/analytics/` に置いた後、`npm run analytics:ledger -- docs/analytics/<日付>-snapshot.json docs/analytics/<日付>-studio-content.csv [--dry-run]` — 公開後7日以上の回の実測を台帳 `performance` へ、選定時の採点を `themeScores` へ書き、`docs/analytics/<asOf>-axis-check.md`(題材採点の軸と実測の順位相関)を出す。

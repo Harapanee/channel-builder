@@ -21,6 +21,8 @@
     "qa": "tsx src/pipeline/qa.ts",
     "validate:short-format": "tsx src/pipeline/validate-short-format.ts",
     "validate:metadata": "tsx src/pipeline/validate-metadata.ts",
+    "youtube:publish": "tsx ../factory-ui/scripts/youtube-publish.ts .",
+    "check:studio": "tsx src/pipeline/check-studio.ts",
     "lint:script": "tsx src/pipeline/lint-script.ts",
     "validate:ledger": "tsx src/pipeline/validate-ledger.ts",
     "finalize": "tsx src/pipeline/finalize-episode.ts",

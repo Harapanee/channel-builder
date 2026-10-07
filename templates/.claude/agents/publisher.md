@@ -108,7 +108,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
   【制作工程・AI利用の開示】
   この動画は当チャンネルのオリジナル制作です。台本は資料調査に基づくオリジナル執筆、映像は自作プログラム(Remotion)による独自描画、ナレーションは合成音声(VOICEVOX)です。
 
-- `publishAt`(任意)は公開予約日時(ISO8601)。書く場合は `privacyStatus: "private"` のまま(公開予約はアップロード側が処理)
+- `publishAt`(任意)は公開予約日時(ISO8601)。書く場合は `privacyStatus: "private"` のまま(公開予約はアップロード側が処理)。自動公開のチャンネルでは値は仮置きでよい — `youtube:publish --auto-slot` が API で実際の空き枠を読んで上書きする
 - `memberEarlyAccess: { "hours": <N> }`(任意)はメンバーシップの先行公開の宣言。**bible §13 がメンバー先行公開を規定するチャンネルの本編でのみ**書く。書く場合は `publishAt` が必須になり、概要欄のクレジットの後(productionNotes の前)に定型行「メンバーシップに加入すると、本編を一般公開の<N>時間前に見られます。」を**逐語**で入れる(validate-metadata が hours と突合する)。Studio 側の「メンバーに先行公開」は API に無いので人間が工程12で有効にする(review-checklist の `@human`)。ショートには書かない
 
 # 出力4: `channel/episode-ledger.json` への追記
@@ -178,7 +178,7 @@ factory-uiのYouTubeアップロードが読む機械可読契約(`src/schemas/m
 
 # 「次に見る」の追記
 
-metadata.json を書いたあと、必ず `npm run next-videos episodes/<epId> -- --apply` を実行する(analytics の実測から登録/1k再生の高い本編2本を選び(公開後7〜60日を優先。登録数が無ければ平均視聴率)、概要欄の末尾へ「▶ 次に見る」を足す。`publish/next-videos.json` も出る)。そのあと `npm run validate:metadata episodes/<epId>` を通す。候補が無い(スナップショットが無い・公開後7日以上の本編が無い)ときはその旨を報告に書き、追記しない。終了画面の設定は人間が Studio で行う(報告に next-videos.json のパスを書く)。
+metadata.json を書いたあと、必ず `npm run next-videos episodes/<epId> -- --apply` を実行する(analytics の実測から登録/1k再生の高い本編2本を選び(公開後7〜60日を優先。登録数が無ければ平均視聴率)、概要欄の末尾へ「▶ 次に見る」を足す。`publish/next-videos.json` も出る)。そのあと `npm run validate:metadata episodes/<epId>` を通す。候補が無い(スナップショットが無い・公開後7日以上の本編が無い)ときはその旨を報告に書き、追記しない。終了画面は、自動公開のチャンネルでは studio-finish が置く(既定は「視聴者に適したコンテンツ+最新のアップロード」)。それ以外は人間が Studio で行う(報告に next-videos.json のパスを書く)。
 
 ## 最終報告の形式(usage規律)
 

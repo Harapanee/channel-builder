@@ -207,7 +207,9 @@ npm run audio-mix episodes/<ep>  # ナレーション+BGM+SE → narration/maste
 npm run check:audio episodes/<ep>   # 音声の配線検査(レンダー前ゲート)
 npm run check:readings episodes/<ep>   # 誤読リスクの機械抽出(既知の型。reading-checker の前段)
 npm run diff:readings episodes/<ep>    # 期待読み(expected-readings.md)と VOICEVOX 実読みの機械diff(未知の誤読。差分行だけ出す)
-npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記(終了画面は Studio で人間が置く)
+npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記
+npm run youtube:publish -- <ep> --auto-slot     # 自動公開: 毎日の公開枠の空き日へ非公開+予約でアップロード+再生リスト追加(--show-slot は表示だけ)
+npm run check:studio episodes/<ep>             # /studio-finish(Studio の A/B テスト・収益化・メンバー先行・終了画面)の結果を検証
 npm run check:h3 -- <ep> [章ID] [--dump <出力先>]   # 【H3】生成前のプロンプト検査(BLOCKゼロまで生成しない)
 #   ADVISE A13: overall_soundscape で広帯域の持続音(steady wind + continuous rustle 等)を2つ以上重ねるとノイズ床になる(2026-09-18)
 npm run h3:pod -- status|up|down                    # 【H3】Pod の状態・起動(要確認・H3_ALLOW_GPU=1)・停止(必ず)
@@ -243,4 +245,4 @@ cat .channel-system.json         # 状態
 
 また `npm run validate` は全チャンネル共通で**必須props検査(Rule 10)**を行う: コンポーネント別の必須props欠落(例: ComparisonSplit の left/right/mode)・絵コンテ残骸 `placeholderAssets` を検出する(プレースホルダpropsのままレンダーへ進む事故の防止)。チャンネル固有の必須propsは `channel/required-props.json`(任意。例: `{"Outro": ["channelName"]}`)で拡張できる。
 
-`publish/metadata.json` は `aiDisclosure`(YouTubeの改変コンテンツ開示。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。通常はfalse)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。`memberEarlyAccess: {hours}`(任意)はメンバーシップの先行公開の宣言で、`publishAt` と概要欄の定型行「メンバーシップに加入すると、本編を一般公開の<N>時間前に見られます。」を validate:metadata が要求する(Studio の「メンバーに先行公開」は API に無く、人間が工程12で有効にする)。
+`publish/metadata.json` は `aiDisclosure`(YouTubeの改変コンテンツ開示。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。通常はfalse)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。`memberEarlyAccess: {hours}`(任意)はメンバーシップの先行公開の宣言で、`publishAt` と概要欄の定型行「メンバーシップに加入すると、本編を一般公開の<N>時間前に見られます。」を validate:metadata が要求する(Studio の「メンバーに先行公開」は API に無い。自動公開のチャンネルは `/studio-finish` が Claude in Chrome で設定し、それ以外は人間が有効にする)。自動公開は `channel/youtube-publish.json`(`playlists.episode`・`dailySlotHourJst`・`minLeadHours`)で有効になる。

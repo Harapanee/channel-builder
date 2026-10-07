@@ -14,6 +14,7 @@ import type {
   YoutubeUploadJob,
 } from '../shared/types';
 import { validateMetadata, isSafeRel } from './youtube-metadata';
+import { readPublishConfig } from './youtube-publish-config';
 
 export type StoredToken = {
   access_token?: string;
@@ -40,6 +41,9 @@ export type FetchAnalyticsParams = {
   videoId: string;
 };
 
+/** 再生リスト1件ごとの追加結果(upload-result.json の playlists に書く) */
+export type PlaylistResult = { id: string; status: 'added' | 'already' | 'failed'; error?: string };
+
 export type FetchAnalyticsResult = {
   metrics: Record<string, number>;
   retentionCurve: RetentionPoint[];
@@ -57,6 +61,21 @@ export interface YoutubeApi {
     onToken: (t: StoredToken) => void,
   ): Promise<void>;
   fetchAnalytics(params: FetchAnalyticsParams): Promise<FetchAnalyticsResult>;
+  playlistHasVideo(
+    token: StoredToken,
+    playlistId: string,
+    videoId: string,
+    onToken: (t: StoredToken) => void,
+  ): Promise<boolean>;
+  addToPlaylist(
+    token: StoredToken,
+    playlistId: string,
+    videoId: string,
+    onToken: (t: StoredToken) => void,
+  ): Promise<void>;
+  listPlaylists(token: StoredToken, onToken: (t: StoredToken) => void): Promise<{ id: string; title: string }[]>;
+  /** 直近アップロードの公開時刻(公開済み=publishedAt・予約中=publishAt)。毎日投稿の空き枠判定用 */
+  listPublishTimes(token: StoredToken, onToken: (t: StoredToken) => void): Promise<string[]>;
 }
 
 /**
@@ -326,6 +345,61 @@ export class YoutubeManager extends EventEmitter {
     return data;
   }
 
+  /**
+   * channel/youtube-publish.json の再生リストへ追加し、upload-result.json の playlists を書き戻す。
+   * 動画の再アップロードはしない。すでに入っているリストには追加しない(再実行で重複させない)。
+   * 1件の失敗で他を止めない(結果に failed を残す)。
+   */
+  async addToPlaylists(dir: string, epId: string, kind: UploadKind = 'episode'): Promise<PlaylistResult[]> {
+    const api = this.api;
+    if (!api) throw new Error('no_auth: youtube-client.json が未設置です');
+    const token = this.readToken(dir);
+    if (!token) throw new Error('no_auth: このチャンネルはYouTube未連携です');
+    const resultPath = path.join(this.targetDir(dir, epId, kind), 'publish', 'upload-result.json');
+    let result: Record<string, unknown>;
+    try {
+      result = JSON.parse(await fsp.readFile(resultPath, 'utf8')) as Record<string, unknown>;
+    } catch {
+      throw new Error('not_found: まだアップロードされていません');
+    }
+    const videoId = result.videoId;
+    if (typeof videoId !== 'string' || videoId === '') throw new Error('not_found: upload-result.json に videoId がありません');
+    const onToken = (t: StoredToken) => void this.saveToken(dir, t).catch(() => {});
+    const cfg = readPublishConfig(this.channelDir(dir));
+    const out: PlaylistResult[] = [];
+    for (const id of kind === 'short' ? cfg.playlists.short : cfg.playlists.episode) {
+      try {
+        if (await api.playlistHasVideo(token, id, videoId, onToken)) {
+          out.push({ id, status: 'already' });
+        } else {
+          await api.addToPlaylist(token, id, videoId, onToken);
+          out.push({ id, status: 'added' });
+        }
+      } catch (err) {
+        out.push({ id, status: 'failed', error: String(err instanceof Error ? err.message : err) });
+      }
+    }
+    await fsp.writeFile(resultPath, JSON.stringify({ ...result, playlists: out }, null, 2));
+    return out;
+  }
+
+  /** 連携チャンネルの再生リスト一覧(youtube-publish.json に書くIDを選ぶ用) */
+  async listPlaylists(dir: string): Promise<{ id: string; title: string }[]> {
+    const api = this.api;
+    if (!api) throw new Error('no_auth: youtube-client.json が未設置です');
+    const token = this.readToken(dir);
+    if (!token) throw new Error('no_auth: このチャンネルはYouTube未連携です');
+    return api.listPlaylists(token, (t) => void this.saveToken(dir, t).catch(() => {}));
+  }
+
+  async listPublishTimes(dir: string): Promise<string[]> {
+    const api = this.api;
+    if (!api) throw new Error('no_auth: youtube-client.json が未設置です');
+    const token = this.readToken(dir);
+    if (!token) throw new Error('no_auth: このチャンネルはYouTube未連携です');
+    return api.listPublishTimes(token, (t) => void this.saveToken(dir, t).catch(() => {}));
+  }
+
   private emitUpdate(job: YoutubeUploadJob): void {
     this.emit('update', { ...job });
   }
@@ -477,26 +551,40 @@ export class YoutubeManager extends EventEmitter {
       });
       job.videoId = videoId;
       job.url = `https://www.youtube.com/watch?v=${videoId}`;
+      // videoId を得たら真っ先に upload-result.json を書く(後段が落ちても再実行が duplicate: で止まり、
+      // 同じ回を二重に予約しない)。サムネ・再生リストの失敗は done のまま warnings に残す
+      const warnings: string[] = [];
+      const result: Record<string, unknown> = {
+        videoId,
+        url: job.url,
+        privacyStatus: ctx.meta.privacyStatus,
+        uploadedAt: new Date().toISOString(),
+        videoFile: job.videoFile,
+      };
+      await fsp.writeFile(ctx.resultPath, JSON.stringify(result, null, 2));
       if (ctx.thumbnailPath) {
         job.status = 'setting_thumbnail';
         this.persistJobs();
         this.emitUpdate(job);
-        await api.setThumbnail(ctx.token, videoId, ctx.thumbnailPath, onToken);
+        try {
+          await api.setThumbnail(ctx.token, videoId, ctx.thumbnailPath, onToken);
+          result.thumbnail = 'set';
+        } catch (err) {
+          result.thumbnail = 'failed';
+          warnings.push(`サムネの設定に失敗: ${String(err instanceof Error ? err.message : err)}`);
+        }
+        await fsp.writeFile(ctx.resultPath, JSON.stringify(result, null, 2));
       }
-      await fsp.writeFile(
-        ctx.resultPath,
-        JSON.stringify(
-          {
-            videoId,
-            url: job.url,
-            privacyStatus: ctx.meta.privacyStatus,
-            uploadedAt: new Date().toISOString(),
-            videoFile: job.videoFile,
-          },
-          null,
-          2,
-        ),
-      );
+      // 動画は上がっているので、再生リストの失敗は done のまま warnings に残す(再実行は addToPlaylists)
+      try {
+        const pls = await this.addToPlaylists(job.dir, job.epId, job.kind ?? 'episode');
+        for (const p of pls.filter((x) => x.status === 'failed')) {
+          warnings.push(`再生リスト ${p.id} への追加に失敗: ${p.error}`);
+        }
+      } catch (err) {
+        warnings.push(`再生リストの追加に失敗: ${String(err instanceof Error ? err.message : err)}`);
+      }
+      if (warnings.length) job.warnings = warnings;
       job.status = 'done';
     } catch (err) {
       job.status = 'failed';

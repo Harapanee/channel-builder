@@ -22,6 +22,10 @@ function makeFakeApi(overrides: Partial<YoutubeApi> = {}): YoutubeApi {
     upload: async () => 'vid-123',
     setThumbnail: async () => {},
     fetchAnalytics: async () => ({ metrics: {}, retentionCurve: [] }),
+    playlistHasVideo: async () => false,
+    addToPlaylist: async () => {},
+    listPlaylists: async () => [],
+    listPublishTimes: async () => [],
     ...overrides,
   };
 }
@@ -302,5 +306,120 @@ describe('YoutubeManager アップロード', () => {
     const noAuth = new YoutubeManager(root, () => makeFakeApi());
     await expect(noAuth.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' }))
       .rejects.toThrow(/^no_auth: /);
+  });
+});
+
+describe('再生リスト追加', () => {
+  let root: string;
+  beforeEach(() => {
+    root = makeRoot();
+    makeEpisode(root);
+    fs.writeFileSync(
+      path.join(root, 'ch-a', 'channel', 'youtube-publish.json'),
+      JSON.stringify({ playlists: { episode: ['PLmain'], short: ['PLshort'] } }),
+    );
+  });
+
+  async function connected(api?: Partial<YoutubeApi>): Promise<YoutubeManager> {
+    const m = new YoutubeManager(root, () => makeFakeApi(api));
+    await m.handleCallback('code', 'ch-a');
+    return m;
+  }
+  const resultOf = (sub = 'episodes/ep001') =>
+    JSON.parse(fs.readFileSync(path.join(root, 'ch-a', sub, 'publish', 'upload-result.json'), 'utf8'));
+
+  it('アップロード後に本編リストへ追加し、結果を upload-result に書く', async () => {
+    const added: string[] = [];
+    const m = await connected({ addToPlaylist: async (_t, pl) => { added.push(pl); } });
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    const fin = await done;
+    expect(fin.warnings).toBeUndefined();
+    expect(added).toEqual(['PLmain']);
+    expect(resultOf().playlists).toEqual([{ id: 'PLmain', status: 'added' }]);
+  });
+
+  it('追加に失敗しても動画は done のまま、failed と warnings を残す', async () => {
+    const m = await connected({ addToPlaylist: async () => { throw new Error('boom'); } });
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    const fin = await done;
+    expect(fin.warnings?.[0]).toMatch(/PLmain/);
+    expect(resultOf().videoId).toBe('vid-123');
+    expect(resultOf().playlists).toEqual([{ id: 'PLmain', status: 'failed', error: 'boom' }]);
+  });
+
+  it('addToPlaylists の再実行は、すでに入っていれば追加しない', async () => {
+    let calls = 0;
+    const m = await connected({ playlistHasVideo: async () => true, addToPlaylist: async () => { calls++; } });
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    await done;
+    expect(await m.addToPlaylists('ch-a', 'ep001')).toEqual([{ id: 'PLmain', status: 'already' }]);
+    expect(calls).toBe(0);
+    expect(resultOf().videoId).toBe('vid-123');
+  });
+
+  it('upload-result が無ければ addToPlaylists は not_found:', async () => {
+    const m = await connected();
+    await expect(m.addToPlaylists('ch-a', 'ep001')).rejects.toThrow(/^not_found: /);
+  });
+
+  it('ショートは short のリストへ入り、本編リストへは入らない', async () => {
+    const sh = path.join(root, 'ch-a', 'shorts', 'sh001');
+    fs.mkdirSync(path.join(sh, 'out'), { recursive: true });
+    fs.mkdirSync(path.join(sh, 'publish'), { recursive: true });
+    fs.writeFileSync(path.join(sh, 'out', 'final.mp4'), Buffer.alloc(16));
+    fs.writeFileSync(
+      path.join(sh, 'publish', 'metadata.json'),
+      JSON.stringify({ title: 's', description: 'd', tags: [], categoryId: '24' }),
+    );
+    const added: string[] = [];
+    const m = await connected({ addToPlaylist: async (_t, pl) => { added.push(pl); } });
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'sh001', videoFile: 'out/final.mp4', kind: 'short' });
+    await done;
+    expect(added).toEqual(['PLshort']);
+    expect(resultOf('shorts/sh001').playlists).toEqual([{ id: 'PLshort', status: 'added' }]);
+  });
+
+  it('設定ファイルが無ければ再生リストに触れず done', async () => {
+    fs.rmSync(path.join(root, 'ch-a', 'channel', 'youtube-publish.json'));
+    let calls = 0;
+    const m = await connected({ addToPlaylist: async () => { calls++; } });
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    await done;
+    expect(calls).toBe(0);
+    expect(resultOf().playlists).toEqual([]);
+  });
+});
+
+describe('公開枠の読み取り', () => {
+  it('listPublishTimes は API の時刻をそのまま返す(未連携は no_auth:)', async () => {
+    const root = makeRoot();
+    const m = new YoutubeManager(root, () => makeFakeApi({ listPublishTimes: async () => ['2026-10-07T09:00:00Z'] }));
+    await expect(m.listPublishTimes('ch-a')).rejects.toThrow(/^no_auth: /);
+    await m.handleCallback('code', 'ch-a');
+    expect(await m.listPublishTimes('ch-a')).toEqual(['2026-10-07T09:00:00Z']);
+  });
+});
+
+describe('サムネ設定の失敗(最終レビュー C1)', () => {
+  it('アップロード後にサムネ設定が落ちても upload-result を残し done+warnings、再実行は duplicate:', async () => {
+    const root = makeRoot();
+    makeEpisode(root);
+    const m = new YoutubeManager(root, () => makeFakeApi({ setThumbnail: async () => { throw new Error('thumb 403'); } }));
+    await m.handleCallback('code', 'ch-a');
+    const done = waitStatus(m, 'done');
+    await m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' });
+    const fin = await done;
+    expect(fin.warnings?.join()).toMatch(/thumb 403/);
+    const result = JSON.parse(
+      fs.readFileSync(path.join(root, 'ch-a', 'episodes', 'ep001', 'publish', 'upload-result.json'), 'utf8'),
+    );
+    expect(result.videoId).toBe('vid-123');
+    expect(result.thumbnail).toBe('failed');
+    await expect(m.startUpload({ dir: 'ch-a', epId: 'ep001', videoFile: 'out/final.mp4' })).rejects.toThrow(/^duplicate: /);
   });
 });

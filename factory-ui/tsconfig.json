@@ -13,5 +13,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["server", "web/src", "shared"]
+  "include": ["server", "web/src", "shared", "scripts"]
 }

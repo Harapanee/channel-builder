@@ -58,6 +58,10 @@ const fakeApi: YoutubeApi = {
   getChannelTitle: async () => 'ch-title',
   upload: async () => 'vid-1',
   setThumbnail: async () => {},
+  playlistHasVideo: async () => false,
+  addToPlaylist: async () => {},
+  listPlaylists: async () => [],
+  listPublishTimes: async () => [],
   fetchAnalytics: async () => ({ metrics: {}, retentionCurve: [] }),
 };
 

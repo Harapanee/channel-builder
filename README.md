@@ -51,6 +51,8 @@ UIからのYouTubeアップロードを使う場合は、Google Cloud の OAuth 
 
 `youtube-client.json`(クライアントシークレット)はコミットしないでください(`.gitignore` 済み)。
 
+連携後は、完成した回を CLI で自動公開できます(チャンネルフォルダで `npm run youtube:publish -- <epId> --auto-slot`。毎日の公開枠の空き日へ非公開+予約でアップロードし、再生リストへ追加)。設定は各チャンネルの `channel/youtube-publish.json`(`playlists.episode`・`dailySlotHourJst`・`minLeadHours`)。API に無い Studio の項目(A/B テスト・収益化・メンバー先行・終了画面)は `/studio-finish <epId>` が Claude in Chrome で設定します。
+
 ## 更新
 
 ```bash
