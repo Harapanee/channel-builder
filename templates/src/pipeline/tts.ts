@@ -927,6 +927,9 @@ const TTS_READING_SUBSTITUTIONS: { pattern: RegExp; replace: string }[] = [
   { pattern: /血管/g, replace: "けっかん" },
   // ep042: 「八頭」が ヤツガシラ(数詞+助数詞は辞書で拾えない)
   { pattern: /八頭/g, replace: "はっとう" },
+  // ep005(人物): user-dict 登録でも「源太」がミナモトフトシ。「峠道」がトウゲドウ
+  { pattern: /源太/g, replace: "げんた" },
+  { pattern: /峠道/g, replace: "とうげみち" },
   // ep038: 「管」(クダ)の登録に引きずられ「管理」がクダリになる。user-dict の「管理」登録でも負けた
   { pattern: /管理/g, replace: "かんり" },
   // ep059: 助数詞「羽」の促音化(ジュウワ→ジュッパ・サンワ→サンバ)と「二、三日」(ニ、ミッカ)
