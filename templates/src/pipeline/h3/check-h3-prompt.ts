@@ -15,7 +15,7 @@
 import { basename, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { ROOT } from "./config";
-import { checkAdvisories, checkEndStateVocab, checkFirstWorst, checkJobSet, checkKeyframePresence, checkLedger, checkPlaceholderLeak, checkPromptText, checkUnusedVocab, checkSelfContained, checkSpeedup, checkVocabNegations, dropVocabOriginA6 } from "./check";
+import { checkAdvisories, checkEndStateVocab, checkFirstWorst, checkChapterCards, checkJobSet, checkKeyframePresence, checkLedger, checkPlaceholderLeak, checkPromptText, checkUnusedVocab, checkSelfContained, checkSpeedup, checkVocabNegations, dropVocabOriginA6 } from "./check";
 import { composePrompt, expandCardDecl } from "./compose";
 import { endFramePrompt } from "./end-frame";
 import { speedupRatios, type TimingLine } from "./plan";
@@ -27,6 +27,13 @@ function firstWorstDeadline(): number | null | undefined {
   if (!existsSync(p)) return undefined;
   const v = (JSON.parse(readFileSync(p, "utf8")) as { h3Pipeline?: { firstWorstDeadlineSec?: number | null } }).h3Pipeline?.firstWorstDeadlineSec;
   return v;
+}
+
+/** .channel-system.json の h3Pipeline.chapterCards(false=章カードを使わない・未指定=使う) */
+function chapterCardsEnabled(): boolean | undefined {
+  const p = join(ROOT, ".channel-system.json");
+  if (!existsSync(p)) return undefined;
+  return (JSON.parse(readFileSync(p, "utf8")) as { h3Pipeline?: { chapterCards?: boolean } }).h3Pipeline?.chapterCards;
 }
 
 /** 畳んだ結果の1行ぶん。ids は出た順 */
@@ -146,6 +153,7 @@ async function main(): Promise<void> {
   // B14: 冒頭45秒(全章を対象にしたときだけ。章指定の部分検査で毎回止めない)
   if (timing && only.length === 0) findings.push(...checkFirstWorst(cuts, timing.lines, firstWorstDeadline()));
   if (timing && only.length === 0) findings.push(...checkKeyframePresence(cuts.cuts));
+  findings.push(...checkChapterCards(cuts.cuts, chapterCardsEnabled()));
   // A17: 使われない語彙定数(全章を対象にしたときだけ)
   if (only.length === 0) findings.push(...checkUnusedVocab(vocab, authored));
 

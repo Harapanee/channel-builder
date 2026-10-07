@@ -56,3 +56,4 @@ snapshots/
 
 # H3 図解オーバーレイの焼き出し(h3:figures の生成物。figures.json から再生成できる。170MB/ep)
 h3/episodes/*/figures/
+channel/youtube-oauth.*.json

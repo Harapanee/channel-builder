@@ -690,6 +690,17 @@ export function checkEndStateVocab(id: string, decl: ShotDecl, cut: Cut | undefi
 /**
  * A14: H3 経路の台帳に keyframe カットが1本も無い。種固有の動作(研究にある解剖・動作)の宣言し忘れの可能性。
  */
+/**
+ * B18: 章カードを使わないチャンネル(.channel-system.json h3Pipeline.chapterCards: false)で
+ * `card` を書いたカット。未指定・true は従来どおり章カードを許す。2026-10-05
+ */
+export function checkChapterCards(cuts: Record<string, Cut>, chapterCards: boolean | undefined): Finding[] {
+  if (chapterCards !== false) return [];
+  return Object.entries(cuts)
+    .filter(([, c]) => c.card)
+    .map(([id]) => ({ level: "BLOCK" as const, id, rule: "B18", message: "このチャンネルは章カードを使わない(h3Pipeline.chapterCards: false)。card / cardHoldSec を外し、通常のカットとして書く" }));
+}
+
 export function checkKeyframePresence(cuts: Record<string, Cut>): Finding[] {
   return Object.values(cuts).some((c) => c.keyframe)
     ? []

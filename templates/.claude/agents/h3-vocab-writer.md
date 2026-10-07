@@ -40,6 +40,7 @@ model: opus
 ## subjects(被写体)
 
 - 成長段階・状態の別に定数を分ける(卵・幼体・成体、立つ・横たわる・遠景 など)
+- **人物は年齢段ごとに定数を分け、段の中では年齢を1つに固定する**(例: 兵士の段の定数はすべて `about thirty-three`)。同じ人物の定数で年齢がばらつくと顔が揺れ、reviewer の REVISE が多発する(ep003 実測で7件)
 - **各定数に「種を決める4か所」を肯定形で必ず書く**:
   - (a) **口** — 位置と大きさ(例: `a tiny round mouth opening at the very tip of the snout, as narrow as the tongue`)
   - (b) **接地** — 何がどう地面・枝・板に触れているか(例: `hanging upside down by its two small hooked feet` / `resting flat on its belly with the folded wings tucked against its sides`)。**接地が違う場所で使うなら定数を分ける**(幹を掴む定数を地面で使うと幹が描き足される)
