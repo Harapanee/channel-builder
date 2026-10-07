@@ -867,3 +867,20 @@ test("B11: cardHoldSec のある章カードは text を通常カットと同じ
   const f = checkLedger("cL01", { card, body: "b", text: true }, { ...LEDGER_CUT, card, cardHoldSec: 2 });
   assert.ok(f.some((x) => x.rule === "B11" && /text/.test(x.message)));
 });
+
+// --- B19: 板だけの章カードは章題の1行だけ(2026-09-27。ep046・ep049 で次の行を束ねて本文が紙の上を7〜11秒流れた) ---
+
+test("B19: 章カードのカットに2行以上を束ねると BLOCK", () => {
+  const cut: Cut = { lineIds: ["L11", "L12"], seconds: 10.5, place: "P", subject: "S", role: "導入", card: ["第一章", "流される"] };
+  const f = checkLedger("cL11", { card: ["第一章", "流される"] }, cut);
+  assert.ok(f.some((x) => x.rule === "B19" && x.level === "BLOCK"));
+});
+
+test("B19: 章題の1行だけの章カードは通す・章カード以外の束ね・cardHoldSec のある章カードは対象外", () => {
+  const card: Cut = { lineIds: ["L11"], seconds: 5.2, place: "P", subject: "S", role: "導入", card: ["第一章", "流される"] };
+  assert.ok(!checkLedger("cL11", { card: ["第一章", "流される"] }, card).some((x) => x.rule === "B19"));
+  const plain: Cut = { lineIds: ["L21", "L22"], seconds: 11.2, place: "P", subject: "S", role: "落とし" };
+  assert.ok(!checkLedger("cL21", { body: "b" }, plain).some((x) => x.rule === "B19"));
+  const hold: Cut = { ...card, lineIds: ["L11", "L12"], seconds: 10.5, cardHoldSec: 2.5 };
+  assert.ok(!checkLedger("cL11", { card: ["第一章", "流される"], body: "b" }, hold).some((x) => x.rule === "B19"));
+});

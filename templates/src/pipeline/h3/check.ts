@@ -641,6 +641,18 @@ export function checkLedger(id: string, decl: ShotDecl, cut: Cut | undefined): F
     }
   }
 
+  // B19: 板だけの章カード(cardHoldSec なし)は章題の1行だけ(2026-09-27)。次の行を束ねると、その本文が
+  // 絵の無い紙の上をカットの尺いっぱい流れる(ep046・ep049 で7〜11秒)。束ねた行は独立したカットへ出す。
+  // cardHoldSec のある章カードは板の後ろに生成場面が見えるので対象外
+  if (cut.card && cut.cardHoldSec === undefined && cut.lineIds.length !== 1) {
+    out.push({
+      level: "BLOCK",
+      id,
+      rule: "B19",
+      message: "章カードに " + cut.lineIds.length + " 行(" + cut.lineIds.join("+") + ")がある。章題の1行だけにし、続く行は別カットへ出す(または cardHoldSec で板を先頭だけにする)",
+    });
+  }
+
   // B15: keyframe カット(両端画像+FL2VA)の契約。2026-09-21
   const kf = Boolean(cut.keyframe);
   const es = decl.endState?.trim() ?? "";

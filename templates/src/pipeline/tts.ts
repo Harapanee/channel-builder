@@ -929,6 +929,12 @@ const TTS_READING_SUBSTITUTIONS: { pattern: RegExp; replace: string }[] = [
   { pattern: /八頭/g, replace: "はっとう" },
   // ep038: 「管」(クダ)の登録に引きずられ「管理」がクダリになる。user-dict の「管理」登録でも負けた
   { pattern: /管理/g, replace: "かんり" },
+  // ep059: 助数詞「羽」の促音化(ジュウワ→ジュッパ・サンワ→サンバ)と「二、三日」(ニ、ミッカ)
+  { pattern: /十羽/g, replace: "じゅっぱ" },
+  { pattern: /三羽/g, replace: "さんば" },
+  { pattern: /二、三日/g, replace: "に、さんにち" },
+  { pattern: /何の意味/g, replace: "なんの意味" },
+  { pattern: /夜の森/g, replace: "よるのもり" },
 ];
 
 export function ttsReadingText(text: string): string {
