@@ -53,7 +53,15 @@
     "next-videos": "tsx src/pipeline/next-videos.ts",
     "analytics:ledger": "tsx src/pipeline/analytics-ledger.ts",
     "record:thumb-test": "tsx src/pipeline/record-thumb-test.ts",
-    "diff:readings": "tsx src/pipeline/diff-readings.ts"
+    "diff:readings": "tsx src/pipeline/diff-readings.ts",
+    "en:check": "tsx src/pipeline/en/en-check.ts",
+    "en:tts": "tsx src/pipeline/en/en-tts.ts",
+    "en:mix": "tsx src/pipeline/en/en-mix.ts",
+    "en:subs": "tsx src/pipeline/en/en-subs-cli.ts",
+    "en:status": "tsx src/pipeline/en/en-status.ts",
+    "en:qa": "tsx src/pipeline/en/en-qa.ts",
+    "en:package": "tsx src/pipeline/en/en-package.ts",
+    "en:thumb": "tsx src/pipeline/en/en-thumb.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

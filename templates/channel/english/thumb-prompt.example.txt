@@ -1,0 +1,1 @@
+Use the provided approved thumbnail as the exact visual reference. Preserve its subject, composition, visual style and product facts. Replace only its visible headline with this exact English text: {{THUMB_TEXT}}. Deliver one 1280x720 PNG. Follow the channel visual rules supplied by the commissioning agent.

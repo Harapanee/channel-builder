@@ -111,3 +111,7 @@ fact-checker / script-director / **script-reviewer(台本合否)** / reading-che
 
 <!-- 展開後にこのチャンネルの固定演出を書く。例: 冒頭の定型オープニング、
      章カードの様式、固定アウトロとクレジット。bible §4 と §8 に従うこと。 -->
+
+# 英語制作（任意採用）
+
+既定の日本語工程には追加しない。採用する場合だけ `docs/english/README.md` に従い英語話者・翻訳教義・サムネ文面を設定する。`en:check|en:tts|en:mix|en:subs|en:qa|en:package|en:status|en:thumb` は明示実行。差分TTSと入力ハッシュ検証を通し、EXPANDのみは試聴警告。公開物は保存パッケージを検証して用いる。サムネ生成はasset-generatorへ依頼し、正確なjob IDとファイルだけ受け入れる。字幕の細分化は実測word alignmentがある場合だけ。英語未完は日本語の完了を止めない。

@@ -1,0 +1,7 @@
+{
+  "voice": "SELECT_APPROVED_ENGLISH_VOICE",
+  "lang": "en-us",
+  "engine": "mlx",
+  "minSpeed": 0.8,
+  "maxSpeed": 1.2
+}

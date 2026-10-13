@@ -247,3 +247,20 @@ cat .channel-system.json         # 状態
 また `npm run validate` は全チャンネル共通で**必須props検査(Rule 10)**を行う: コンポーネント別の必須props欠落(例: ComparisonSplit の left/right/mode)・絵コンテ残骸 `placeholderAssets` を検出する(プレースホルダpropsのままレンダーへ進む事故の防止)。チャンネル固有の必須propsは `channel/required-props.json`(任意。例: `{"Outro": ["channelName"]}`)で拡張できる。
 
 `publish/metadata.json` は `aiDisclosure`(YouTubeの改変コンテンツ開示。実在人物の偽装・実映像の改変・現実のように見える架空場面に該当する場合のみtrue。通常はfalse)・`productionNotes`(制作工程・AI利用の開示の定型文。概要欄への転記をvalidate:metadataが機械検証)を含む契約。`publishAt`(任意)を指定すると公開予約でのアップロードになる。`memberEarlyAccess: {hours}`(任意)はメンバーシップの先行公開の宣言で、`publishAt` と概要欄の定型行「メンバーシップに加入すると、本編を一般公開の<N>時間前に見られます。」を validate:metadata が要求する(Studio の「メンバーに先行公開」は API に無い。自動公開のチャンネルは `/studio-finish` が Claude in Chrome で設定し、それ以外は人間が有効にする)。自動公開は `channel/youtube-publish.json`(`playlists.episode`・`dailySlotHourJst`・`minLeadHours`)で有効になる。
+
+
+## 英語版の整合性と公開確認（導入済みチャンネルのみ）
+
+英語音声・字幕の生成は、原文・英訳・音声設定とWAVのハッシュを照合する。変更した行だけを再合成し、来歴のない旧音声は新しい生成物として認定しない。既存の公開音声を自動で差し替える処理はない。
+
+- `npm run en:tts -- <epId>`: 変更行だけ合成。`--force` は全行。timingだけの変更は再判定。
+- `npm run en:mix -- <epId>` / `npm run en:subs -- <epId>`: 入力が古ければ停止。字幕の単語時刻が未計測なら長文を警告し、推定の秒数で分割しない。
+- `npm run en:thumb -- prepare <epId>`: 参照画像・プロンプト・job IDを準備。asset-generatorへ渡し、生成結果の正確なパスを `accept <epId> --job <id> --file <path>` に渡す。
+- `npm run en:qa -- <epId>`: 冒頭・長い空白・数字・速度変更・長文字幕の確認範囲をJSONで出す。
+- `npm run en:package -- <epId>`: 検証済みの音声・字幕と来歴を `publish/en/package/<hash>/` に保存。Studio登録前に `--verify <package-dir>` で再検査する。
+- `npm run en:status` / `-- --json`: 公開状態の観測記録と未完項目を一覧化する。YouTubeへ自動接続しない。
+- `npm run en:status -- --record <epId> <evidence.json>`: Studioで読み取った状態・videoId・確認日時・画面の文言を追記する。登録直後のprocessingは完了ではない。
+
+英語版は導入先のvoice-en.json、翻訳教義、Kokoro環境を必要とする。詳細は導入先の `docs/english/` を参照。
+
+日本語字幕を修正して再送するときは `youtube:publish --captions-only` を使う。同名・同言語の既存トラックは同じIDで内容を更新する。通常アップロードは既存字幕を維持し、更新失敗時に重複登録しない。

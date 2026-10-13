@@ -144,6 +144,39 @@ const IDENTICAL = [
   "shorts/sh000-test/timing.json",
 ];
 
+// 英語制作は任意採用。voice-en.json を配置したチャンネルのみ SRC 完全一致を検査する。
+// テンプレート側の部品欠落は常に検査し、未採用の既存チャンネルへ導入を強制しない。
+const EN_IDENTICAL = [
+  "src/pipeline/en/en-alignment.test.ts",
+  "src/pipeline/en/en-alignment.ts",
+  "src/pipeline/en/en-check.ts",
+  "src/pipeline/en/en-mix-args.test.ts",
+  "src/pipeline/en/en-mix-args.ts",
+  "src/pipeline/en/en-mix.ts",
+  "src/pipeline/en/en-package.test.ts",
+  "src/pipeline/en/en-package.ts",
+  "src/pipeline/en/en-plan.test.ts",
+  "src/pipeline/en/en-plan.ts",
+  "src/pipeline/en/en-qa.ts",
+  "src/pipeline/en/en-status.test.ts",
+  "src/pipeline/en/en-status.ts",
+  "src/pipeline/en/en-subs-cli.ts",
+  "src/pipeline/en/en-subs.test.ts",
+  "src/pipeline/en/en-subs.ts",
+  "src/pipeline/en/en-thumb.test.ts",
+  "src/pipeline/en/en-thumb.ts",
+  "src/pipeline/en/en-tts.ts",
+  "src/pipeline/en/legacy-cues.test.ts",
+  "src/pipeline/en/legacy-cues.ts",
+  "src/pipeline/en/provenance.test.ts",
+  "src/pipeline/en/provenance.ts",
+  "scripts/en-dub/setup.sh",
+  "scripts/en-dub/kokoro_lines.py",
+  "scripts/en-dub/kokoro_mlx_lines.py",
+  "scripts/en-dub/thumb-en.sh",
+  "scripts/en-dub/gap-median.py"
+];
+
 // HyperFrames経路のファイル(本編)。renderEngine が "hyperframes" のチャンネルでのみ
 // 完全一致必須。Remotionのままのチャンネルでは存在しなくてよい
 // (移行は各チャンネルの /factory-update の判断に委ねる)。
@@ -276,6 +309,10 @@ const CORE_IDENTICAL = [
 
 // VARIANTのうちテンプレ専用ファイル(scaffold時に別名で展開されるためSRC側に存在しない)
 const VARIANT_TEMPLATE_ONLY = [
+  "docs/english/README.md", // オプトイン英語制作の汎用運用説明
+  "channel/english/voice-en.example.json", // 承認後に voice-en.json を作る。例は無効のまま配布
+  "channel/english/thumb-prompt.example.txt", // チャンネルの画風・教義に合わせて採用
+
   "channel/bible-template.md", // 展開後は channel/bible.md
   "channel/voice-template.json", // 展開後は channel/voice.json
   // HF未移行chには存在しないため、テンプレ側にのみ存在すればよい扱いにする
@@ -289,6 +326,10 @@ const VARIANT_TEMPLATE_ONLY = [
 
 // 意図的な汎用化版(存在+禁止語なしのみ検査)
 const VARIANT = [
+  "docs/english/README.md",
+  "channel/english/voice-en.example.json",
+  "channel/english/thumb-prompt.example.txt",
+
   "package.json", // name がチャンネルごとに異なる
   // サムネ構造は bible §13 のチャンネル教義そのもの(例: 中央主人公+矢印 / 1枚絵+帯文字)。
   // コアコンポーネントと同格のチャンネル可変とし、テンプレ版はDoodle系の参照実装
@@ -390,6 +431,17 @@ for (const f of IDENTICAL) {
     fail(`IDENTICAL未受領: ${f}(このFactoryに無い — テンプレートからコピーが必要)`);
   else if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8"))
     fail(`IDENTICAL乖離: ${f}(SRCから再コピーが必要)`);
+}
+
+// 英語の有効化は明示的な音声設定の配置で判断する。サンプル設定は有効化しない。
+const englishEnabled = fs.existsSync(path.join(SRC, "channel/english/voice-en.json"));
+for (const f of EN_IDENTICAL) {
+  const a = path.join(SRC, f), b = path.join(TPL, f);
+  if (!fs.existsSync(b)) fail(`EN_IDENTICAL欠落(テンプレ側): ${f}`);
+  else if (englishEnabled && !templateOptOut.includes(f)) {
+    if (!fs.existsSync(a)) fail(`EN_IDENTICAL未受領: ${f}`);
+    else if (fs.readFileSync(a, "utf8") !== fs.readFileSync(b, "utf8")) fail(`EN_IDENTICAL乖離: ${f}`);
+  }
 }
 
 // レンダーエンジン(既定 remotion)。HF_IDENTICAL の要否を決める
@@ -526,7 +578,7 @@ checkBuilderRepoPushed();
 
 if (failures === 0) {
   console.log(
-    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / HF ${HF_IDENTICAL.length}(engine=${renderEngine}) / H3 ${H3_IDENTICAL.length}(${h3Enabled ? "on" : "off"}) / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
+    `OK: テンプレート同期は健全(IDENTICAL ${IDENTICAL.length} / EN ${EN_IDENTICAL.length}(${englishEnabled ? "on" : "off"}) / HF ${HF_IDENTICAL.length}(engine=${renderEngine}) / H3 ${H3_IDENTICAL.length}(${h3Enabled ? "on" : "off"}) / CORE ${CORE_IDENTICAL.length} / VARIANT ${VARIANT.length} / 禁止語 ${FORBIDDEN.length}種スキャン)`
   );
 } else {
   console.error(`\n${failures}件の乖離。同期後に再実行すること。`);
