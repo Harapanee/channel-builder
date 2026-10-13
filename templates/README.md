@@ -263,4 +263,4 @@ cat .channel-system.json         # 状態
 
 英語版は導入先のvoice-en.json、翻訳教義、Kokoro環境を必要とする。詳細は導入先の `docs/english/` を参照。
 
-日本語字幕を修正して再送するときは `youtube:publish --captions-only` を使う。同名・同言語の既存トラックは同じIDで内容を更新する。通常アップロードは既存字幕を維持し、更新失敗時に重複登録しない。
+字幕アップロードに対応したfactory-uiを使用している場合、日本語字幕を修正して再送するときは `youtube:publish --captions-only` を使う。同名・同言語の既存トラックは同じIDで内容を更新する。通常アップロードは既存字幕を維持し、更新失敗時に重複登録しない。
