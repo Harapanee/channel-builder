@@ -23,7 +23,7 @@ model: sonnet
 - `episodes/<epId>/timing.json`
 - `channel/bgm-policy.json`
 - `assets/audio/LICENSES.md`(使ってよい音源の台帳)
-- (H3 経路・任意)`h3/episodes/<epId>/cuts.json` — 章カードのカットID(場面転換の SE を置く位置)を確かめる用
+- (H3 経路・任意)`h3/episodes/<epId>/cuts.json` — 章カードのカットID、章カードを使わないチャンネル(`h3Pipeline.chapterCards: false`)では各章の最初のカット(`chapters[].cuts[0]`)=場面転換の SE を置く位置を確かめる用
 
 # bgm-plan.json(両経路)
 

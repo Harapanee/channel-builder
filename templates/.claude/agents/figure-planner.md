@@ -31,7 +31,7 @@ model: opus
    - `bars`: 2〜4 本の横棒。「A に対して B は何倍」「A時間 vs B時間」「昔 30万 → 今 2千」。強調する側に `accent: true`
    - `scale`: **大きさの実物比較**(bible §8 の署名)。`size` は同じ単位の実寸、`icon` に hand / bottle / pole / human / otter。動物の体長・重さが出る行はまず `scale` を考える
    - `timeline`: **一生のタイムライン**。`events` に `at`(「生後3日」「1年」)と `label`。成長段階・寿命・親の世話の期間が並ぶ行に使う。`pos`(0〜1)で目盛りの間隔を実時間に寄せられる
-   - `recap`: **章の切れ目で「ここまでの請求書」を積み直す板**。章カードの**直後の行**にだけ置ける(道具が検査する)。`items` は1〜5、今回の章で積まれた項目に `now: true`。請求書・段階・罠のように**積み上がる構造の回**では章ごとに置き、それ以外の回では使わない
+   - `recap`: **章の切れ目で「ここまでの請求書」を積み直す板**。章カードの**直後の行**、または章カードを使わないチャンネル(`h3Pipeline.chapterCards: false`)では**章の最初のカットの先頭行**(`cuts.json` の `chapters[].cuts[0]`)にだけ置ける(道具が検査する)。`items` は1〜5、今回の章で積まれた項目に `now: true`。請求書・段階・罠のように**積み上がる構造の回**では章ごとに置き、それ以外の回では使わない
    - grid の右列に入る長さの目安: 粒40以下の配置は highlightLabel 全角約6字・caption 約7字、粒100の配置は highlightLabel 全角約13字まで。最終判定は `h3:figures --check`(折り返し・はみ出しを BLOCK)に任せる
    - `grid`: 粒の並び(既定 100 個)。「100 匹中 56」は `highlight` + `highlightLabel`、内訳は `segments`(合計 ≤ total)、減る演出は `mode: "remove"`。40 個までなら `total` を下げて `icon`(`bowl` / `otter`)で実物感を出す
 4. 窓を決める: `lineId` + `fromPhrase`(数字を言い始める句)。複数行にまたぐなら `toLineId`、行の途中で消すなら `toPhrase`。**冒頭 45 秒には置かない**(bible 冒頭45秒の規則。道具が機械検査で弾く)。窓同士は重ねない

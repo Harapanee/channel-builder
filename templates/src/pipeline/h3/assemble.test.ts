@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  ambientPath, assertUniformFps, buildSegments, checkAmbient, checkMasterAudio, holdSlowShortfalls, overlayWindows, parseFrameRate,
+  ambientPath, assertUniformFps, buildSegments, checkAmbient, checkMasterAudio, holdSlowShortfalls, overlayWindows, parseFrameRate, subtitleWindows,
   partCacheSpec, speedFilter, subsByLine, targetFrames, videoFilter, headTrimFilter,
   checkAmbientDuration, checkSeCues, parseArgs, staleChainProblems, tmpPathFor, writeViaTmp,
 } from "./assemble";
@@ -180,6 +180,13 @@ test("buildSegments は cuts.json の noSub を Segment へ写す", () => {
   const segs = buildSegments(cuts, LINES, TOTAL, 24);
   assert.equal(segs[0].noSub, true);
   assert.equal(segs[1].noSub, false);
+});
+
+test("字幕を焼かないチャンネル(burnSubtitles: false)では表示窓を1枚も返さない(2026-10-13)", () => {
+  const lineById = new Map(LINES.map((l) => [l.lineId, l]));
+  const seg = { clipId: "cL01", lineIds: ["L01", "L02"], startSec: 0, frames: 120, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub: false };
+  assert.deepEqual(subtitleWindows(false, seg, lineById, 0, 24), []);
+  assert.deepEqual(subtitleWindows(true, seg, lineById, 0, 24), overlayWindows(seg, lineById, 0, 24));
 });
 
 test("noSub のカットは字幕の表示窓を1枚も返さない(画面内文字との二重読みを避ける)", () => {

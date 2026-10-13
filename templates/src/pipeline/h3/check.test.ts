@@ -5,6 +5,7 @@ import {
   CAMERA_MOTIONS,
   CUT_VERBS,
   checkAdvisories,
+  checkChapterCards,
   checkJobSet,
   checkKeyframePresence,
   checkLedger,
@@ -883,4 +884,14 @@ test("B19: 章題の1行だけの章カードは通す・章カード以外の�
   assert.ok(!checkLedger("cL21", { body: "b" }, plain).some((x) => x.rule === "B19"));
   const hold: Cut = { ...card, lineIds: ["L11", "L12"], seconds: 10.5, cardHoldSec: 2.5 };
   assert.ok(!checkLedger("cL11", { card: ["第一章", "流される"], body: "b" }, hold).some((x) => x.rule === "B19"));
+});
+
+test("B18: chapterCards:false のチャンネルで card を書いたカットを止める", () => {
+  const cuts = { cL05: { lineIds: ["L05"], card: ["第一章", "x"] }, cL06: { lineIds: ["L06"] } } as never;
+  const f = checkChapterCards(cuts, false);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].rule, "B18");
+  assert.equal(f[0].id, "cL05");
+  assert.equal(checkChapterCards(cuts, undefined).length, 0);
+  assert.equal(checkChapterCards(cuts, true).length, 0);
 });

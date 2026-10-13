@@ -219,6 +219,7 @@ npm run h3:reject -- <ep> <clipId,..>               # 【H3】不合格クリッ
 npm run h3:audio-cues -- <ep> && npm run audio-mix episodes/<ep> && npm run h3:ambient -- <ep>   # 【H3】音声
 #   h3:ambient はクリップごとの noise floor を報告する(ambient.json の noiseFloorMaxDb 既定 -40 / autoExclude で自動除外)
 npm run h3:subs <ep> && npm run h3:figures -- <ep> && npm run h3:assemble -- <ep>   # 【H3】字幕・図解を焼いて組み立て(最終物)
+npm run h3:captions -- <ep>   # 【H3】字幕を焼かないチャンネル(h3Pipeline.burnSubtitles: false)の日本語字幕 VTT(youtube:publish が上げる)
 npm run check:assets episodes/<ep>  # 絵コンテの使用素材と実装の突合(既定は報告のみ)
 npm run qa:frames episodes/<ep>  # レンダー後の空フレーム検出(何も描かれていないclip)
 npm run usage -- --since 2026-08-01   # コスト(サブエージェント込み)・実所要時間・並列度・ターン単価

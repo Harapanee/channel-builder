@@ -24,7 +24,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { SILENCE_FLOOR_DB, percentile, windowRmsDb } from "../check-audio";
-import { OUT_FPS, ROOT, clipsDir, epBase, framesDir } from "./config";
+import { OUT_FPS, ROOT, burnSubtitlesEnabled, clipsDir, epBase, framesDir } from "./config";
 import type { TimingLine } from "./plan";
 import type { Cut, CutsFile } from "./types";
 import { figureOverlaysForChunk } from "./figures";
@@ -376,6 +376,15 @@ export function overlayWindows(
   });
 }
 
+/**
+ * 字幕を焼くときだけ overlayWindows を返す。焼かないチャンネル(.channel-system.json
+ * h3Pipeline.burnSubtitles: false)は字幕を YouTube 字幕(h3:captions の VTT)で出すので、
+ * 字幕PNG を要求も重ねもしない(2026-10-13)
+ */
+export function subtitleWindows(burn: boolean, ...args: Parameters<typeof overlayWindows>): OverlayWindow[] {
+  return burn ? overlayWindows(...args) : [];
+}
+
 export interface PartCacheClip {
   id: string;
   frames: number;
@@ -686,8 +695,10 @@ function main(): void {
     }
     if (opts.allowStaleChains) console.log("⚠️ --allow-stale-chains: 鎖の古さを検査しません");
   }
+  const burn = burnSubtitlesEnabled();
+  if (!burn) console.log("字幕は焼きません(h3Pipeline.burnSubtitles: false)。日本語字幕は h3:captions の VTT を youtube:publish が上げる");
   const missingSubs = segments.filter((s) => !s.noSub)
-    .flatMap((s) => overlayWindows(s, lineById, 0, OUT_FPS, ledger))
+    .flatMap((s) => subtitleWindows(burn, s, lineById, 0, OUT_FPS, ledger))
     .filter((o) => !existsSync(subPath(o))).map((o) => o.lineId);
   if (missingSubs.length > 0) {
     console.error("❌ 字幕PNGが足りません: " + missingSubs.length + "枚(" + missingSubs.slice(0, 10).join(", ") + ")");
@@ -704,7 +715,7 @@ function main(): void {
     const empty = zeroByteFiles([
       ...segments.filter((s) => !synth(s)).map(clipPath),
       ...pngsIn(framesDir(epId)),
-      ...segments.filter((s) => !s.noSub).flatMap((s) => overlayWindows(s, lineById, 0, OUT_FPS, ledger)).map(subPath),
+      ...segments.filter((s) => !s.noSub).flatMap((s) => subtitleWindows(burn, s, lineById, 0, OUT_FPS, ledger)).map(subPath),
       ...figDirs.flatMap(pngsIn),
     ]);
     if (empty.length > 0) {
@@ -906,7 +917,7 @@ function main(): void {
   chunks.forEach((chunk, ci) => {
     const base = chunk[0].offsetFrames;
     // 字幕は「そのクリップに乗る行」を全部重ねる(束ねたカットは1クリップに複数行)
-    const overlays = chunk.flatMap((s) => overlayWindows(s, lineById, base, OUT_FPS, ledger));
+    const overlays = chunk.flatMap((s) => subtitleWindows(burn, s, lineById, base, OUT_FPS, ledger));
     const chunkFrames = chunk.reduce((a, s) => a + s.frames, 0);
     const figs = figureOverlaysForChunk(figEntries, base, chunkFrames, OUT_FPS)
       .map((f) => ({ ...f, mtimeMs: statSync(join(f.dir, "f" + String(f.startNumber).padStart(5, "0") + ".png")).mtimeMs }));

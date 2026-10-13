@@ -345,6 +345,7 @@ npm run dev   # 必ずbackgroundで起動。起動ログに出る http://localho
 **HF系ゲート(`npm run use` / `npm run check` / `npm run check:audio` / `npm run check:assets` / `npm run qa:frames`)はH3経路では実行しない** — すべて composition.html を前提にしているため。
 
 1. **字幕を焼く**: `npm run h3:subs <epId>` → `h3/episodes/<epId>/subs/`(**1回の表示=1文**。台本の1行に複数の文があれば句の時刻で分け、表示窓は `subs/subs.json` に書かれる。bible §8・2026-09-04)
+   - **字幕を焼かないチャンネル**(`.channel-system.json` の `h3Pipeline.burnSubtitles: false`)では代わりに `npm run h3:captions -- <epId>` → `episodes/<epId>/publish/captions-ja.vtt`(同じく1表示=1文・行の displayText を優先)。assemble は字幕を重ねず、`youtube:publish` が YouTube 字幕(ja)として上げる(やり直しは `--captions-only`)
 1.5. **図解と章カードを焼く**: `npm run h3:figures -- <epId>` → `h3/episodes/<epId>/figures/`(工程7の figure-planner の宣言から透過PNG連番を焼く。暗転層ごと。**章カードも cuts.json の `card` から不透明な板 `card-<cutId>` として同時に焼く**(2026-09-05。H3 に文字を描かせない — 手・ペンが湧くため)。**一覧 `figures/contact.jpg` を工程12で見せる**)。figures.json が index より新しいと assemble が止まるので、宣言を直したら焼き直す
 2. **組み立てる**: `npm run h3:assemble -- <epId>` — クリップを区間の尺へ早回しで収め、図解(映像の上・字幕の下)と字幕を重ね、`narration/master.mp3` を載せて1本にする
    - **既定の出力先 `episodes/<epId>/out/final.mp4` に既存ファイルがあれば1バイトも書かずに exit 2 する。** HF版の final.mp4 が現存するエピソードでは `--out final-h3.mp4` のように別名へ出す(`out/` は .gitignore でgitから復元できない)

@@ -43,6 +43,7 @@
     "h3:run": "tsx src/pipeline/h3/run-chapter.ts",
     "h3:reject": "tsx src/pipeline/h3/reject-clips.ts",
     "h3:subs": "python3 src/pipeline/h3/render-subs.py",
+    "h3:captions": "tsx src/pipeline/h3/captions-cli.ts",
     "h3:audio-cues": "tsx src/pipeline/h3/build-audio-cues-h3.ts",
     "h3:assemble": "tsx src/pipeline/h3/assemble.ts",
     "h3:ambient": "tsx src/pipeline/h3/build-ambient.ts",

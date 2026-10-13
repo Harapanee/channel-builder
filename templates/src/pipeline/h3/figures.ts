@@ -394,7 +394,11 @@ export function gridLayoutProblems(fig: Figure): string[] {
 }
 
 /** 規則の機械検査。空なら合格 */
-export function validateFigure(fig: Figure, lineById: Map<string, FigureLine>, cuts: Record<string, Cut>): string[] {
+/**
+ * chapterStarts = 章の最初のカットID(cuts.json の chapters[].cuts[0]。冒頭 ch00 は除く)。
+ * 章カードを使わないチャンネル(h3Pipeline.chapterCards: false)で recap の置き場を決めるのに使う
+ */
+export function validateFigure(fig: Figure, lineById: Map<string, FigureLine>, cuts: Record<string, Cut>, chapterStarts?: Set<string>): string[] {
   const shape = figureKeyProblems(fig);
   // 形が壊れた宣言は以降の検査(窓・粒の合計)が NaN で誤判定するので、形の指摘だけ返す
   if (shape.length > 0) return shape;
@@ -421,12 +425,15 @@ export function validateFigure(fig: Figure, lineById: Map<string, FigureLine>, c
   if (fig.type === "timeline" && fig.events.length < 2) out.push(fig.id + ": timeline は出来事2つ以上");
   if (fig.type === "recap" && (fig.items.length < 1 || fig.items.length > 5)) out.push(fig.id + ": recap は1〜5項目");
   if (fig.type === "recap") {
-    // 章カードの直後の行に置く(章の切れ目で積み直す道具なので、それ以外の場所では意味が濁る)
+    // 章の切れ目に置く(章の切れ目で積み直す道具なので、それ以外の場所では意味が濁る)。
+    // 章の切れ目 = 章カードの直後の行、または章カードを使わないチャンネルでは章の最初のカットの先頭行(2026-10-13)
     const lines = [...lineById.values()].sort((a, b) => a.startSec - b.startSec);
     const i = lines.findIndex((l) => l.lineId === fig.lineId);
     const prevId = i > 0 ? lines[i - 1].lineId : undefined;
     const prevCut = prevId ? Object.values(cuts).find((c) => c.lineIds.includes(prevId)) : undefined;
-    if (!prevCut?.card) out.push(fig.id + ": recap は章カードの直後の行に置く(" + fig.lineId + " の直前は章カードではない)");
+    const own = Object.entries(cuts).find(([, c]) => c.lineIds.includes(fig.lineId));
+    const atChapterStart = !!own && !!chapterStarts?.has(own[0]) && own[1].lineIds[0] === fig.lineId;
+    if (!prevCut?.card && !atChapterStart) out.push(fig.id + ": recap は章の先頭(章カードの直後の行、または章の最初のカットの先頭行)に置く(" + fig.lineId + " は章の先頭ではない)");
   }
   if (fig.type === "grid") {
     const total = fig.total ?? 100;

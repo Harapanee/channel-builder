@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { basename, join } from "node:path";
 import { createHash } from "node:crypto";
 import { percentile, windowRmsDb } from "../check-audio";
-import { OUT_FPS, ROOT, clipsDir, epBase } from "./config";
+import { OUT_FPS, ROOT, burnSubtitlesEnabled, clipsDir, epBase } from "./config";
 import {
   CHUNK,
   type MasterAudioFacts,
@@ -41,6 +41,7 @@ import {
   isUsable,
   maxVolumeDb,
   overlayWindows,
+  subtitleWindows,
   subsByLine,
   partCacheSpec,
   probeClip,
@@ -227,10 +228,11 @@ function main(): void {
     + (frames / OUT_FPS).toFixed(2) + "秒)/ 本編の " + (base / OUT_FPS).toFixed(2)
     + "秒 〜 " + ((base + frames) / OUT_FPS).toFixed(2) + "秒");
 
+  const burn = burnSubtitlesEnabled();
   const missing = missingMaterials(
     segments,
     (id) => existsSync(join(clipsDir(epId), id + ".mp4")),
-    (id) => overlayWindows({ clipId: "", lineIds: [id], startSec: 0, frames: 0, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub: false }, lineById, 0, OUT_FPS, ledger).every((o) => existsSync(subPath(o))),
+    (id) => !burn || overlayWindows({ clipId: "", lineIds: [id], startSec: 0, frames: 0, offsetFrames: 0, holdSlow: false, skipHeadFrames: 0, noSub: false }, lineById, 0, OUT_FPS, ledger).every((o) => existsSync(subPath(o))),
   );
   if (missing.clips.length > 0) {
     console.error("❌ この章の素材が足りません: " + missing.clips.length + "本(まだ生成されていないカット)");
@@ -340,7 +342,7 @@ function main(): void {
   const partFiles: string[] = [];
   chunks.forEach((chunk, ci) => {
     const chunkBase = chunk[0].offsetFrames;
-    const overlays = chunk.flatMap((s) => overlayWindows(s, lineById, chunkBase, OUT_FPS, ledger));
+    const overlays = chunk.flatMap((s) => subtitleWindows(burn, s, lineById, chunkBase, OUT_FPS, ledger));
     const chunkFrames = chunk.reduce((a, s) => a + s.frames, 0);
     const figs = figureOverlaysForChunk(figEntries, chunkBase, chunkFrames, OUT_FPS)
       .map((f) => ({ ...f, mtimeMs: statSync(join(f.dir, "f" + String(f.startNumber).padStart(5, "0") + ".png")).mtimeMs }));

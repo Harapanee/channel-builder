@@ -354,7 +354,9 @@ async function main(): Promise<void> {
   const cutsFile = JSON.parse(readFileSync(join(ROOT, "h3/episodes", epId, "cuts.json"), "utf8")) as CutsFile;
   const lineById = new Map(timing.lines.map((l) => [l.lineId, l]));
 
-  const problems = file.figures.flatMap((f) => validateFigure(f, lineById, cutsFile.cuts));
+  // 章の最初のカット(冒頭 ch00 を除く)。章カードを使わないチャンネルの recap の置き場
+  const chapterStarts = new Set((cutsFile.chapters ?? []).filter((c) => c.id !== "ch00" && c.cuts.length > 0).map((c) => c.cuts[0]));
+  const problems = file.figures.flatMap((f) => validateFigure(f, lineById, cutsFile.cuts, chapterStarts));
   const ids = new Set<string>();
   for (const f of file.figures) {
     if (ids.has(f.id)) problems.push("id が重複: " + f.id);

@@ -6,6 +6,7 @@
  * 黙って流用したまま正常終了する。ep015-salmon だけは既存の 303本があるため
  * 従来のパスへ写像する(移すと全部再生成 = 約4.6 GPU時間の課金)。
  */
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export const ROOT = resolve(import.meta.dirname, "../../..");
@@ -105,3 +106,16 @@ export function podUrl(fromArg?: string): string {
   if (!url) throw new Error("Pod の URL がありません(--url か H3_POD_URL で渡す)");
   return url;
 }
+
+/** .channel-system.json の h3Pipeline(チャンネル単位の切り替え。未指定のキーは従来どおり) */
+export function h3PipelineSettings(): { chapterCards?: boolean; burnSubtitles?: boolean } {
+  const p = join(ROOT, ".channel-system.json");
+  if (!existsSync(p)) return {};
+  return (JSON.parse(readFileSync(p, "utf8")) as { h3Pipeline?: { chapterCards?: boolean; burnSubtitles?: boolean } }).h3Pipeline ?? {};
+}
+
+/**
+ * 日本語字幕を映像へ焼くか(h3Pipeline.burnSubtitles。false=焼かず h3:captions の VTT を YouTube 字幕で上げる。
+ * 未指定=焼く)。2026-10-13 ユーザー決定
+ */
+export const burnSubtitlesEnabled = (): boolean => h3PipelineSettings().burnSubtitles !== false;

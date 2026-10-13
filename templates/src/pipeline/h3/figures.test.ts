@@ -80,13 +80,23 @@ test("区間への切り出し: 連番の必要範囲と区間内の時刻を返
   assert.deepEqual(figureOverlaysForChunk([e], 2500, 100, fps), []);
 });
 
+test("recap は章カードの無いチャンネルでは章の最初のカットの先頭行に置ける(2026-10-13)", () => {
+  const cuts: Record<string, Cut> = { cL15: cut({ lineIds: ["L15"] }), cL16: cut(), cL17: cut({ lineIds: ["L17"] }) };
+  const lines = new Map(LINES.map((l) => [l.lineId, l]));
+  lines.set("L15", { lineId: "L15", text: "前章の最後", startSec: 88, endSec: 91 });
+  const recap: Figure = { id: "r", lineId: "L16", type: "recap", title: "ここまでの請求書", items: [{ label: "1回目", text: "食べ続ける", now: true }] };
+  assert.deepEqual(validateFigure(recap, lines, cuts, new Set(["cL16"])), []);
+  assert.ok(validateFigure(recap, lines, cuts, new Set(["cL17"])).some((m) => /章の先頭/.test(m)));
+  assert.ok(validateFigure(recap, lines, cuts).some((m) => /章の先頭/.test(m)));
+});
+
 test("recap は章カードの直後の行にだけ置ける / scale・timeline は2つ以上", () => {
   const cuts: Record<string, Cut> = { cL15: cut({ lineIds: ["L15"], card: ["第一章", "x"] }), cL16: cut() };
   const lines = new Map(LINES.map((l) => [l.lineId, l]));
   lines.set("L15", { lineId: "L15", text: "card", startSec: 88, endSec: 91 });
   const recap: Figure = { id: "r", lineId: "L16", type: "recap", title: "ここまでの請求書", items: [{ label: "1回目", text: "食べ続ける", now: true }] };
   assert.deepEqual(validateFigure(recap, lines, cuts), []);
-  assert.ok(validateFigure({ ...recap, lineId: "L17" }, lines, { ...cuts, cL17: cut({ lineIds: ["L17"] }) }).some((m) => /章カードの直後/.test(m)));
+  assert.ok(validateFigure({ ...recap, lineId: "L17" }, lines, { ...cuts, cL17: cut({ lineIds: ["L17"] }) }).some((m) => /章の先頭/.test(m)));
   const scale: Figure = { id: "s", lineId: "L16", type: "scale", title: "t", items: [{ label: "a", size: 1, display: "1" }] };
   assert.ok(validateFigure(scale, lines, cuts).length > 0);
   const tl: Figure = { id: "t", lineId: "L16", type: "timeline", title: "t", events: [{ at: "0", label: "a" }] };
