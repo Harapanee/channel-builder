@@ -57,3 +57,13 @@ test("VTT は位置指定なし(画面下)・時刻は hh:mm:ss.mmm", () => {
   const vtt = buildJaVtt([{ lineId: "L01", text: "あ。", startSec: 3725.5, endSec: 3726 }], new Set());
   assert.equal(vtt, "WEBVTT\n\n01:02:05.500 --> 01:02:06.000\nあ。\n");
 });
+
+test("句を持たない文(「……。」)は長さ0の cue にせず次の文へ寄せる", () => {
+  const line: CaptionLine = { lineId: "L01", text: "……。あ。", startSec: 0, endSec: 2, phrases: [{ text: "あ", startSec: 0, endSec: 2 }] };
+  assert.deepEqual(captionCues([line], new Set()), [{ text: "……。あ。", start: 0, end: 2 }]);
+});
+
+test("VTT の本文は & と < をエスケープする", () => {
+  const vtt = buildJaVtt([{ lineId: "L01", text: "A&B<C。", startSec: 0, endSec: 1 }], new Set());
+  assert.ok(vtt.includes("A&amp;B&lt;C。"));
+});

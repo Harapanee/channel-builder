@@ -86,6 +86,20 @@ function splitLong(c: Cue): Cue[] {
   return [...splitLong({ text: c.text.slice(0, best), start: c.start, end: mid }), ...splitLong({ text: c.text.slice(best), start: mid, end: c.end })];
 }
 
+/** 句を持たない文(「……。」)は長さ0になるので、次の cue の頭へ寄せる */
+function mergeEmpty(cues: Cue[]): Cue[] {
+  const out: Cue[] = [];
+  let carry: Cue | null = null;
+  for (const c of cues) {
+    const cur: Cue = carry ? { text: carry.text + c.text, start: carry.start, end: c.end } : c;
+    if (cur.end <= cur.start && c !== cues[cues.length - 1]) carry = cur;
+    else { out.push(cur); carry = null; }
+  }
+  return out;
+}
+
+const escapeVtt = (t: string): string => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 /** 行 → cue。noSubtitle の行と skip(cuts の noSub カットの行)は出さない */
 export function captionCues(lines: CaptionLine[], skip: Set<string>): Cue[] {
   return lines
@@ -98,13 +112,13 @@ export function captionCues(lines: CaptionLine[], skip: Set<string>): Cue[] {
       let cues = whole;
       if (ds.length > 1 && ds.length === rs.length) {
         const starts = sentenceStarts(line, rs);
-        if (starts) cues = ds.map((d, k) => ({ text: d.text.trim(), start: starts[k], end: k + 1 < starts.length ? starts[k + 1] : line.endSec }));
+        if (starts) cues = mergeEmpty(ds.map((d, k) => ({ text: d.text.trim(), start: starts[k], end: k + 1 < starts.length ? starts[k + 1] : line.endSec })));
       }
       return cues.flatMap(splitLong);
     });
 }
 
 export function buildJaVtt(lines: CaptionLine[], skip: Set<string>): string {
-  const body = captionCues(lines, skip).map((c) => `${vttTime(c.start)} --> ${vttTime(c.end)}\n${c.text}`);
+  const body = captionCues(lines, skip).map((c) => `${vttTime(c.start)} --> ${vttTime(c.end)}\n${escapeVtt(c.text)}`);
   return `WEBVTT\n\n${body.join("\n\n")}\n`;
 }
