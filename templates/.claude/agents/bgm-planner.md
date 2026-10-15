@@ -37,7 +37,7 @@ model: sonnet
 }
 ```
 
-- **`envelope`**: `[開始, 終了, 倍率]`、または `{ "start": 秒, "gain": [g0, g1], "steps": n, "stepSec": 秒 }`(直線フェード)。**倍率は `baseVolume` に掛かる 0〜1 の係数であって、絶対音量ではない**(絶対音量 0.12 を書いて `baseVolume` と二重に掛かり、BGM が沈んだまま完成品まで通った例がある)。**覆っていない時間帯は BGM 完全停止**になる — storyboard が「止める」と言う区間だけを空ける。区間どうしを重ねない
+- **`envelope`**: `[開始, 終了, 倍率]`、または `{ "start": 秒, "gain": [g0, g1], "steps": n, "stepSec": 秒 }`(直線フェード)。**倍率は `baseVolume` に掛かる 0〜1 の係数であって、絶対音量ではない**。**覆っていない時間帯は BGM 完全停止**になる — storyboard が「止める」と言う区間だけを空ける。区間どうしを重ねない
 - **`assignment`**: `[開始, 終了, 曲キー]` で **0 秒から総尺まで隙間なく**覆う(停止区間も含めて覆う。止めるのは envelope の仕事)。曲の境界には 0.4秒×2段のクロスフェードが自動で入る
 - **冒頭の曲は方針の `openingTrack`**。`baseVolume` は方針の範囲内で storyboard の目安に合わせる
 - 区間の境界は、storyboard が行IDで指した行の `startSec` にする(「L69 の直前 0.8 秒を無音」なら `L69.startSec − 0.8` から `L69.startSec` を envelope で覆わない)
