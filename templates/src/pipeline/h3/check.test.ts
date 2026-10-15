@@ -895,3 +895,10 @@ test("B18: chapterCards:false のチャンネルで card を書いたカット�
   assert.equal(checkChapterCards(cuts, undefined).length, 0);
   assert.equal(checkChapterCards(cuts, true).length, 0);
 });
+
+test("A5: 演出家方式(語彙帳の places が空)では場所の書き出しを求めない", () => {
+  const empty = { STYLE: "s", CLOSE: "", CLOSE_H: "", CLOSE_TEXT: "", CLOSEUP_GUARD: "", places: {}, subjects: {}, props: {} } as Vocab;
+  const body = "A thin boy stands on the sand. The camera holds a static shot.";
+  assert.equal(checkAdvisories("cL01", body, empty).some((f) => f.rule === "A5"), false);
+  assert.equal(checkAdvisories("cL01", body, { ...empty, places: { P: "a village" } }).some((f) => f.rule === "A5"), true);
+});

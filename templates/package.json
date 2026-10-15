@@ -61,7 +61,8 @@
     "en:status": "tsx src/pipeline/en/en-status.ts",
     "en:qa": "tsx src/pipeline/en/en-qa.ts",
     "en:package": "tsx src/pipeline/en/en-package.ts",
-    "en:thumb": "tsx src/pipeline/en/en-thumb.ts"
+    "en:thumb": "tsx src/pipeline/en/en-thumb.ts",
+    "h3:import": "tsx src/pipeline/h3/import-director.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.485",

@@ -19,7 +19,7 @@ description: このチャンネルの新規エピソード動画を制作する�
 3. **H3経路のエピソードを夜間レンダーキューへ投入しない。** 機械でも拒否される(`scripts/render-episode.sh`・`render-queue.sh add` は `h3Pipeline.episodes` の回を exit 3、factory-ui のキュー登録口は 409 `not_ready: h3 pipeline episode`、キューに残った H3 回は `failed(h3_pipeline)`)。拒否が無ければ、`composition.html` を持つ回は HF 実装を再レンダーして `out/final.mp4` を上書きし、H3の成果物を黙って捨てる(`out/` は .gitignore でgitから復元できない)。**`<stage>レンダー</stage>` も `kind:"render-check"` のゲートも出さない**。抜け道は無い — H3 回を HF で焼き直すなら `h3Pipeline.episodes` から外す
 4. **Pod には見張り役が付く**: `h3:pod -- up` / `wait-up` は起動と同時に watchdog を切り離しで立て、起動から6時間か無操作30分(`.heartbeat` 未更新。`h3:run` がクリップごとに打つ)で自動 down する(`--max-hours` / `--pod-max-hours` / `--idle-min`。上限なしにはできない)。**それでも作業後の `down` は必須**(見張りは保険であって停止手順ではない)
 
-**H3経路の運用モードとゲート**: 人間ゲートは 題材選定(0-a)・語彙帳承認(6.4)・プロンプト承認(7)・Pod 起動(8)・最終承認(12)。対話セッションでは各ゲートで AskUserQuestion を出して待つ。factory-ui ヘッドレスは manual のみ(砦1)で、各ゲートで `<gate>` を出して停止する。**自走**(ユーザーが対話セッションで「自走で進めてよい」と明示して離席したセッション)では、題材選定・語彙帳承認・プロンプト承認・Pod 起動(見張り役の既定上限のまま)・最終承認を**通過扱い**で進めてよい。その場合は終了前に HANDOFF.md(あれば。無ければ最終報告)へ「**自走で通過扱いにしたゲート**」を1つずつ根拠つきで列挙し、**起床後の人間目視を最終ゲート**とする。**自走でも越えてはいけないもの**: 公開(アップロード・公開設定・公開予約の変更)・公開済み回の差し替え・Pod の上限解除(`--max-hours` を既定より上げる・`--idle-min 0`・見張り役を止める)。**自動公開を導入したチャンネル**(`channel/youtube-publish.json` に `dailySlotHourJst` がある)では、非公開+予約でのアップロード(`npm run youtube:publish -- <epId> --auto-slot`)と Studio 仕上げ(`/studio-finish <epId>`)を自走でも行う(即時公開・予約済み日時の変更・公開済み回の差し替えは引き続き人間だけ)
+**H3経路の運用モードとゲート**: 人間ゲートは 題材選定(0-a)・文面承認(7)・Pod 起動(8)・最終承認(12)。対話セッションでは各ゲートで AskUserQuestion を出して待つ。factory-ui ヘッドレスは manual のみ(砦1)で、各ゲートで `<gate>` を出して停止する。**自走**(ユーザーが対話セッションで「自走で進めてよい」と明示して離席したセッション)では、題材選定・文面承認・Pod 起動(見張り役の既定上限のまま)・最終承認を**通過扱い**で進めてよい。その場合は終了前に HANDOFF.md(あれば。無ければ最終報告)へ「**自走で通過扱いにしたゲート**」を1つずつ根拠つきで列挙し、**起床後の人間目視を最終ゲート**とする。**自走でも越えてはいけないもの**: 公開(アップロード・公開設定・公開予約の変更)・公開済み回の差し替え・Pod の上限解除(`--max-hours` を既定より上げる・`--idle-min 0`・見張り役を止める)。**自動公開を導入したチャンネル**(`channel/youtube-publish.json` に `dailySlotHourJst` がある)では、非公開+予約でのアップロード(`npm run youtube:publish -- <epId> --auto-slot`)と Studio 仕上げ(`/studio-finish <epId>`)を自走でも行う(即時公開・予約済み日時の変更・公開済み回の差し替えは引き続き人間だけ)
 
 **運用原則(モデル非依存)**: メインセッションの役割は監査・ゲート管理・ユーザー対話である。
 台本(script-director)・絵コンテとショット(visual-director)・調査と検証(fact-checker)・
@@ -60,7 +60,7 @@ description: このチャンネルの新規エピソード動画を制作する�
    JSON を自分で読み書きしない。契約(episode.schema.json の enum)で検証され、
    後戻りと綴り違いを止める。ep002 実測ではメインの Bash 12回が status 更新の
    python heredoc だった。
-6. **【H3経路】修正役はまとめて起動する**: h3-fix-writer は**1周につき1回**、全章の BLOCK・REVISE・検品の不合格を「章ID→カットIDの一覧」で1体に渡す(章ごとに起動しない)。h3-prompt-reviewer は章ごとに並列で1周だけ(再レビューしない)
+6. **【H3経路】作り直しはまとめて起動する**: h3-director の作り直しモードは**1周につき1回**、全章の BLOCK・検品の不合格を「章ID→カットIDの一覧」で1体に渡す(章ごとに起動しない)
 7. **待ち時間の前後でセッションを区切る**: 5分を超える待ち(Pod の在庫待ち `wait-up`・長い生成・人の承認待ち)を跨いで同じセッションを続けると、プロンプトキャッシュが失効して待ち明けの最初のターンで履歴全体が再書き込みされる(実測で1回数百万トークン)。**待ちに入る前に引き継ぎ(HANDOFF.md があれば更新)を書いて区切り、再開は新しいセッションで行う**。ポーリングで待たない
 
 ## 0-a. 題材の決定(引数なしで呼ばれた場合)
@@ -126,33 +126,16 @@ fact-checkerエージェントに委譲。出典つき・確度(定説/有力/�
 ### 【H3経路】
 
 **visual-director を「H3 モード」で1回だけ起動する**(Phase A のみ・timing.json 不要なので、台本の審査が済んだら工程4の TTS と同じメッセージで並行起動できる)。成果物は storyboard.md の **§1 体験設計・§4 図解オーバーレイの申し送り・§5 SE・BGM設計** だけで、clip表(§3)・章グループ分担(§2)・不足素材(§6)は書かせない。
-**H3 が storyboard から読んでよいのは §1 だけ**(h3-cut-planner の入力)。§4 は figure-planner、§5 は bgm-planner の入力。clip表の「演出記述」を H3 に渡す経路は設計上の禁則である。メインは §1 の章の切れ目・中心の問いの開閉・冒頭の要件(bible §4)を監査する。
+§4 は figure-planner、§5 は bgm-planner の入力(h3-director は storyboard を読まない。台本から自分で画を考える)。clip表の「演出記述」を H3 に渡す経路は設計上の禁則である。メインは §1 の章の切れ目・中心の問いの開閉・冒頭の要件(bible §4)を監査する。
 v1 は絵コンテの演出記述(HyperFrames用のDOM/GSAP指示)をそのまま英訳してH3へ渡し、画面内日本語80本・抽象装置79本・**ナレーションに無い文字を出したカット76件**を生んだ(ユーザーは7分20秒で視聴を放棄)。この入力経路は設計上の禁則として固定する。
 
-## 6.4 語彙帳の用意 → `h3/vocab/<epId>.ts`(H3経路のみ)
+## 6.5 演出(カット割り〜全カットの文面)→ `h3/episodes/<epId>/director.md`(H3経路のみ)
 
-**新規エピソードはここから始まる。** 工程6.5以降(`cuts.json` / `shots/<章ID>.ts` / `check:h3` / `h3:run` / `h3:assemble`)は**すべて `h3/vocab/<epId>.ts` の実在を前提**にしており、無ければモジュール未検出で落ちる。語彙は題材固有(雛形のサケなら `SEA` / `RIVER` / `HATCHERY` / `EGG` / `FRY`)なので**他の題材へ流用できない**。
+**新規エピソードはここから始まる。** 2026-10-16 から、語彙帳・カット割り・文面・レビュー・作り直しの役を **h3-director(演出家)1体**に置き換えた(人物転生 ep008 の実験で、分業が「誰がどこにどの大きさで居るか」を誰も決めない原因だった。演出家1体に短い原則と映像モデルの事実だけを渡すと、相手役の欠け・大きさの破綻・人物の取り違えが消えた)。
 
-**h3-vocab-writer へ委譲**。渡すのは `episodes/<epId>/script.md` / `episodes/<epId>/research.md` / `episodes/<epId>/storyboard.md`(§1)/ 雛形 `h3/vocab/example-salmon.ts`(scaffold 時に持ち込まれるサケの例。チャンネルに実績の語彙帳があればそれでもよい)/ 直近の語彙帳1本(あれば)の**パスだけ**。画風定数(`STYLE` / `CLOSE` / `CLOSE_H` / `CLOSE_TEXT` / `CLOSEUP_GUARD`)の一字一句の写し・肯定形・種を決める4か所(口・接地・識別点・目)・台本が言う身体の事実・場所の動く要素・定数の最小化・`typecheck:h3` は定義に内蔵。
-
-**人間の承認を得てから工程6.5へ進む。** 語彙帳はこの先の全カットが参照する土台で、あとから足すほど同一性が崩れる。報告の定数一覧(定数名・英文・用途)を提示して承認を取る(ヘッドレスでは `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない** — この種別の承認は夜間レンダーキューへの自動登録を起こす)。自走では通過扱いにできる。
-
-工程6.5以降で語彙が足りないと分かったら(planner の `needsVocab` / writer の報告)、**h3-vocab-writer に「追加」として再発注し、承認を取り直す。** planner も writer も自分で語彙を増やさない。
-
-## 6.5 カット割り台帳 → `h3/episodes/<epId>/cuts.json`(H3経路のみ)
-
-既存エピソードの移設なら、まず機械で台帳を起こす(章ファイルと timing.json から逆生成):
-
-```
-npx tsx src/pipeline/h3/build-cuts.ts <epId>
-```
-
-**h3-cut-plannerエージェントへ委譲**(1体)。渡すのは `episodes/<epId>/timing.json` / `episodes/<epId>/script.md` / `episodes/<epId>/storyboard.md` の `## 1. 体験設計` 節 / `h3/vocab/<epId>.ts` の**パスだけ**。成果物は `cuts.json` だけで、文面(body / sound)は書かせない(工程7の担当)。
-
-- 尺の基準は**タイムライン区間**(その行の startSec から次の行の startSec まで)。発話区間で計算すると実測で130秒不足する
-- 語彙帳に無い場所・被写体が要るときは `needsVocab` に書いて止まる。**語彙の追加は人間の承認事項** — 承認したら `h3/vocab/<epId>.ts` に入れてから工程7へ進む(語彙が増えるほど章をまたいだ画の同一性が崩れる)
-- メインセッションは章割・行の被覆(欠落ゼロ)・鎖の設計の自己申告を監査する
-- **`firstWorstLineId`(45秒以内の最初の最悪)を台帳に書かせる**。`check:h3` の B14 が「無い・45秒より後・章カード」を BLOCK する。planner が「台本側の問題」と報告したら工程2へ戻す(台帳では直せない)
+1. **h3-director を新規モードで1体**。渡すのは `episodes/<epId>/script.md` / `episodes/<epId>/research.md` / `episodes/<epId>/timing.json` の**パスだけ**(指示を足さない。原則と事実は定義にある)。成果物は `h3/episodes/<epId>/director.md`(カット割り・鎖・全カットの body / sound)
+2. **取り込み**: `npm run h3:import -- <epId>` — director.md から `cuts.json`(章は台本の段見出し・尺は機械が計算・短いカットは holdSlow)・`shots/<章ID>.ts`・画風だけの `h3/vocab/<epId>.ts`(雛形 `h3/vocab/example-*.ts` を継ぐ)を書く。行の取りこぼし・順序違い・15秒超・カットIDの不一致は exit 2(director の作り直しモードで直す)。**shots/*.ts を手で直さない**(取り込み直しで消える)
+3. `firstWorstDeadlineSec` が数値のチャンネルでは、director が前置きに書いた `firstWorstLineId` が台帳に入り、`check:h3` の B14 が検査する。「台本側の問題」なら工程2へ戻す
 
 ## 7. 素材取得
 
@@ -160,19 +143,9 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
 
 **この工程がフェーズ3の中身になる**(`<stage>素材</stage>` はそのまま流用する)。**ここを越えるまで Pod を起動しない。**
 
-1. **章ごとに h3-prompt-writer を並列起動する**(**1つのメッセージに章の数だけ Agent tool_use を並べて同時発行する** — 冒頭原則の「並列起動の実行形」)。渡すのは `h3/episodes/<epId>/cuts.json` の担当章と `h3/vocab/<epId>.ts` のパスだけ。成果物は `h3/episodes/<epId>/shots/<章ID>.ts`。1体25カット前後でターン予算(80)の内側に収まる
-1.5. **同じターンで figure-planner を1体、並列起動する**(図解オーバーレイの宣言 `h3/episodes/<epId>/figures.json`。渡すのは `episodes/<epId>/script.md` / `episodes/<epId>/timing.json` / `h3/episodes/<epId>/cuts.json` のパスだけ)。成果物は宣言だけで、焼くのは工程9。**H3経路の本編は図解を必須にしている**(bible §8・2026-09-04。`h3:assemble` は figures.json が無いと止まる。置かない判断は人間が `--no-figures` で明示する)。報告の「見送った数字の行」を工程7のゲートで人間に見せ、追加があれば宣言へ足して `npm run h3:figures -- <epId> --check` を通す
-2. **課金前の砦を通す**: `npm run check:h3 -- <epId> > <出力先>/check-h3.txt`(exit 0=緑 / 1=ADVISEのみ / 2=BLOCKあり。出力はファイルに書き、修正役にはそのパスを渡す)。**BLOCK がゼロになるまで生成へ進まない。** BLOCK は h3-fix-writer に直させる(台帳側の問題なら `cuts.json` を直す)。ADVISE A15(内部ショット)・A16【強】(Shot 間で寄り引きの段が変わる)は差し戻しの主因になりやすいので原則直す。出力は既定で同じ指摘を1行に畳む — 全件を1カット1行で見たいときだけ `--verbose`
-3. **全文を章ごとに書き出す**: **章の数だけ、章IDと章別の出力先を指定して回す**(実際にモデルへ渡る全文を1カット1ファイルで書く)
-
-    ```
-    npm run check:h3 -- <epId> <章ID> --dump <出力先>/<章ID>
-    ```
-
-    **1ディレクトリへまとめて出さない。** レビュアーは Bash も `cuts.json` も持たないので、フラットに並んだカットのどれが自分の章かを判別できない
-4. **章ごとに h3-prompt-reviewer を並列起動する**【ADVISE】。渡すのは**担当章の dump 先(`<出力先>/<章ID>`)**と `episodes/<epId>/timing.json` の**パスだけ**(このエージェントは Bash を持たないため全文はファイル経由で渡す)
-5. **全章の BLOCK と REVISE を1回の起動にまとめて h3-fix-writer へ渡す**(章ID→カットIDの一覧+根拠のパス。章ごとに起動しない)。**再レビューはしない(1周で確定)** — 直ったら `npm run check:h3 -- <epId>` を通して次へ進む
-6. **人間ゲート(プロンプト承認)**: `--dump` の出力先と `check:h3` の要約を提示して承認を得る。ヘッドレス(Factory UI)では `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない**(この種別の承認は夜間レンダーキューへの自動登録を起こす) — `kind:"h3-prompt-check"` を明示し、`gateId` に `render-check` を含めない。対話セッションでは AskUserQuestion で承認を得る
+1. **figure-planner を1体起動する**(図解オーバーレイの宣言 `h3/episodes/<epId>/figures.json`。渡すのは `episodes/<epId>/script.md` / `episodes/<epId>/timing.json` / `h3/episodes/<epId>/cuts.json` のパスだけ)。成果物は宣言だけで、焼くのは工程9。**H3経路の本編は図解を必須にしている**(`h3:assemble` は figures.json が無いと止まる。置かない判断は人間が `--no-figures` で明示する)。報告の「見送った数字の行」を工程7のゲートで人間に見せ、追加があれば宣言へ足して `npm run h3:figures -- <epId> --check` を通す
+2. **課金前の砦を通す**: `npm run check:h3 -- <epId> > <出力先>/check-h3.txt`(exit 0=緑 / 1=ADVISEのみ / 2=BLOCKあり)。**BLOCK がゼロになるまで生成へ進まない。** BLOCK は h3-director の作り直しモードで直し、取り込み直す。全文を見たいときは `npm run check:h3 -- <epId> <章ID> --dump <出力先>/<章ID>`
+3. **人間ゲート(文面承認)**: director の報告(人物の見た目で決めたこと・迷ったこと)と `check:h3` の要約を提示して承認を得る。ヘッドレス(Factory UI)では `<gate>` を発行して停止する。**`kind` を `"render-check"` にしない**(この種別の承認は夜間レンダーキューへの自動登録を起こす) — `kind:"h3-prompt-check"` を明示し、`gateId` に `render-check` を含めない。対話セッションでは AskUserQuestion で承認を得る
 
 承認を得たら `npm run status episodes/<epId> assets_ready` を実行し、工程8へは進まずに `<done>` を出して終了する(フェーズの区切りはHF経路と同じ)。
 
@@ -237,8 +210,8 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
 5. **章ごとに h3-clip-inspector を並列起動して検品する**(章シートとストリップを自分で焼き、絵を見て判定する)。成果物は **`h3/episodes/<epId>/defects/<章ID>.md`** への追記。**章ごとにファイルを分ける**(並列起動した検品エージェントが1つのファイルへ同時追記すると混線する)
    - **破綻を検出できる機械指標は存在しない**(較正で実証)。**検品は目視が唯一の手段である。** `h3:inspect` が出す「契約違反」は申告どおりの尺と解像度かだけで、破綻の有無とは無関係
 6. **同じカットが同じ型で2回不合格になったら、文面の微修正をやめて画像起点にする**: 画像モデルで正しい構図の1コマ目を描き(画風の参照は本編クリップの1コマ)、1秒の mp4 にして `clips/img<行ID>.mp4` に置き、台帳と宣言に `chainFrom: "img<行ID>"` を書いて作り直す(run-chapter がその最終コマを first frame に使う)。検品はふつうに通す
-7. **不合格は周ごとに h3-fix-writer を1回・全章まとめて起動して文面を直し**(inspector の判断 `skip` は渡さない)、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
-   - **鎖の途中を作り直すと下流は古い起点のまま残る。鎖区間は入口から隔離する**(対象IDは h3-fix-writer が報告に列挙する)
+7. **不合格は周ごとに h3-director を作り直しモードで1回・全章まとめて起動して director.md を直し**(defects のパスとカットIDの一覧。inspector の判断 `skip` は渡さない)、`npm run h3:import -- <epId>` で取り込み直してから(skipHeadFrames は引き継がれる)、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
+   - **鎖の途中を作り直すと下流は古い起点のまま残る。鎖区間は入口から隔離する**(入口は `cuts.json` の chain から機械で出す)
 8. **全章合格後、h3-cut-planner を「生成後フェーズ」で1回起動**し、各カットの `skipHeadFrames`(冒頭のゴミコマの切り捨て)を決める(`npm run h3:head-scan -- <epId>` の候補+冒頭一覧の目視 → `--apply`。`--apply` は既存値を小さくしない。**同じ明るさの別の絵(顔・手)は head-scan で拾えないので目視は続ける**)
 9. **`npm run h3:pod -- down` を必ず実行する。** そのあと `npm run h3:pod -- status` で停止を確認してから次工程へ進む(止め忘れが最大の課金事故。`down` は停止の失敗・残存で exit 1 — そのときは状態を見て再実行する)。**`down` と `status` にロックは掛かっていない** — 止める道具をロックすると「止められない」事故になるため
 

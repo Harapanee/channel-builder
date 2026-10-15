@@ -156,7 +156,7 @@ claude
 
 fact-checker(調査・事実)/ script-director(台本執筆)/ **script-reviewer(台本審査・合否)**/ visual-director(絵コンテ・ショット)/ scene-implementer(シーン実装・演出コード)/ asset-generator(画像素材のプロンプト技能)/ compliance-reviewer(準拠・合否)/ audience-sim(疑似初見)/ theme-scout(題材候補の採点・ネタ帳維持)/ publisher(タイトル・サムネ・概要欄+YouTubeメタデータ契約 publish/metadata.json。サムネは docs/thumbnail-principles.md の検証済みCTR原則に従う)
 
-**H3経路(任意採用)**: h3-cut-planner(カット割り台帳)/ h3-prompt-writer(カット文面)/ h3-prompt-reviewer(意味の突合・ADVISE)/ h3-fix-writer(不合格カットの書き直し)/ h3-clip-inspector(生成クリップの目視検品)/ figure-planner(図解オーバーレイの宣言)
+**H3経路(任意採用)**: h3-director(演出家。カット割り〜全カットの文面を1体で書き、不合格カットも書き直す)/ h3-cut-planner(生成後の冒頭ゴミコマ処理 skipHeadFrames)/ h3-clip-inspector(生成クリップの目視検品)/ figure-planner(図解オーバーレイの宣言)
 
 ---
 
@@ -210,6 +210,7 @@ npm run diff:readings episodes/<ep>    # 期待読み(expected-readings.md)と V
 npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記
 npm run youtube:publish -- <ep> --auto-slot     # 自動公開: 毎日の公開枠の空き日へ非公開+予約でアップロード+再生リスト追加(--show-slot は表示だけ)
 npm run check:studio episodes/<ep>             # /studio-finish(Studio の A/B テスト・収益化・メンバー先行・終了画面)の結果を検証
+npm run h3:import -- <ep> [--dry]                   # 【H3】h3-director の director.md から cuts.json・章ファイル・画風の語彙帳を書き出す
 npm run check:h3 -- <ep> [章ID] [--dump <出力先>]   # 【H3】生成前のプロンプト検査(BLOCKゼロまで生成しない)
 #   ADVISE A13: overall_soundscape で広帯域の持続音(steady wind + continuous rustle 等)を2つ以上重ねるとノイズ床になる(2026-09-18)
 npm run h3:pod -- status|up|down                    # 【H3】Pod の状態・起動(要確認・H3_ALLOW_GPU=1)・停止(必ず)

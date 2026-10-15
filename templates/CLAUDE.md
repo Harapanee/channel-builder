@@ -60,6 +60,7 @@
 - 【H3経路】`npm run h3:assemble -- <epId> [--out <名前>] [--no-figures] [--no-se] [--allow-stale-chains]` — クリップ+図解+字幕+master.mp3 を1本に組み立てる(これが最終物。既定の出力先に既存ファイルがあれば exit 2)。subs.json・figures/index.json・audio-cues.json・ambient.inputs.json の入力ハッシュを突合し、**台本/TTS をやり直した後の焼き直し漏れは `inputs_stale` / `ambient_stale` で exit 2**(焼き直すコマンドを表示する)。SE 0件・古い鎖も止まる
 - `npm run analytics:ledger -- <snapshot.json> <studio-content.csv> [--dry-run]` — 実測(再生・CTR・維持率)を台帳 `performance` へ、選定時の採点を `themeScores` へ書き戻し、`docs/analytics/<asOf>-axis-check.md`(題材採点の軸と実測の順位相関)を出す。分析のたびに手で回す(定期実行しない)
 - `npm run record:thumb-test -- <epId> --winner <1|2|3> [--shares a,b,c] [--note ...]` — Studio「テストと比較」の結果を `publish/thumb-test.json` に記録する
+- 【H3経路】`npm run h3:import -- <epId>` — h3-director の director.md から cuts.json・章ファイル・画風の語彙帳を書き出す
 - 【H3経路】`npm run typecheck:h3` — 語彙帳・カット文面(`h3/vocab` / `h3/episodes/*/shots`)の型検査
 - `npm run usage [-- --since <日付>|--session <id>|--json]` — セッション記録からAPI換算コスト・キャッシュ内訳・**サブエージェントの並列度**(1メッセージ1本の件数・同時最大本数)を集計する
 - `npm run check:audio episodes/<epId>` — 音声の配線検査(cues有無・`<audio src>`がmasterか・焼き直し漏れ・BGMが実際に乗っているか)。render-episode.sh のレンダー前ゲートでもある
@@ -100,7 +101,7 @@
 
 # Agents(制作の実働。メインセッションは監査・ゲート管理のみ)
 
-fact-checker / script-director / **script-reviewer(台本合否)** / reading-checker(誤読検査) / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット) / **H3経路(任意採用)**: h3-cut-planner(カット割り台帳)/ h3-prompt-writer(カット文面)/ h3-prompt-reviewer / h3-fix-writer / h3-clip-inspector(検品)/ figure-planner(図解オーバーレイの宣言。工程7で prompt-writer と並列起動)/ h3-vocab-writer(語彙帳)/ **bgm-planner(BGM 計画 bgm-plan.json と H3 の SE 計画 se-plan.json。両経路)**
+fact-checker / script-director / **script-reviewer(台本合否)** / reading-checker(誤読検査) / visual-director / scene-implementer(シーン実装) / asset-generator / compliance-reviewer(準拠合否) / audience-sim / theme-scout(題材採点) / publisher / short-director(ショート台本+ショット) / **H3経路(任意採用)**: h3-director(演出家。カット割り〜全カット文面・作り直し)/ h3-cut-planner(生成後の skipHeadFrames)/ h3-clip-inspector(検品)/ figure-planner(図解オーバーレイの宣言)/ **bgm-planner(BGM 計画 bgm-plan.json と H3 の SE 計画 se-plan.json。両経路)**
 
 # ショート動画の運用注記
 

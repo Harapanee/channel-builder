@@ -472,7 +472,9 @@ export function checkAdvisories(id: string, body: string, vocab?: Vocab, opts: {
         ": 「" + stripped[0].slice(0, 48) + "…」",
     });
   }
-  if (!opts.keyframe && !OPENS_WITH_PLACE.test(body.trim())) {
+  // 演出家方式(h3:import の回)は語彙帳の places が空で、場所の書き方は演出家の判断に任せる(2026-10-16)
+  const directorMode = vocab !== undefined && Object.keys(vocab.places ?? {}).length === 0;
+  if (!opts.keyframe && !directorMode && !OPENS_WITH_PLACE.test(body.trim())) {
     out.push({ level: "ADVISE", id, rule: "A5", message: "場所の記述から始まっていない。場所を書かないとモデルが場所を発明する" });
   }
   // A7: camera / POV を含む文だけを見る(B4 と同じ切り出し方)。

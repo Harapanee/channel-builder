@@ -282,13 +282,13 @@ const H3_IDENTICAL = [
   "tsconfig.h3.json",
   // 語彙帳の雛形(vocab.test.ts が読む。題材ごとの語彙帳 h3/vocab/<epId>.ts はこれを写して起こす)
   "h3/vocab/example-salmon.ts",
+  // 2026-10-16: 語彙帳・カット割り・文面・レビュー・作り直しの4役を h3-director 1体へ置き換え(h3-cut-planner は生成後の冒頭コマ処理だけ)
+  "src/pipeline/h3/import-director.ts",
+  "src/pipeline/h3/import-director.test.ts",
+  ".claude/agents/h3-director.md",
   ".claude/agents/h3-cut-planner.md",
-  ".claude/agents/h3-prompt-writer.md",
-  ".claude/agents/h3-prompt-reviewer.md",
-  ".claude/agents/h3-fix-writer.md",
   ".claude/agents/h3-clip-inspector.md",
   ".claude/agents/figure-planner.md",
-  ".claude/agents/h3-vocab-writer.md",
   "docs/superpowers/specs/2026-08-19-h3-prompt-pipeline-design.md",
   "docs/superpowers/specs/2026-08-24-h3-pipeline-improvements-design.md",
   "docs/superpowers/specs/2026-09-04-h3-figure-overlay-design.md",
