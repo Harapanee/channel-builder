@@ -236,10 +236,11 @@ npx tsx src/pipeline/h3/build-cuts.ts <epId>
 4. **章ごとに回す**: `H3_ALLOW_GPU=1 npm run h3:run -- <epId> <章ID> --url <PodのURL>`。**章カード(`card`)のカットは生成しなくてよい**(2026-09-05: 文字は工程9の `h3:figures` が不透明な板として焼き、assemble は生成クリップが無ければ紙色で合成する。`--only` で章カード以外を名指しするか、生成しても差は無いのでそのまま回してもよい。検品の対象からは外す)。`--plan` / `--dry` は計画と検査だけでGPUを使わない(`--plan` は古い鎖=下流クリップが起点より古いものを警告する)。**常駐監視ループを作らない**(欠けを自動検出して投げ直す仕組みは意図しない課金を起こす)
 5. **章ごとに h3-clip-inspector を並列起動して検品する**(章シートとストリップを自分で焼き、絵を見て判定する)。成果物は **`h3/episodes/<epId>/defects/<章ID>.md`** への追記。**章ごとにファイルを分ける**(並列起動した検品エージェントが1つのファイルへ同時追記すると混線する)
    - **破綻を検出できる機械指標は存在しない**(較正で実証)。**検品は目視が唯一の手段である。** `h3:inspect` が出す「契約違反」は申告どおりの尺と解像度かだけで、破綻の有無とは無関係
-6. **不合格は周ごとに h3-fix-writer を1回・全章まとめて起動して文面を直し**(inspector の判断 `skip` は渡さない)、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
+6. **同じカットが同じ型で2回不合格になったら、文面の微修正をやめて画像起点にする**: 画像モデルで正しい構図の1コマ目を描き(画風の参照は本編クリップの1コマ)、1秒の mp4 にして `clips/img<行ID>.mp4` に置き、台帳と宣言に `chainFrom: "img<行ID>"` を書いて作り直す(run-chapter がその最終コマを first frame に使う)。検品はふつうに通す
+7. **不合格は周ごとに h3-fix-writer を1回・全章まとめて起動して文面を直し**(inspector の判断 `skip` は渡さない)、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
    - **鎖の途中を作り直すと下流は古い起点のまま残る。鎖区間は入口から隔離する**(対象IDは h3-fix-writer が報告に列挙する)
-7. **全章合格後、h3-cut-planner を「生成後フェーズ」で1回起動**し、各カットの `skipHeadFrames`(冒頭のゴミコマの切り捨て)を決める(`npm run h3:head-scan -- <epId>` の候補+冒頭一覧の目視 → `--apply`。`--apply` は既存値を小さくしない。**同じ明るさの別の絵(顔・手)は head-scan で拾えないので目視は続ける**)
-8. **`npm run h3:pod -- down` を必ず実行する。** そのあと `npm run h3:pod -- status` で停止を確認してから次工程へ進む(止め忘れが最大の課金事故。`down` は停止の失敗・残存で exit 1 — そのときは状態を見て再実行する)。**`down` と `status` にロックは掛かっていない** — 止める道具をロックすると「止められない」事故になるため
+8. **全章合格後、h3-cut-planner を「生成後フェーズ」で1回起動**し、各カットの `skipHeadFrames`(冒頭のゴミコマの切り捨て)を決める(`npm run h3:head-scan -- <epId>` の候補+冒頭一覧の目視 → `--apply`。`--apply` は既存値を小さくしない。**同じ明るさの別の絵(顔・手)は head-scan で拾えないので目視は続ける**)
+9. **`npm run h3:pod -- down` を必ず実行する。** そのあと `npm run h3:pod -- status` で停止を確認してから次工程へ進む(止め忘れが最大の課金事故。`down` は停止の失敗・残存で exit 1 — そのときは状態を見て再実行する)。**`down` と `status` にロックは掛かっていない** — 止める道具をロックすると「止められない」事故になるため
 
 工程8.4(音声ミックス)まで終えたら `npm run status episodes/<epId> implemented` を実行して `<done>`。**`narration/master.mp3` が無いと工程9の組み立てが止まる**(H3は生成クリップの音を捨てない。ナレーション+BGMの `master.mp3` に加え、`h3:ambient` が生成音を `narration/ambient.wav` へまとめてその下に敷く)。
 
@@ -417,7 +418,7 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 - **自動公開のチャンネル**では、assemble の後・finalize の前に `npm run youtube:publish -- <epId> --auto-slot`(API で公開済み・予約中を読み、毎日の公開枠の空いている最も早い日を publishAt に書いて非公開+予約でアップロードし、再生リストへ追加する。公開まで memberEarlyAccess.hours を切る枠ではメンバー先行と概要欄の案内行を自動で外す。exit 2=安全装置・exit 1 で再生リストだけ失敗なら `--playlist-only`)。finalize の後に `/studio-finish <epId>` → `npm run check:studio episodes/<epId>`(exit 1 なら未完の項目を HANDOFF へ)
 - **assemble(工程9)を先に済ませてから** `npm run finalize episodes/<epId>` を実行する。H3 回は終端 status を **`final`** にし、metrics(所要時間・コストはセッション記録から機械計測。画像生成数はサムネ・keyframe 終点・library 素材を実数で数え、数えられなければ記録しない。`--images` は既定で不要)・backlog 消し込み・git commit(`h3/episodes/<epId>`・`h3/vocab/<epId>.ts`・`publish/upload-result.json` を含む)まで行う
 - **`scripts/render-queue.sh` へ投入しない。キュー登録の curl も打たない。** 工程9の assemble の完了が最終物である(キュー・レンダー・factory-ui の登録口は H3 回を機械的に拒否し、エピソード詳細に「夜間レンダーキューへ」は出ない)
-- 工程8-7 の head-scan の結果と反映した skipHeadFrames も提示物に含める(顔・手のゴミコマは目視でしか拾えない)。自走で通過扱いにした場合は、上の提示物と「自走で通過扱いにしたゲート」を引き継ぎに列挙する
+- 工程8-8 の head-scan の結果と反映した skipHeadFrames も提示物に含める(顔・手のゴミコマは目視でしか拾えない)。自走で通過扱いにした場合は、上の提示物と「自走で通過扱いにしたゲート」を引き継ぎに列挙する
 - ここで `<done>` を出して終了する。**auto / semi モードではこの工程に到達しない**(H3経路は manual 限定 — 冒頭の砦1)
 
 ### 【HF経路・既定】
