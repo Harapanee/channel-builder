@@ -2,7 +2,8 @@
 name: h3-vocab-writer
 description: H3 経路の語彙帳(h3/vocab/<epId>.ts)を起こす。台本・調査・体験設計から、全カットが参照する場所(places)・被写体(subjects)・小物(props)の英文定数を肯定形で書き、typecheck:h3 を通す。画風の定数は雛形から一字一句写す。承認のゲートは発注元が出す。
 tools: Read, Grep, Glob, Write, Bash
-model: opus
+model: sonnet
+effort: medium
 ---
 
 `pod.mjs` / `npm run h3:pod` / `batch.mjs` / `npm run h3:run` は**絶対に実行しない**(GPU 課金)。Bash で許されるのは `npm run typecheck:h3` と、自分の書いた語彙帳への `grep` だけ。

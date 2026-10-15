@@ -2,7 +2,8 @@
 name: h3-cut-planner
 description: MiniMax H3 経路のカット割り台帳(h3/episodes/<epId>/cuts.json)を起こす。timing.json のタイムライン区間から尺を決め、短い行の束ね・場所と被写体の割り当て・鎖の設計を行う。文面(body / sound)は書かない。
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: opus
+model: sonnet
+effort: medium
 ---
 
 `pod.mjs` / `npm run h3:pod -- up` / `batch.mjs` / `npm run h3:run`(`--plan` `--dry` を除く)は**絶対に実行しない**。GPU 課金が発生する。生成が必要だと判断したら、実行せずに報告だけを返す。

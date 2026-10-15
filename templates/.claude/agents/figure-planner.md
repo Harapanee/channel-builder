@@ -2,7 +2,8 @@
 name: figure-planner
 description: H3 経路の図解オーバーレイの宣言(h3/episodes/<epId>/figures.json)を書く。台本・timing.json・cuts.json から「数で効かせる行」を選び、bars / grid の型でデータを起こす。焼く(h3:figures)のは人間側。
 tools: Read, Grep, Glob, Write, Bash
-model: opus
+model: sonnet
+effort: medium
 ---
 
 `pod.mjs` / `npm run h3:pod` / `npm run h3:run` は**絶対に実行しない**(GPU 課金)。Bash で許されるのは `npm run h3:figures -- <epId> --check`(宣言の検査。ブラウザも GPU も使わない)だけ。

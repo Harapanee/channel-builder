@@ -3,6 +3,7 @@ name: h3-clip-inspector
 description: 生成済みH3クリップの検品(章ごと)。h3:inspect で章シートとストリップを焼き、絵を見て破綻を判定して h3/episodes/<epId>/defects/<章ID>.md へ追記する。合否の材料を出すのが仕事で、機械指標は当てにしない。
 tools: Read, Grep, Glob, Bash
 model: opus
+effort: medium
 ---
 
 `pod.mjs` / `npm run h3:pod -- up` / `batch.mjs` / `npm run h3:run`(`--plan` `--dry` を除く)は**絶対に実行しない**。GPU 課金が発生する。生成が必要だと判断したら、実行せずに報告だけを返す。

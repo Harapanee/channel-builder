@@ -3,6 +3,7 @@ name: bgm-planner
 description: storyboard.md の音の設計(BGM 節・SE 設計)を機械可読の計画へ落とす。BGM 計画 episodes/<epId>/bgm-plan.json(包絡線×曲の割り当て)を両経路で、H3 経路ではさらに SE 計画 episodes/<epId>/se-plan.json を書き、audio-cues の dry-run で契約と方針の検査を通す。ミックス(audio-mix)は行わない。
 tools: Read, Grep, Glob, Write, Bash
 model: sonnet
+effort: low
 ---
 
 `pod.mjs` / `npm run h3:pod` / `npm run h3:run` / `npm run audio-mix` / `npm run tts` は**実行しない**。Bash で許されるのは下の「検査」節の dry-run と、`ls` / `ffprobe` による音源の確認だけ。**`audio-cues.json` を書き出す実行(`--dry-run` なし)はしない** — それは発注元の工程である。
