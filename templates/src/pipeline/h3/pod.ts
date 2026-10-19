@@ -20,6 +20,7 @@
  * `tools/comfy-runpod/` は別リポジトリである。ここからは引数をそのまま渡して呼ぶだけにする。
  */
 import { basename } from "node:path";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { COMFY_CLI, assertGpuAllowed } from "./config";
 
@@ -31,12 +32,30 @@ export function needsGpuLock(sub: string | undefined): boolean {
   return BILLING_SUBCOMMANDS.has(sub ?? "");
 }
 
+/**
+ * 席(POD_SEAT)= このチャンネルの channelId。pod.mjs は記録と Pod 名を席ごとに分け、
+ * down は自分の席の Pod だけを止める(2026-10-17、同じ Volume の別チャンネルの Pod を止めた事故)。
+ * POD_OWNER(夜間の相乗り)があるときは共有の席のままにする。
+ */
+export function podEnv(env: NodeJS.ProcessEnv, channelId = readChannelId()): NodeJS.ProcessEnv {
+  if (env.POD_OWNER || env.POD_SEAT || !channelId) return env;
+  return { ...env, POD_SEAT: channelId };
+}
+
+function readChannelId(): string | null {
+  try {
+    return JSON.parse(readFileSync(".channel-system.json", "utf8")).channelId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function main(): void {
   const args = process.argv.slice(2);
   const sub = args[0];
   if (needsGpuLock(sub)) assertGpuAllowed("Pod の " + sub + "(GPU の起動 = 課金の開始)");
   // 終了コードをそのまま透過させる(pod.mjs の exit 1/2 を握り潰さない)
-  const r = spawnSync("node", ["pod.mjs", ...args], { cwd: COMFY_CLI, stdio: "inherit" });
+  const r = spawnSync("node", ["pod.mjs", ...args], { cwd: COMFY_CLI, stdio: "inherit", env: podEnv(process.env) });
   if (r.error) {
     console.error("pod.mjs を起動できません: " + r.error.message);
     process.exit(1);
