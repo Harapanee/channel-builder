@@ -28,10 +28,12 @@ test("frameStats: コマごとの輝度std・白紙率・前コマとの差を�
   assert.equal(s[1].white, 0);
   assert.ok(s[1].diffPrev > 100);
   assert.equal(s[2].diffPrev, 0);
+  assert.equal(s[0].mean, 250);
+  assert.ok(Math.abs(s[1].mean - 128) < 0.01);
 });
 
 /** std と diffPrev だけ指定して FrameStat を作る */
-const st = (std: number, diffPrev = 1, white = 0.02): FrameStat => ({ std, diffPrev, white });
+const st = (std: number, diffPrev = 1, white = 0.02, mean = 100): FrameStat => ({ std, diffPrev, white, mean });
 const steady = (n: number, std = 55) => Array.from({ length: n }, () => st(std));
 
 test("recommendSkip: 冒頭に何も無いクリップは 0", () => {
@@ -174,4 +176,31 @@ test("recommendSkip: 推奨値 = ゴミコマ数 + 余白(HEAD_SCAN.margin)。�
   assert.equal(M, 2); // ep043/044/045 の既知値 45本との較正で決めた値(平均の偏り −2.4 → −0.4 コマ)
   assert.equal(recommendSkip(steady(30), { window: 12 }).skip, 0);
   assert.equal(recommendSkip([st(1, 0, 1), ...steady(29)], { window: 12 }).skip, 1 + M);
+});
+
+test("recommendSkip: 明るい別の絵から暗い本編へ溶ける(std は近いが平均輝度が大きく外れる)を捨てる", () => {
+  // ep072 cL31 の実測: std 42→75(偏差44%で std だけでは起点にならない)、平均輝度 203→83
+  const stds = [42, 33, 27, 29, 34, 40, 48, 56, 63, 69, 75, 75];
+  const means = [203, 193, 182, 170, 159, 146, 132, 117, 105, 92, 82, 82];
+  const head = stds.map((v, i) => st(v, i === 0 ? 0 : 11, 0.02, means[i]));
+  const tail = Array.from({ length: 14 }, () => st(75, 1, 0.02, 83));
+  const r = recommendSkip([...head, ...tail], { window: 12 });
+  // 平均輝度が本編(83)から max(12, 20%) を超えて外れているのは 105(index 8)まで
+  assert.equal(r.garbage, 9);
+  assert.equal(r.skip, 9 + M);
+  assert.ok(r.reasons.includes("フェード"));
+});
+
+test("recommendSkip: 暗い本編の小さな明るさの揺れ(平均 18→24)はフェード扱いしない", () => {
+  const head = [24, 22, 21, 20].map((m) => st(55, 1, 0.02, m));
+  const tail = Array.from({ length: 26 }, () => st(55, 1, 0.02, 18));
+  const r = recommendSkip([...head, ...tail], { window: 12 });
+  assert.equal(r.skip, 0);
+});
+
+test("recommendSkip: 1コマ目でない途中からの明るさの変化(カメラの寄り・光)は起点にしない", () => {
+  const head = [100, 100, 100, 160, 150, 140].map((m) => st(55, 1, 0.02, m));
+  const tail = Array.from({ length: 24 }, () => st(55, 1, 0.02, 100));
+  const r = recommendSkip([...head, ...tail], { window: 12 });
+  assert.equal(r.skip, 0);
 });

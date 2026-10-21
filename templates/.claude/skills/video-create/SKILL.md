@@ -212,7 +212,7 @@ v1 は絵コンテの演出記述(HyperFrames用のDOM/GSAP指示)をそのま�
 6. **同じカットが同じ型で2回不合格になったら、文面の微修正をやめて画像起点にする**: 画像モデルで正しい構図の1コマ目を描き(画風の参照は本編クリップの1コマ)、1秒の mp4 にして `clips/img<行ID>.mp4` に置き、台帳と宣言に `chainFrom: "img<行ID>"` を書いて作り直す(run-chapter がその最終コマを first frame に使う)。検品はふつうに通す
 7. **不合格は周ごとに h3-director を作り直しモードで1回・全章まとめて起動して director.md を直し**(defects のパスとカットIDの一覧。inspector の判断 `skip` は渡さない)、`npm run h3:import -- <epId>` で取り込み直してから(skipHeadFrames は引き継がれる)、`npm run h3:reject -- <epId> <clipId…>` で隔離してから再生成する(隔離は削除ではなく移動。移せば skip 判定が外れて作り直される)
    - **鎖の途中を作り直すと下流は古い起点のまま残る。鎖区間は入口から隔離する**(入口は `cuts.json` の chain から機械で出す)
-8. **全章合格後、h3-cut-planner を「生成後フェーズ」で1回起動**し、各カットの `skipHeadFrames`(冒頭のゴミコマの切り捨て)を決める(`npm run h3:head-scan -- <epId>` の候補+冒頭一覧の目視 → `--apply`。`--apply` は既存値を小さくしない。**同じ明るさの別の絵(顔・手)は head-scan で拾えないので目視は続ける**)
+8. **全章合格後、h3-cut-planner を「生成後フェーズ」で1回起動**し、各カットの `skipHeadFrames`(冒頭のゴミコマの切り捨て)を決める(`npm run h3:head-scan -- <epId>` の候補+**全カットの1コマ目の章別一覧**の目視 → `--apply`。`--apply` は既存値を小さくしない。**同じ明るさの別の絵(顔・手)は head-scan で拾えないので、目視は候補に限らず全カット**)
 9. **`npm run h3:pod -- down` を必ず実行する。** そのあと `npm run h3:pod -- status` で停止を確認してから次工程へ進む(止め忘れが最大の課金事故。`down` は停止の失敗・残存で exit 1 — そのときは状態を見て再実行する)。**`down` と `status` にロックは掛かっていない** — 止める道具をロックすると「止められない」事故になるため
 
 工程8.4(音声ミックス)まで終えたら `npm run status episodes/<epId> implemented` を実行して `<done>`。**`narration/master.mp3` が無いと工程9の組み立てが止まる**(H3は生成クリップの音を捨てない。ナレーション+BGMの `master.mp3` に加え、`h3:ambient` が生成音を `narration/ambient.wav` へまとめてその下に敷く)。

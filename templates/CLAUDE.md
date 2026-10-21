@@ -53,7 +53,7 @@
 - 【H3経路】`H3_ALLOW_GPU=1 npm run h3:run -- <epId> <章ID> [--only <id,..>] --url <PodのURL>` — 章の生成(`--plan` / `--dry` はGPU不要)
 - 【H3経路】`npm run h3:inspect -- <epId> <章ID>` — 章のコンタクトシートとストリップ(`review/<epId>/<章ID>-manifest.json` を検品報告の1行目に引用する)
 - 【H3経路】`npm run h3:reject -- <epId> <clipId,..>` — 不合格クリップの隔離(削除ではなく移動。再生成の対象に戻す)
-- 【H3経路】`npm run h3:head-scan -- <epId> [章ID] [--apply]` — 各カット冒頭のゴミコマ(白紙・フェード・急変)を測り `skipHeadFrames` を推奨する(`--apply` は既存値を小さくしない)。同じ明るさの別の絵(顔・手)は拾えないので冒頭一覧の目視は続ける。反映後は h3:ambient と h3:assemble を焼き直す
+- 【H3経路】`npm run h3:head-scan -- <epId> [章ID] [--apply]` — 各カット冒頭のゴミコマ(白紙・フェード・急変)を測り `skipHeadFrames` を推奨する(`--apply` は既存値を小さくしない)。明るさの違う別の絵は平均輝度でも拾う。同じ明るさの別の絵(顔・手)は拾えないので全カットの1コマ目を章別一覧で目視する。反映後は h3:ambient と h3:assemble を焼き直す
 - 【H3経路】`npm run h3:audio-cues -- <epId>` / `npm run audio-mix episodes/<epId>` / `npm run h3:ambient -- <epId>` — 音声(BGM+SE の cues → master.mp3 → 生成音の環境音トラック)
 - 【H3経路】`npm run h3:subs <epId>` — 字幕を透過PNGに焼く(1回の表示=1文。表示窓は `subs/subs.json`)
 - 【H3経路】`npm run h3:figures -- <epId> [--only <id,..>] [--force] [--check]` — 図解オーバーレイ(`h3/episodes/<epId>/figures.json`)と章カードを透過PNG連番に焼く。**`h3:assemble` の前に実行**。設計は `docs/superpowers/specs/2026-09-04-h3-figure-overlay-design.md`

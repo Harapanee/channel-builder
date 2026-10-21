@@ -10,11 +10,12 @@
  *
  * 見るもの(先頭 window コマ。既定 12 = 0.5秒):
  *   - 白紙   … 輝度std がほぼ 0、または白画素(≥235)が 9割以上
- *   - フェード … 輝度std が「本編の安定値」(window 以降 12コマの中央値)から ±20% を外れる
+ *   - フェード … 輝度std が「本編の安定値」(window 以降 12コマの中央値)から ±20% を外れる。
+ *               または平均輝度が本編から大きく外れる(明るい別の絵から暗い本編へ溶ける型。ep072 cL31)
  *   - 急変   … 次のコマとの平均差が大きい(= そこで別の絵から本編へ切り替わった)
  * 推奨値 = 最後のゴミコマの番号 + 1 + 余白 2コマ(HEAD_SCAN.margin の較正を参照)。
  *
- * **検出できないもの**: 本編と同じ明るさ・同じ複雑さの「別の絵」(顔・手・文字)が
+ * **検出できないもの**: 本編と同じ明るさ(平均・ばらつきとも)・同じ複雑さの「別の絵」(顔・手・文字)が
  * 切り替わりなしに溶けていく型。これは機械では拾えないので、表の結果は目視の代わりではなく
  * 目視の当たり付けとして使う。`--apply` は既存値を**小さくしない**(大きい方を採る)。
  */
@@ -33,6 +34,8 @@ export interface FrameStat {
   white: number;
   /** 前のコマとの平均絶対差(0〜255)。1コマ目は 0 */
   diffPrev: number;
+  /** 平均輝度(0〜255) */
+  mean: number;
 }
 
 export interface HeadScanResult {
@@ -69,6 +72,17 @@ export const HEAD_SCAN = {
   /** 1コマ目がこれ以上ずれていればフェードの起点と見なす(白紙でなくても) */
   fadeStartRatio: 0.5,
   /**
+   * 1コマ目の平均輝度が本編からこの差(8bit)以上、かつ meanStartRatio 以上ずれていればフェードの起点。
+   * std が近いまま明るさだけ違う別の絵から溶ける型を拾う(ep072 cL31: std 42→75 で起点にならず
+   * 公開後に指摘された。平均輝度は 203→83)。ep072/ep073 の全クリップで当てると 38本が該当し、
+   * 37本は既に人が skipHeadFrames を入れた本物のゴミ、残り1本が cL31(誤検知 0)
+   */
+  meanStartDiff: 40,
+  meanStartRatio: 0.3,
+  /** 起点のあと、平均輝度のずれが max(この差, 本編×meanSettleRatio) を超えている間はフェード中 */
+  meanSettleDiff: 12,
+  meanSettleRatio: 0.2,
+  /**
    * 検出したゴミコマに足す余白(コマ)。フェードの尻尾・ワイプの縁は輝度std では安定値に
    * 入って見えても目では残る。ep043/044/045 で人が目視で決めた既知値 45本と突き合わせ、
    * 余白 0 では平均 −2.4 コマ(捨て足りない側)、2 で −0.4 コマになった
@@ -90,12 +104,14 @@ export function frameStats(raw: Buffer, w: number, h: number): FrameStat[] {
     const off = f * size;
     let white = 0;
     let diff = 0;
+    let sum = 0;
     for (let i = 0; i < size; i += 1) {
       const v = raw[off + i];
+      sum += v;
       if (v >= HEAD_SCAN.whiteLevel) white += 1;
       if (f > 0) diff += Math.abs(v - raw[off - size + i]);
     }
-    out.push({ std: stds[f], white: white / size, diffPrev: f > 0 ? diff / size : 0 });
+    out.push({ std: stds[f], white: white / size, diffPrev: f > 0 ? diff / size : 0, mean: sum / size });
   }
   return out;
 }
@@ -126,6 +142,8 @@ export function recommendSkip(stats: FrameStat[], opts: { window?: number } = {}
     ? stats.slice(window, window + HEAD_SCAN.refFrames)
     : stats.slice(Math.floor(stats.length / 2));
   const refStd = median(refSlice.map((s) => s.std));
+  const refMean = median(refSlice.map((s) => s.mean));
+  const meanSettleAt = Math.max(HEAD_SCAN.meanSettleDiff, HEAD_SCAN.meanSettleRatio * refMean);
   // 本編そのものが平坦(章カードの紙地など)なら、白紙・フェードの判定は意味を持たない
   const flatClip = refStd < HEAD_SCAN.blankStd;
   // 急変の閾値は本編の動きの量に対して相対で決める。最初から速く動き続ける絵
@@ -142,12 +160,20 @@ export function recommendSkip(stats: FrameStat[], opts: { window?: number } = {}
     const s = stats[i];
     let bad = false;
     const dev = refStd > 0 ? Math.abs(s.std - refStd) / refStd : 0;
+    const meanGap = Math.abs(s.mean - refMean);
+    const meanStart = i === 0 && meanGap >= HEAD_SCAN.meanStartDiff
+      && meanGap >= HEAD_SCAN.meanStartRatio * Math.max(refMean, 1);
     if (!flatClip && (s.std < HEAD_SCAN.blankStd || s.white >= HEAD_SCAN.blankWhite)) {
       reasons.add("白紙");
       bad = true;
     } else if (!flatClip && dev > HEAD_SCAN.settleRatio && (prevBad || (i === 0 && dev > HEAD_SCAN.fadeStartRatio))) {
       // フェードは「白紙・急変・大きく外れた1コマ目」から途切れずに続く区間だけを数える。
       // 起点の無いゆっくりした std の変化はカメラの寄り引きで、ゴミではない(ep043 cL03 / ep045 cL08 の誤検知)
+      reasons.add("フェード");
+      bad = true;
+    } else if (meanStart || (prevBad && meanGap > meanSettleAt)) {
+      // 明るさだけが違う別の絵からの溶け(std では起点にならない)。起点は1コマ目に限る:
+      // 途中からの明るさの変化はカメラの寄りや光の動きで、ゴミではない
       reasons.add("フェード");
       bad = true;
     }
