@@ -209,6 +209,7 @@ npm run check:readings episodes/<ep>   # 誤読リスクの機械抽出(既知�
 npm run diff:readings episodes/<ep>    # 期待読み(expected-readings.md)と VOICEVOX 実読みの機械diff(未知の誤読。差分行だけ出す)
 npm run next-videos episodes/<ep> -- --apply   # 「次に見る」2本を選び概要欄末尾へ追記
 npm run youtube:publish -- <ep> --auto-slot     # 自動公開: 毎日の公開枠の空き日へ非公開+予約でアップロード+再生リスト追加(--show-slot は表示だけ)
+npm run archive -- <ep>                         # 公開予約・Studio 仕上げの後に重い成果物を外部SSD(/Volumes/YouTubeArchive)へ退避してローカルから消す(--dry で一覧・--restore で書き戻し)
 npm run check:studio episodes/<ep>             # /studio-finish(Studio の A/B テスト・収益化・メンバー先行・終了画面)の結果を検証
 npm run h3:import -- <ep> [--dry]                   # 【H3】h3-director の director.md から cuts.json・章ファイル・画風の語彙帳を書き出す
 npm run check:h3 -- <ep> [章ID] [--dump <出力先>]   # 【H3】生成前のプロンプト検査(BLOCKゼロまで生成しない)

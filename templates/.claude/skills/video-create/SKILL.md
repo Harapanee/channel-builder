@@ -389,6 +389,7 @@ publisherの後、**asset-generatorへ委譲**: PUBLISH.mdの「サムネ画像�
 **承認後の完了処理(H3経路の終点)**:
 
 - **自動公開のチャンネル**では、assemble の後・finalize の前に `npm run youtube:publish -- <epId> --auto-slot`(API で公開済み・予約中を読み、毎日の公開枠の空いている最も早い日を publishAt に書いて非公開+予約でアップロードし、再生リストへ追加する。公開まで memberEarlyAccess.hours を切る枠ではメンバー先行と概要欄の案内行を自動で外す。exit 2=安全装置・exit 1 で再生リストだけ失敗なら `--playlist-only`)。finalize の後に `/studio-finish <epId>` → `npm run check:studio episodes/<epId>`(exit 1 なら未完の項目を HANDOFF へ)
+- `npm run archive -- <epId>` — 公開予約と Studio 仕上げの後に、重い成果物(out・narration・publish/en/package・review)を外部SSD `/Volumes/YouTubeArchive/<チャンネルフォルダ名>/` へコピー→サイズ+sha256 照合→一致分だけローカルから消す(2026-10-29。自走でも行う)。exit 2=SSD 未接続かアップロード未完 → 消さずに HANDOFF の「起床後にやること」へ。exit 1=照合不一致のファイルを残した。公開後に局所修正するときは `npm run archive -- <epId> --restore` で書き戻す
 - **assemble(工程9)を先に済ませてから** `npm run finalize episodes/<epId>` を実行する。H3 回は終端 status を **`final`** にし、metrics(所要時間・コストはセッション記録から機械計測。画像生成数はサムネ・keyframe 終点・library 素材を実数で数え、数えられなければ記録しない。`--images` は既定で不要)・backlog 消し込み・git commit(`h3/episodes/<epId>`・`h3/vocab/<epId>.ts`・`publish/upload-result.json` を含む)まで行う
 - **`scripts/render-queue.sh` へ投入しない。キュー登録の curl も打たない。** 工程9の assemble の完了が最終物である(キュー・レンダー・factory-ui の登録口は H3 回を機械的に拒否し、エピソード詳細に「夜間レンダーキューへ」は出ない)
 - 工程8-8 の head-scan の結果と反映した skipHeadFrames も提示物に含める(顔・手のゴミコマは目視でしか拾えない)。自走で通過扱いにした場合は、上の提示物と「自走で通過扱いにしたゲート」を引き継ぎに列挙する

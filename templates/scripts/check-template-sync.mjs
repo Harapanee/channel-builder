@@ -133,6 +133,8 @@ const IDENTICAL = [
   // 2026-09-23 追加(GPU 直叩きを止める PreToolUse フック。.claude/settings.json が全チャンネルで登録するため IDENTICAL)
   "scripts/hooks/guard-gpu.mjs",
   "scripts/hooks/guard-gpu.test.mjs",
+  // 2026-10-29 追加(公開後の重い成果物を外部SSDへ退避)
+  "scripts/archive-episode.mjs",
   // 2026-09-23 追加(BGM/SE 計画の専用エージェント。HF・H3 の両経路で使う)
   ".claude/agents/bgm-planner.md",
   "src/scenes/shorts/core/RankCard.tsx",

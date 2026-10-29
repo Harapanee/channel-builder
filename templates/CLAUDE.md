@@ -47,6 +47,7 @@
 - `channel/user-dict.json`(任意)— **VOICEVOX ユーザー辞書**(表記→カタカナ読み・accentType)。`npm run tts` の起動時にエンジンへ同期し、行キャッシュのキーにも混ぜる。**誤読が確定した名詞はここへ登録する**(台本をひらがなに開かなくてよい・以後の全話に効く)。動詞の活用形・助詞の結合は辞書で固定できないので台本表記で直す。エンジン側に永続する(同じ VOICEVOX を使う他チャンネルにも効く)
 - `npm run next-videos episodes/<epId> [-- --apply]` — 「次に見る」2本の選定(最新の analytics スナップショットから、本編・登録/1k再生の降順(同点は関連動画流入比)。公開後7〜60日を優先し、足りなければ全期間。登録数が無ければ平均視聴率)。`publish/next-videos.json` に書き、`--apply` で metadata.json の概要欄末尾へ追記する。**終了画面は API に無いので人間が Studio で置く**(自動公開のチャンネルは studio-finish)
 - `npm run youtube:publish -- <epId> --auto-slot` — 自動公開: 毎日の公開枠(`channel/youtube-publish.json` の `dailySlotHourJst`)の空き日を選び、非公開+予約でアップロード+再生リスト追加(`--show-slot` は表示だけ。factory-ui で YouTube 連携済みであること)
+- `npm run archive -- <epId>` — 公開後の重い成果物を外部SSD(`/Volumes/YouTubeArchive`・`ARCHIVE_ROOT` で変更可)へ退避してローカルから消す(`--restore` で書き戻し)
 - `/studio-finish <epId>` → `npm run check:studio episodes/<epId>` — Studio の A/B テスト・収益化・メンバー先行・終了画面(Claude in Chrome)
 - 【H3経路】`npm run check:h3 -- <epId> [章ID] [--dump <出力先>]` — 生成前のプロンプト検査(exit 0=緑 / 1=ADVISE / 2=BLOCK。B14 は `cuts.json` の `firstWorstLineId` を検査)
 - 【H3経路】`npm run h3:pod -- status|up|down` — RunPod の状態・起動・停止(`up` は `H3_ALLOW_GPU=1` 必須・要ユーザー確認。`down` は必ず実行)
